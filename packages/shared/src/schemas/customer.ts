@@ -1,7 +1,7 @@
 import { z } from "zod";
 
-import { customerTypeSchema, tagSchema } from "../enums";
-import { pageQuerySchema } from "./common";
+import { customerTypeSchema, tagSchema } from "../enums.js";
+import { pageQuerySchema } from "./common.js";
 
 const nullableText = z.string().nullable();
 

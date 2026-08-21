@@ -5,8 +5,8 @@ import {
   employmentStatusSchema,
   jobTitleSchema,
   systemRoleSchema,
-} from "../enums";
-import { pageQuerySchema } from "./common";
+} from "../enums.js";
+import { pageQuerySchema } from "./common.js";
 
 const nullableText = z.string().nullable();
 

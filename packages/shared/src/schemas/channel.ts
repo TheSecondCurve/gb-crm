@@ -5,8 +5,8 @@ import {
   channelStatusSchema,
   channelTypeSchema,
   platformSchema,
-} from "../enums";
-import { pageQuerySchema } from "./common";
+} from "../enums.js";
+import { pageQuerySchema } from "./common.js";
 
 const nullableText = z.string().nullable();
 

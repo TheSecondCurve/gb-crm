@@ -1,0 +1,89 @@
+// /api/v1/auth/* 路由（API / Interface Changes 鉴权表）。
+// 注意：session-auth 的 onRequest 钩子在路由注册前挂到 root scope，login/health 免登录。
+import { changePasswordSchema, loginSchema } from "@gb-crm/shared";
+import type { FastifyInstance } from "fastify";
+
+import type { AppEnv } from "../../env.js";
+import type { Db } from "../../db/client.js";
+import { clearSessionCookie, setSessionCookie } from "../../plugins/cookie.js";
+import { ApiError } from "../../plugins/error-handler.js";
+import {
+  createSession,
+  deleteSessionById,
+  gcSessions,
+  SESSION_IDLE_TTL_SECONDS,
+} from "./session-repo.js";
+import { changeOwnPassword, LOGIN_FAIL_MESSAGE, verifyLogin } from "./service.js";
+
+export interface AuthRoutesOptions {
+  db: Db;
+  env: AppEnv;
+  /** 时钟注入（epoch 秒） */
+  now: () => number;
+  /** 登录限流上限（/min/IP），默认 10；测试可调小 */
+  rateLimitMax?: number;
+}
+
+export function authRoutes(app: FastifyInstance, opts: AuthRoutesOptions): void {
+  const { db, env, now } = opts;
+
+  app.post(
+    "/api/v1/auth/login",
+    {
+      config: {
+        rateLimit: { max: opts.rateLimitMax ?? 10, timeWindow: "1 minute" },
+      },
+    },
+    async (req, reply) => {
+      const body = loginSchema.parse(req.body ?? {});
+      gcSessions(db, now()); // login 时 GC（K29）
+
+      const user = await verifyLogin(db, body.username, body.password);
+      if (!user) throw new ApiError(401, "INVALID_CREDENTIALS", LOGIN_FAIL_MESSAGE);
+
+      const session = createSession(db, {
+        userId: user.id,
+        now: now(),
+        ip: req.ip,
+        userAgent: req.headers["user-agent"],
+      });
+      setSessionCookie(reply, session.id, {
+        secure: env.COOKIE_SECURE,
+        maxAgeSeconds: SESSION_IDLE_TTL_SECONDS,
+      });
+      return reply.code(204).send();
+    },
+  );
+
+  app.post("/api/v1/auth/logout", async (req, reply) => {
+    if (req.sessionId !== null) deleteSessionById(db, req.sessionId);
+    clearSessionCookie(reply);
+    return reply.code(204).send();
+  });
+
+  app.get("/api/v1/auth/me", async (req) => {
+    const user = req.user!;
+    return {
+      data: {
+        id: user.id,
+        username: user.username,
+        nickname: user.nickname,
+        systemRole: user.systemRole,
+      },
+    };
+  });
+
+  app.patch("/api/v1/auth/password", async (req, reply) => {
+    const body = changePasswordSchema.parse(req.body ?? {});
+    const ok = await changeOwnPassword(db, {
+      userId: req.user!.id,
+      currentPassword: body.currentPassword,
+      newPassword: body.newPassword,
+      now: now(),
+    });
+    if (!ok) throw new ApiError(401, "INVALID_CREDENTIALS", "当前密码错误");
+    // 改密后该用户全部 session（含当前）已删；清 cookie，客户端重新登录
+    clearSessionCookie(reply);
+    return reply.code(204).send();
+  });
+}

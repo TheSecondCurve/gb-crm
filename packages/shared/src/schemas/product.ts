@@ -1,7 +1,7 @@
 import { z } from "zod";
 
-import { productStatusSchema, productTypeSchema } from "../enums";
-import { pageQuerySchema, queryBooleanSchema } from "./common";
+import { productStatusSchema, productTypeSchema } from "../enums.js";
+import { pageQuerySchema, queryBooleanSchema } from "./common.js";
 
 const nullableText = z.string().nullable();
 
