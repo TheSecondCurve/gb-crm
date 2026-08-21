@@ -188,3 +188,38 @@ select:focus, textarea:focus { outline: 1px solid var(--ink); }
 
 /* 受保护路由等待 GET /auth/me 时的占位 */
 .page-loading { min-height: 100vh; display: flex; align-items: center; justify-content: center; color: var(--text-3); }
+
+/* ---- PR 9 DataGrid：Excel 式表格（快照无此组件） ---- */
+
+/* 覆盖快照的行点击语义（design.md §7.1）：单击只选中，不进入编辑 */
+.data-grid tbody tr { cursor: default; }
+
+.data-grid-scroll { overflow-x: auto; }
+
+/* 冻结首列（Appendix B） */
+.data-grid-table th:first-child, .data-grid-table td:first-child { position: sticky; left: 0; background: rgb(255, 255, 255); z-index: 1; }
+
+.data-grid-table tbody tr:hover td:first-child { background: var(--bg); }
+
+.data-grid-table .row-disabled td:first-child { background: var(--bg); }
+
+.data-grid-table td.cell-selected { outline: 1px solid var(--ink); outline-offset: -1px; }
+
+.data-grid-table td input, .data-grid-table td textarea, .data-grid-table td select { width: 100%; padding: 6px 8px; }
+
+.grid-toolbar { display: flex; justify-content: flex-end; padding: 8px 12px; border-bottom: 1px solid var(--hairline); }
+
+.column-picker { position: relative; }
+
+.column-picker-panel { position: absolute; right: 0; top: calc(100% + 4px); z-index: 20; display: flex; flex-direction: column; gap: 6px; min-width: 140px; max-height: 320px; overflow-y: auto; background: rgb(255, 255, 255); border: 1px solid var(--hairline); border-radius: 6px; padding: 10px 12px; box-shadow: 0 4px 16px rgba(20, 18, 16, 0.08); }
+
+/* multi / relation 的格内下拉面板 */
+.cell-dropdown { display: flex; flex-direction: column; gap: 6px; padding: 4px 0; }
+
+.cell-relation-search { margin-bottom: 4px; }
+
+.cell-relation-option { border: none; background: transparent; text-align: left; padding: 4px 6px; border-radius: 4px; }
+
+.cell-relation-option:hover { background: var(--bg); }
+
+.cell-relation-option.active { color: var(--accent); }
