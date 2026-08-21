@@ -16,6 +16,8 @@ export const scriptEnvSchema = z.object({
   HOST: z.string().min(1).default("127.0.0.1"),
   PORT: z.coerce.number().int().min(1).max(65535).default(3001),
   DATABASE_PATH: z.string().min(1).default("./data/gb-crm.sqlite"),
+  // 生产静态资源目录（apps/web/dist）；默认按仓库布局推导，Docker 等场景可覆盖
+  WEB_DIST: z.string().min(1).optional(),
   COOKIE_SECURE: boolString(false),
   TRUST_PROXY: boolString(false),
   ADMIN_USERNAME: z.string().min(1).optional(),

@@ -1,5 +1,6 @@
 // buildApp() 不 listen，测试用 app.inject()（K3）。
 // PR 4：注册 helmet / 签名 cookie / 限流（仅 login）/ session-auth / 统一错误信封 / auth 路由。
+// PR 14：NODE_ENV=production 时注册 static-spa（托管 apps/web/dist + SPA fallback，K20）。
 // env 与 db 由调用方注入（生产 index.ts 用真实 env+db，测试注入临时库与假时钟）。
 import helmet from "@fastify/helmet";
 import rateLimit from "@fastify/rate-limit";
@@ -15,6 +16,7 @@ import { usersRoutes, type UsersRoutesOptions } from "./modules/users/routes.js"
 import { registerCookie } from "./plugins/cookie.js";
 import { registerErrorHandler } from "./plugins/error-handler.js";
 import { sessionAuth } from "./plugins/session-auth.js";
+import { DEFAULT_WEB_DIST, registerStaticSpa, spaNotFoundHandler } from "./plugins/static-spa.js";
 
 export interface BuildAppOptions extends FastifyServerOptions {
   env: AppEnv;
@@ -27,10 +29,12 @@ export interface BuildAppOptions extends FastifyServerOptions {
   gcProbability?: number;
   /** 密码 hash 函数注入（users 模块；测试可用降参数 argon2 提速） */
   hashFn?: UsersRoutesOptions["hashFn"];
+  /** 生产静态资源目录覆盖（默认 env.WEB_DIST ?? 仓库布局推导）；仅 NODE_ENV=production 生效 */
+  webDist?: string;
 }
 
 export function buildApp(options: BuildAppOptions): FastifyInstance {
-  const { env, db, now, rateLimitMax, gcProbability, hashFn, ...serverOptions } = options;
+  const { env, db, now, rateLimitMax, gcProbability, hashFn, webDist, ...serverOptions } = options;
   const clock = now ?? (() => Date.now());
 
   const app = fastify({
@@ -41,7 +45,10 @@ export function buildApp(options: BuildAppOptions): FastifyInstance {
     ...serverOptions,
   });
 
-  registerErrorHandler(app);
+  // K20：仅生产托管 apps/web/dist（SPA fallback）；开发期走 Vite :5173 + 代理。
+  // 404 只能注册一次，故生产时把 SPA 分流注入 error-handler。
+  const production = env.NODE_ENV === "production";
+  registerErrorHandler(app, production ? { notFound: spaNotFoundHandler } : {});
   void app.register(helmet);
   registerCookie(app, env.SESSION_SECRET);
   // 限流仅挂 login 路由（global: false + 路由 config.rateLimit）；键为 request.ip（尊重 trustProxy）
@@ -61,6 +68,10 @@ export function buildApp(options: BuildAppOptions): FastifyInstance {
     customersRoutes(instance, { db, now: clock });
     done();
   });
+
+  if (production) {
+    registerStaticSpa(app, webDist ?? env.WEB_DIST ?? DEFAULT_WEB_DIST);
+  }
 
   return app;
 }
