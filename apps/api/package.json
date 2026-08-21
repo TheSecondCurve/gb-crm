@@ -11,7 +11,11 @@
     "db:import": "echo 'TODO(PR 12): feishu import'"
   },
   "dependencies": {
+    "@fastify/cookie": "^11.1.2",
+    "@fastify/helmet": "^13.1.1",
+    "@fastify/rate-limit": "^11.2.0",
     "@gb-crm/shared": "workspace:*",
+    "argon2": "^0.45.1",
     "better-sqlite3": "^13.0.3",
     "drizzle-orm": "^0.45.2",
     "fastify": "^5.12.1",

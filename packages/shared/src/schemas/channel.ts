@@ -5,8 +5,8 @@ import {
   channelStatusSchema,
   channelTypeSchema,
   platformSchema,
-} from "../enums";
-import { pageQuerySchema } from "./common";
+} from "../enums.js";
+import { epochMsSchema, pageQuerySchema } from "./common.js";
 
 const nullableText = z.string().nullable();
 
@@ -43,7 +43,7 @@ export type ChannelWrite = z.infer<typeof channelWriteSchema>;
 
 export const channelPatchSchema = channelWriteSchema
   .partial()
-  .extend({ updatedAt: z.number().int() });
+  .extend({ updatedAt: epochMsSchema });
 export type ChannelPatch = z.infer<typeof channelPatchSchema>;
 
 export const channelSortSchema = z.enum(["updatedAt", "createdAt", "name"]);

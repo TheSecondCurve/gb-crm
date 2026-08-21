@@ -1,7 +1,7 @@
 import { z } from "zod";
 
-import { customerTypeSchema, tagSchema } from "../enums";
-import { pageQuerySchema } from "./common";
+import { customerTypeSchema, tagSchema } from "../enums.js";
+import { epochMsSchema, pageQuerySchema } from "./common.js";
 
 const nullableText = z.string().nullable();
 
@@ -42,7 +42,7 @@ export type CustomerWrite = z.infer<typeof customerWriteSchema>;
 // PATCH 内核（K24）：.partial() 只表示键可缺席，实现不得把缺席键绑成 SQL NULL。
 export const customerPatchSchema = customerWriteSchema
   .partial()
-  .extend({ updatedAt: z.number().int() });
+  .extend({ updatedAt: epochMsSchema });
 export type CustomerPatch = z.infer<typeof customerPatchSchema>;
 
 export const customerSortSchema = z.enum(["updatedAt", "createdAt", "nickname"]);

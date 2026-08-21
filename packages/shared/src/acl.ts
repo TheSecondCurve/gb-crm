@@ -1,8 +1,8 @@
 import { z } from "zod";
 
-import type { SystemRole } from "./enums";
+import type { SystemRole } from "./enums.js";
 
-export type { SystemRole } from "./enums";
+export type { SystemRole } from "./enums.js";
 
 export const resourceSchema = z.enum(["users", "channels", "products", "customers", "auth"]);
 export type Resource = z.infer<typeof resourceSchema>;

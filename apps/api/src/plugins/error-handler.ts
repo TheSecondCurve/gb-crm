@@ -1,0 +1,84 @@
+// 统一错误信封 { error: { code, message, details? } }（API / Interface Changes 章节）。
+// message 一律中文、可直接 Toast。Zod 校验失败 → 422 VALIDATION。
+import type { FastifyInstance } from "fastify";
+import { ZodError } from "zod";
+
+export type ErrorCode =
+  | "INVALID_CREDENTIALS"
+  | "UNAUTHORIZED"
+  | "FORBIDDEN"
+  | "NOT_FOUND"
+  | "VALIDATION"
+  | "CONFLICT"
+  | "RATE_LIMITED"
+  | "INTERNAL";
+
+export class ApiError extends Error {
+  constructor(
+    public readonly statusCode: number,
+    public readonly code: ErrorCode,
+    message: string,
+    public readonly details?: unknown,
+  ) {
+    super(message);
+    this.name = "ApiError";
+  }
+}
+
+export const unauthorized = (message = "未登录或会话已失效"): ApiError =>
+  new ApiError(401, "UNAUTHORIZED", message);
+
+// Fastify 自带错误（限流 429、body 解析 400 等）→ 信封映射；400 统一归并到 422 VALIDATION。
+const STATUS_MAP: Record<number, { code: ErrorCode; message: string }> = {
+  400: { code: "VALIDATION", message: "请求参数不合法" },
+  401: { code: "UNAUTHORIZED", message: "未登录或会话已失效" },
+  403: { code: "FORBIDDEN", message: "没有权限执行此操作" },
+  404: { code: "NOT_FOUND", message: "资源不存在" },
+  409: { code: "CONFLICT", message: "数据已被他人修改，请刷新后重试" },
+  422: { code: "VALIDATION", message: "请求参数不合法" },
+  429: { code: "RATE_LIMITED", message: "请求过于频繁，请稍后重试" },
+};
+
+export function registerErrorHandler(app: FastifyInstance): void {
+  app.setNotFoundHandler((_req, reply) => {
+    void reply.code(404).send({ error: { code: "NOT_FOUND", message: "资源不存在" } });
+  });
+
+  app.setErrorHandler((err, req, reply) => {
+    if (err instanceof ZodError) {
+      return reply.code(422).send({
+        error: {
+          code: "VALIDATION",
+          message: "请求参数不合法",
+          details: err.issues.map((i) => ({ path: i.path.join("."), message: i.message })),
+        },
+      });
+    }
+    if (err instanceof ApiError) {
+      return reply.code(err.statusCode).send({
+        error: {
+          code: err.code,
+          message: err.message,
+          ...(err.details !== undefined ? { details: err.details } : {}),
+        },
+      });
+    }
+    const statusCode = getStatusCode(err);
+    const mapped = STATUS_MAP[statusCode];
+    if (mapped) {
+      return reply.code(statusCode).send({ error: { code: mapped.code, message: mapped.message } });
+    }
+    req.log.error(err);
+    return reply
+      .code(500)
+      .send({ error: { code: "INTERNAL", message: "服务器内部错误" } });
+  });
+}
+
+function getStatusCode(err: unknown): number {
+  if (typeof err === "object" && err !== null && "statusCode" in err) {
+    const sc = (err as { statusCode?: unknown }).statusCode;
+    if (typeof sc === "number" && sc >= 400) return sc;
+  }
+  return 500;
+}

@@ -11,7 +11,7 @@ import type {
   ProductType,
   SystemRole,
   Tag,
-} from "./enums";
+} from "./enums.js";
 
 // code → 中文 label，全量对应 docs/design.md Appendix A.5（K11：禁止节选）。
 
