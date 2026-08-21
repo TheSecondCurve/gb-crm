@@ -19,6 +19,8 @@ export class ApiError extends Error {
     public readonly code: ErrorCode,
     message: string,
     public readonly details?: unknown,
+    /** 信封顶层 data（与 error 同级）；409 CONFLICT 时带当前完整行（API 章节 ErrorEnvelope） */
+    public readonly data?: unknown,
   ) {
     super(message);
     this.name = "ApiError";
@@ -27,6 +29,18 @@ export class ApiError extends Error {
 
 export const unauthorized = (message = "未登录或会话已失效"): ApiError =>
   new ApiError(401, "UNAUTHORIZED", message);
+
+export const forbidden = (message = "没有权限执行此操作"): ApiError =>
+  new ApiError(403, "FORBIDDEN", message);
+
+export const notFound = (message = "资源不存在"): ApiError =>
+  new ApiError(404, "NOT_FOUND", message);
+
+export const conflict = (message: string, data?: unknown): ApiError =>
+  new ApiError(409, "CONFLICT", message, undefined, data);
+
+export const unprocessable = (message: string, details?: unknown): ApiError =>
+  new ApiError(422, "VALIDATION", message, details);
 
 // Fastify 自带错误（限流 429、body 解析 400 等）→ 信封映射；400 统一归并到 422 VALIDATION。
 const STATUS_MAP: Record<number, { code: ErrorCode; message: string }> = {
@@ -61,6 +75,7 @@ export function registerErrorHandler(app: FastifyInstance): void {
           message: err.message,
           ...(err.details !== undefined ? { details: err.details } : {}),
         },
+        ...(err.data !== undefined ? { data: err.data } : {}),
       });
     }
     const statusCode = getStatusCode(err);
