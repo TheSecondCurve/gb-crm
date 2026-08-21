@@ -1,2 +1,9 @@
-// PR 1 骨架占位：枚举 / labels / acl / schemas 在 PR 2 落地（见 docs/design.md §6、Appendix A）。
-export {};
+export * from "./enums";
+export * from "./labels";
+export * from "./acl";
+export * from "./schemas/common";
+export * from "./schemas/auth";
+export * from "./schemas/user";
+export * from "./schemas/channel";
+export * from "./schemas/product";
+export * from "./schemas/customer";
