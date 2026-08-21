@@ -38,7 +38,7 @@ FROM node:24-bookworm-slim AS runtime
 ENV NODE_ENV=production \
     HOST=0.0.0.0 \
     PORT=3001 \
-    DATABASE_PATH=/var/lib/gb-crm/gb-crm.sqlite
+    DATABASE_PATH=/data/gb-crm.sqlite
 WORKDIR /app
 
 COPY package.json tsconfig.base.json ./
@@ -52,7 +52,7 @@ COPY apps/api/drizzle ./apps/api/drizzle
 COPY packages/shared/src ./packages/shared/src
 COPY --from=build /app/apps/web/dist ./apps/web/dist
 
-RUN mkdir -p /var/lib/gb-crm && chown -R node:node /var/lib/gb-crm
+RUN mkdir -p /data && chown -R node:node /data
 USER node
 
 EXPOSE 3001
