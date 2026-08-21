@@ -88,7 +88,7 @@ cp .env.production.example .env.production   # 填 SESSION_SECRET 与首次启�
 docker compose up -d --build
 ```
 
-- **SQLite 只在 named volume**（`crm-data` → `/var/lib/gb-crm`），不打包进镜像；
+- **SQLite 只在 named volume**（`crm-data` → `/data`），不打包进镜像；
   镜像也不含 `.env` / `data/` / `*.sqlite`（见 `.dockerignore`）。
 - 前置内网 **Caddy** 做 HTTPS（`caddy reverse-proxy` 到 `crm:3001`），此时 compose 里
   保持 `COOKIE_SECURE=true` + `TRUST_PROXY=true`；若纯 HTTP 直连调试则两者设 `false`。
@@ -101,8 +101,8 @@ docker compose up -d --build
 SQLite 备份**唯一**配方是 `.backup`（禁止 `cp` 正在 WAL 的热库，K29）：
 
 ```bash
-docker compose exec crm sh -c 'sqlite3 "$DATABASE_PATH" ".backup /var/lib/gb-crm/gb-crm.bak-$(date +%F)"'
-docker cp "$(docker compose ps -q crm)":/var/lib/gb-crm/gb-crm.bak-"$(date +%F)" .
+docker compose exec crm sh -c 'sqlite3 "$DATABASE_PATH" ".backup /data/gb-crm.bak-$(date +%F)"'
+docker cp "$(docker compose ps -q crm)":/data/gb-crm.bak-"$(date +%F)" .
 ```
 
 （无 `sqlite3` CLI 时可用进程内 `db.backup(dest)`；回滚 = 停容器、回拷 bak、重启。）
