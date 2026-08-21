@@ -1,0 +1,14 @@
+/* 视觉 token（docs/design.md §4，与女商运营管理端快照一致，小写 hex）。
+   --on-ink 来自 style.md 辅助约定，mhtml :root 无。 */
+:root {
+  --bg: #f1f1ef; /* 冷灰底 paper — 主底，永不改成暖象牙 */
+  --ink: #141210; /* 玄黑 — 侧栏 / 主按钮 / 主文字；禁整页铺黑 */
+  --cream: #edeae3; /* 奶白 — 玄黑底上的字；不用纯白 */
+  --accent: #ce1432; /* 冷漆红 — 面积 ≤5%，永不铺底 */
+  --text-2: #5a544c;
+  --text-3: #9a948c;
+  --hairline: #d8d6d1;
+  --note: #a39d93; /* 玄黑底注释 */
+  --line-dark: #3a3530;
+  --on-ink: #dcd7ce; /* 玄黑底亮字（style.md 辅助） */
+}

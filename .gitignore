@@ -1,0 +1,10 @@
+node_modules/
+dist/
+coverage/
+*.sqlite*
+.env
+data/
+.env.production
+e2e/.tmp/
+__pycache__/
+*.pyc

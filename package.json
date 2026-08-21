@@ -1,0 +1,33 @@
+{
+  "name": "gb-crm",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=24"
+  },
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "concurrently -n api,web -c cyan,magenta \"npm run dev -w @gb-crm/api\" \"npm run dev -w @gb-crm/web\"",
+    "test": "npm run test --workspaces",
+    "typecheck": "npm run typecheck --workspaces",
+    "lint": "npm run lint --workspaces",
+    "db:migrate": "npm run db:migrate -w @gb-crm/api",
+    "e2e": "npm run build -w @gb-crm/web && playwright test --config e2e/playwright.config.ts"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.35.0",
+    "@playwright/test": "^1.62.1",
+    "concurrently": "^9.2.1",
+    "eslint": "^9.35.0",
+    "eslint-plugin-react-hooks": "^5.2.0",
+    "typescript-eslint": "^8.43.0"
+  },
+  "allowScripts": {
+    "argon2": true,
+    "esbuild": true,
+    "better-sqlite3": true
+  }
+}
