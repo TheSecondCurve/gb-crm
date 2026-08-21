@@ -9,13 +9,13 @@ services:
       NODE_ENV: production
       HOST: "0.0.0.0"
       PORT: "3001"
-      DATABASE_PATH: /var/lib/gb-crm/gb-crm.sqlite
+      DATABASE_PATH: /data/gb-crm.sqlite
       TRUST_PROXY: "true" # 前面是内网 Caddy（HTTPS）；无反代时改 false
       COOKIE_SECURE: "true" # 与 HTTPS 配套；纯 HTTP 内网改 false（启动会有 warn）
     env_file:
       - .env.production # SESSION_SECRET / ADMIN_USERNAME / ADMIN_PASSWORD
     volumes:
-      - crm-data:/var/lib/gb-crm # SQLite 只在 volume，不进镜像
+      - crm-data:/data # SQLite 只在 volume，不进镜像
     restart: unless-stopped
 
 volumes:

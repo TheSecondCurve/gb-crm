@@ -679,7 +679,7 @@ npm run dev                   # api :3001 + web :5173
 docker compose up -d --build
 ```
 
-Fastify 在 `NODE_ENV=production` 托管 `apps/web/dist`：**已存在的静态文件按路径提供**；其它非 `/api/*` 的 GET 一律 `index.html`（K20 SPA fallback）。`db/client.ts` 在创建库文件后 `chmod 600`。容器内 `HOST=0.0.0.0`，SQLite 走 named volume（例如 `/var/lib/gb-crm`），**不** COPY 进镜像。前面放内网 Caddy 做 HTTPS；`COOKIE_SECURE=true`、`TRUST_PROXY=true`。非 loopback 且未 Secure 时进程仍启动但 pino warn。不暴露公网。
+Fastify 在 `NODE_ENV=production` 托管 `apps/web/dist`：**已存在的静态文件按路径提供**；其它非 `/api/*` 的 GET 一律 `index.html`（K20 SPA fallback）。`db/client.ts` 在创建库文件后 `chmod 600`。容器内 `HOST=0.0.0.0`，SQLite 走 named volume（`/data`），**不** COPY 进镜像。前面放内网 Caddy 做 HTTPS；`COOKIE_SECURE=true`、`TRUST_PROXY=true`。非 loopback 且未 Secure 时进程仍启动但 pino warn。不暴露公网。
 
 `docker-compose.yml` 要点（PR 14 落地，不是示意草稿）：
 
@@ -692,12 +692,12 @@ services:
       NODE_ENV: production
       HOST: "0.0.0.0"
       PORT: "3001"
-      DATABASE_PATH: /var/lib/gb-crm/gb-crm.sqlite
+      DATABASE_PATH: /data/gb-crm.sqlite
       TRUST_PROXY: "true"
       COOKIE_SECURE: "true"
       # SESSION_SECRET / ADMIN_* 用 env_file 或 secrets，不写进 compose
     volumes:
-      - crm-data:/var/lib/gb-crm
+      - crm-data:/data
     restart: unless-stopped
 volumes:
   crm-data:
@@ -1347,7 +1347,7 @@ sqlite3 "$DATABASE_PATH" ".backup '${DATABASE_PATH}.bak-$(date +%F)'"
 | `NODE_ENV` | 否 | `development` | `production` 时关 CORS、开 Secure 建议 |
 | `HOST` | 否 | `127.0.0.1` | Compose 内用 `0.0.0.0`；非 loopback 且未 Secure → 启动 warn |
 | `PORT` | 否 | `3001` | |
-| `DATABASE_PATH` | 否 | `./data/gb-crm.sqlite` | 创建后 chmod 600 |
+| `DATABASE_PATH` | 否 | `./data/gb-crm.sqlite` | 相对路径锚定仓库根（本地 → `<root>/data/`，Docker 用绝对路径 `/data/`）；创建后 chmod 600 |
 | `SESSION_SECRET` | **是** | — | ≥32 字符，**cookie 签名** |
 | `COOKIE_SECURE` | 否 | `false` | HTTPS 时 `true` |
 | `TRUST_PROXY` | 否 | `false` | 反代后才 true |
