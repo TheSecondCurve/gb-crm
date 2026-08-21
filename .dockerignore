@@ -1,0 +1,10 @@
+# 构建上下文排除（K32：sqlite / .env 绝不进镜像）
+**/node_modules
+**/dist
+**/coverage
+data/
+*.sqlite*
+.env
+.env.production
+e2e/.tmp
+.git

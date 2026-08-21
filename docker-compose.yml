@@ -1,0 +1,22 @@
+# 内网一键部署（设计 §13 / K32）。机密（SESSION_SECRET / ADMIN_*）走 env_file，不写进本文件。
+# 使用前先 cp .env.production.example .env.production 并填写。
+services:
+  crm:
+    build: .
+    ports:
+      - "3001:3001" # 或只让 Caddy 连 compose 网络，不对外 publish
+    environment:
+      NODE_ENV: production
+      HOST: "0.0.0.0"
+      PORT: "3001"
+      DATABASE_PATH: /var/lib/gb-crm/gb-crm.sqlite
+      TRUST_PROXY: "true" # 前面是内网 Caddy（HTTPS）；无反代时改 false
+      COOKIE_SECURE: "true" # 与 HTTPS 配套；纯 HTTP 内网改 false（启动会有 warn）
+    env_file:
+      - .env.production # SESSION_SECRET / ADMIN_USERNAME / ADMIN_PASSWORD
+    volumes:
+      - crm-data:/var/lib/gb-crm # SQLite 只在 volume，不进镜像
+    restart: unless-stopped
+
+volumes:
+  crm-data:

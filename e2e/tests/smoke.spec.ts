@@ -1,0 +1,53 @@
+import { expect, test } from "@playwright/test";
+
+// 种子账号/数据见 apps/api/scripts/e2e-seed.ts（run-server.sh 每次重建）
+const ADMIN = { username: "admin", password: "admin-e2e-password" };
+const ASSISTANT = { username: "assistant", password: "assistant-e2e-pass" };
+const SEED_NICKNAME = "e2e种子客户";
+const RENAMED = "e2e改名客户";
+
+async function login(page: import("@playwright/test").Page, username: string, password: string) {
+  await page.goto("/login");
+  await page.getByLabel("用户名").fill(username);
+  await page.getByLabel("密码").fill(password);
+  await page.getByRole("button", { name: "登录" }).click();
+  await expect(page).toHaveURL(/\/customers/);
+}
+
+test("admin：登录 → 客户可见 → 搜索 → 双击改昵称 → 刷新仍在", async ({ page }) => {
+  await page.goto("/");
+  // 未登录 → 重定向 /login
+  await expect(page).toHaveURL(/\/login/);
+  await page.getByLabel("用户名").fill(ADMIN.username);
+  await page.getByLabel("密码").fill(ADMIN.password);
+  await page.getByRole("button", { name: "登录" }).click();
+  await expect(page).toHaveURL(/\/customers/);
+
+  // 客户列表可见（SPA fallback 下刷新本页面也应可直达，这里先验证列表）
+  const nicknameCell = page.locator('[data-cell$=":nickname"]').first();
+  await expect(nicknameCell).toContainText(SEED_NICKNAME);
+
+  // 搜索（300ms debounce，expect 自带轮询等待）
+  await page.getByPlaceholder("搜索客户…").fill("e2e种子");
+  await expect(nicknameCell).toContainText(SEED_NICKNAME);
+  // 清空搜索再编辑，避免改名后不匹配过滤条件
+  await page.getByPlaceholder("搜索客户…").fill("");
+  await expect(nicknameCell).toContainText(SEED_NICKNAME);
+
+  // 双击昵称格 → 行内编辑 → Enter 提交（PATCH 走行内队列）
+  await nicknameCell.dblclick();
+  const editor = page.getByRole("textbox", { name: "昵称" });
+  await editor.fill(RENAMED);
+  await editor.press("Enter");
+  await expect(nicknameCell).toContainText(RENAMED);
+
+  // 刷新仍在（持久化 + SPA fallback 可直达 /customers）
+  await page.reload();
+  await expect(page.locator('[data-cell$=":nickname"]').first()).toContainText(RENAMED);
+});
+
+test("assistant 登录看不到「团队成员」菜单", async ({ page }) => {
+  await login(page, ASSISTANT.username, ASSISTANT.password);
+  await expect(page.getByRole("link", { name: "客户信息" })).toBeVisible();
+  await expect(page.getByRole("link", { name: "团队成员" })).toHaveCount(0);
+});

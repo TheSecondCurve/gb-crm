@@ -1,6 +1,8 @@
 // 统一错误信封 { error: { code, message, details? } }（API / Interface Changes 章节）。
 // message 一律中文、可直接 Toast。Zod 校验失败 → 422 VALIDATION。
-import type { FastifyInstance } from "fastify";
+// 404 也只有一个 handler（Fastify 不允许同前缀重复 setNotFoundHandler）：默认 JSON 信封；
+// 生产 SPA fallback 由 app.ts 经 options.notFound 注入（plugins/static-spa.ts，K20）。
+import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { ZodError } from "zod";
 
 export type ErrorCode =
@@ -53,10 +55,16 @@ const STATUS_MAP: Record<number, { code: ErrorCode; message: string }> = {
   429: { code: "RATE_LIMITED", message: "请求过于频繁，请稍后重试" },
 };
 
-export function registerErrorHandler(app: FastifyInstance): void {
-  app.setNotFoundHandler((_req, reply) => {
-    void reply.code(404).send({ error: { code: "NOT_FOUND", message: "资源不存在" } });
-  });
+export type NotFoundHandler = (req: FastifyRequest, reply: FastifyReply) => unknown;
+
+export const notFoundEnvelope: NotFoundHandler = (_req, reply) =>
+  reply.code(404).send({ error: { code: "NOT_FOUND", message: "资源不存在" } });
+
+export function registerErrorHandler(
+  app: FastifyInstance,
+  options: { notFound?: NotFoundHandler } = {},
+): void {
+  app.setNotFoundHandler(options.notFound ?? notFoundEnvelope);
 
   app.setErrorHandler((err, req, reply) => {
     if (err instanceof ZodError) {

@@ -53,5 +53,38 @@ CI 使用官方 Node 22 环境，无需额外处理。
 
 ## 生产部署
 
-内网 Docker 单进程（设计 K32）：`Dockerfile` 与 `docker-compose.yml` 在 PR 14 提供。
-要点：SQLite 走 named volume（不进镜像）、前置内网 Caddy 做 HTTPS、`COOKIE_SECURE=true`、`TRUST_PROXY=true`；同一 Fastify 进程托管 `/api` 与 `apps/web/dist`（SPA fallback）。
+内网 Docker 单进程（设计 K32 / §13）：同一 Fastify 进程托管 `/api` 与 `apps/web/dist`，
+非 `/api/*` 且非静态文件的 GET 回 `index.html`（SPA fallback，K20）。
+
+```bash
+cp .env.production.example .env.production   # 填 SESSION_SECRET 与首次启动的 ADMIN_*
+docker compose up -d --build
+```
+
+- **SQLite 只在 named volume**（`crm-data` → `/var/lib/gb-crm`），不打包进镜像；
+  镜像也不含 `.env` / `data/` / `*.sqlite`（见 `.dockerignore`）。
+- 前置内网 **Caddy** 做 HTTPS（`caddy reverse-proxy` 到 `crm:3001`），此时 compose 里
+  保持 `COOKIE_SECURE=true` + `TRUST_PROXY=true`；若纯 HTTP 直连调试则两者设 `false`。
+- `HOST` 非 loopback 且 `COOKIE_SECURE` 非 `true` 时，进程**只 warn 不拒启**
+  （pino 输出 `non-loopback bind without COOKIE_SECURE`）——这是提醒补 TLS，不是错误。
+- 容器以非 root（`node` 用户）运行；API 用 tsx 直接跑 TS 源码，web 在镜像构建期产出 dist。
+
+### 备份与回滚
+
+SQLite 备份**唯一**配方是 `.backup`（禁止 `cp` 正在 WAL 的热库，K29）：
+
+```bash
+docker compose exec crm sh -c 'sqlite3 "$DATABASE_PATH" ".backup /var/lib/gb-crm/gb-crm.bak-$(date +%F)"'
+docker cp "$(docker compose ps -q crm)":/var/lib/gb-crm/gb-crm.bak-"$(date +%F)" .
+```
+
+（无 `sqlite3` CLI 时可用进程内 `db.backup(dest)`；回滚 = 停容器、回拷 bak、重启。）
+
+### 冒烟测试（e2e）
+
+Playwright 冒烟在 `e2e/`（不挡合并，K28；不进 `pnpm test`）：
+
+```bash
+pnpm e2e   # 先构建 web，再起生产模式 api（种子库）跑冒烟
+```
+
