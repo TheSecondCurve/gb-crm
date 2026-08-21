@@ -1,0 +1,23 @@
+{
+  "name": "@gb-crm/api",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsx src/index.ts",
+    "test": "vitest run --coverage",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint . --config ../../eslint.config.js",
+    "db:migrate": "echo 'TODO(PR 3): drizzle migrate' ",
+    "db:import": "echo 'TODO(PR 12): feishu import'"
+  },
+  "dependencies": {
+    "@gb-crm/shared": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "^22.18.0",
+    "@vitest/coverage-v8": "^3.2.4",
+    "tsx": "^4.20.5",
+    "typescript": "^5.9.2",
+    "vitest": "^3.2.4"
+  }
+}

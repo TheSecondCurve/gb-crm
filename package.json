@@ -1,0 +1,20 @@
+{
+  "name": "gb-crm",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@11.22.0",
+  "scripts": {
+    "dev": "pnpm -r --parallel --filter @gb-crm/api --filter @gb-crm/web dev",
+    "test": "pnpm -r test",
+    "typecheck": "pnpm -r typecheck",
+    "lint": "pnpm -r lint",
+    "db:migrate": "pnpm --filter @gb-crm/api db:migrate",
+    "db:import": "pnpm --filter @gb-crm/api db:import"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.35.0",
+    "eslint": "^9.35.0",
+    "eslint-plugin-react-hooks": "^5.2.0",
+    "typescript-eslint": "^8.43.0"
+  }
+}
