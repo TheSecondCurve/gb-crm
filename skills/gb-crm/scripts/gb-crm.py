@@ -52,6 +52,8 @@ def request(method: str, url: str, token: str, body: bytes | None) -> tuple[int,
         headers={
             "Authorization": f"Bearer {token}",
             "Accept": "application/json",
+            # urllib 默认 UA（Python-urllib/x.y）会被 Cloudflare Bot Fight Mode 拦 1010
+            "User-Agent": "gb-crm-agent/1.0",
             **({"Content-Type": "application/json"} if body is not None else {}),
         },
     )
