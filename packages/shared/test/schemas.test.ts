@@ -5,6 +5,7 @@ import {
   channelPatchSchema,
   customerListQuerySchema,
   customerPatchSchema,
+  mintTokenSchema,
   pageQuerySchema,
   productListQuerySchema,
   productPatchSchema,
@@ -115,6 +116,36 @@ describe("patch schema（K24：键可缺席，不得绑默认值）", () => {
     ).toBe(false);
     expect(
       customerPatchSchema.safeParse({ ownerIds: [1.5], updatedAt: 1 }).success,
+    ).toBe(false);
+  });
+});
+
+describe("mintTokenSchema", () => {
+  it("接受 read/write，name 可缺席", () => {
+    expect(mintTokenSchema.parse({ username: "a", password: "p", scope: "read" })).toEqual({
+      username: "a",
+      password: "p",
+      scope: "read",
+    });
+    expect(
+      mintTokenSchema.parse({ username: "a", password: "p", scope: "write", name: "mba" }),
+    ).toMatchObject({ scope: "write", name: "mba" });
+  });
+
+  it("拒绝非法 scope / 空用户名 / 超长 name", () => {
+    expect(mintTokenSchema.safeParse({ username: "a", password: "p", scope: "admin" }).success).toBe(
+      false,
+    );
+    expect(mintTokenSchema.safeParse({ username: "", password: "p", scope: "read" }).success).toBe(
+      false,
+    );
+    expect(
+      mintTokenSchema.safeParse({
+        username: "a",
+        password: "p",
+        scope: "read",
+        name: "x".repeat(65),
+      }).success,
     ).toBe(false);
   });
 });

@@ -1,7 +1,9 @@
 // /api/v1/auth/* 路由（API / Interface Changes 鉴权表）。
-// 注意：session-auth 的 onRequest 钩子在路由注册前挂到 root scope，login/health 免登录。
-import { changePasswordSchema, loginSchema } from "@gb-crm/shared";
+// 注意：session-auth 的 onRequest 钩子在路由注册前挂到 root scope，
+// login / POST tokens / health 免登录；GET /agent/login.sh 不在 /api/v1 下，钩子不拦。
+import { changePasswordSchema, loginSchema, mintTokenSchema } from "@gb-crm/shared";
 import type { FastifyInstance } from "fastify";
+import { z } from "zod";
 
 import type { AppEnv } from "../../env.js";
 import type { Db } from "../../db/client.js";
@@ -13,7 +15,11 @@ import {
   gcSessions,
   SESSION_IDLE_TTL_MS,
 } from "./session-repo.js";
+import { publicBaseUrl, renderLoginScript } from "./login-script.js";
 import { changeOwnPassword, LOGIN_FAIL_MESSAGE, verifyLogin } from "./service.js";
+import { listOwnTokens, mintToken, revokeOwnToken } from "./token-service.js";
+
+const tokenIdParamSchema = z.object({ id: z.coerce.number().int().positive() });
 
 export interface AuthRoutesOptions {
   db: Db;
@@ -71,6 +77,45 @@ export function authRoutes(app: FastifyInstance, opts: AuthRoutesOptions): void 
         systemRole: user.systemRole,
       },
     };
+  });
+
+  app.post(
+    "/api/v1/auth/tokens",
+    {
+      config: {
+        rateLimit: { max: opts.rateLimitMax ?? 10, timeWindow: "1 minute" },
+      },
+    },
+    async (req, reply) => {
+      const body = mintTokenSchema.parse(req.body ?? {});
+      const minted = await mintToken(db, {
+        username: body.username,
+        password: body.password,
+        scope: body.scope,
+        name: body.name,
+        now: now(),
+      });
+      if (!minted) throw new ApiError(401, "INVALID_CREDENTIALS", LOGIN_FAIL_MESSAGE);
+      return reply.code(201).send({ data: minted });
+    },
+  );
+
+  app.get("/api/v1/auth/tokens", async (req) => {
+    return { data: listOwnTokens(db, req.user!.id) };
+  });
+
+  app.delete("/api/v1/auth/tokens/:id", async (req, reply) => {
+    const { id } = tokenIdParamSchema.parse(req.params);
+    revokeOwnToken(db, req.user!.id, id, now());
+    return reply.code(204).send();
+  });
+
+  app.get("/agent/login.sh", async (req, reply) => {
+    const script = renderLoginScript(publicBaseUrl(req));
+    return reply
+      .header("Content-Type", "text/x-shellscript; charset=utf-8")
+      .header("Content-Disposition", 'inline; filename="login.sh"')
+      .send(script);
   });
 
   app.patch("/api/v1/auth/password", async (req, reply) => {

@@ -37,6 +37,33 @@ xcode-select --install
 
 CI 使用官方 Node 24 环境，无需额外处理。
 
+## Agent 令牌（本机 skill，无需克隆仓库）
+
+已部署的 CRM 托管登录脚本。同事电脑只要能访问内网 API：
+
+```bash
+curl -fsSL http://<crm-host>/agent/login.sh | sh
+```
+
+交互输入用户名、密码、范围（`read` / `write`），写入 `~/.gb-crm/credentials.json`（目录 `700`、文件 `600`）。之后 skill 读这个文件，请求头：
+
+```
+Authorization: Bearer gbcrm_ro_…
+```
+
+非交互（CI / 无 TTY）：
+
+```bash
+GB_CRM_USERNAME=alice GB_CRM_PASSWORD='***' GB_CRM_SCOPE=read \
+  curl -fsSL http://<crm-host>/agent/login.sh | sh
+```
+
+- **read**：只能 GET（可撤销自己的令牌）。
+- **write**：走现有 REST 的写接口，仍受该用户 `can()` 角色约束。
+- 明文 token 只在签发接口出现一次；管理端列表只显示 prefix。禁用账户会撤销其令牌。
+
+Agent skill 包在仓库 `skills/gb-crm/`（备用；拷到本机 skill 目录即可用）。脚本读上述凭证文件，不把 token 写进 skill。完整设计 `docs/design.md` K35，命令与拷贝步骤 `docs/dev.md`。
+
 ## Git 工作流
 
 - `origin/dev` 与 `origin/main` **均已存在**，禁止再创建 `dev`。

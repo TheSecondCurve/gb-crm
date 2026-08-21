@@ -3,9 +3,10 @@
 // - PATCH 内核（K24）：键存在才 SET（null → SET NULL 可空列；非空列由 Zod 挡 422）；
 //   username 创建后不可改（PATCH 含 username → 422，「改用户名不在 v1」）；
 //   updatedAt 必带做行级 OCC：changes===0 → 软删 404，否则 409 且 data 带当前完整行；
-//   accountStatus 置 disabled 时删该用户全部 session（§5「禁用账户：删全部 session」）；
-// - setPassword：管理员给他人设密码，删该用户全部 session；
-// - 删除 = 软删并删其 sessions。
+//   accountStatus 置 disabled 时删该用户全部 session（§5「禁用账户：删全部 session」）
+//   并撤销其 agent 令牌；
+// - setPassword：管理员给他人设密码，删该用户全部 session（令牌保留）；
+// - 删除 = 软删并删其 sessions、撤销其令牌。
 import { PASSWORD_MIN_LENGTH, userWriteSchema } from "@gb-crm/shared";
 import type { UserListQuery, UserPatch } from "@gb-crm/shared";
 import { z } from "zod";
@@ -15,6 +16,7 @@ import { createAudit, updateAudit, type AuditContext } from "../../lib/audit.js"
 import { conflict, notFound, unprocessable } from "../../plugins/error-handler.js";
 import { hashPassword } from "../auth/service.js";
 import { deleteSessionsByUserId } from "../auth/session-repo.js";
+import { revokeAllTokensByUserId } from "../auth/token-repo.js";
 import { assembleUser, assembleUsers, type UserDto } from "./assemble.js";
 import {
   findLiveByUsername,
@@ -106,8 +108,11 @@ export function patchUser(db: Db, id: number, patch: UserPatch, ctx: AuditContex
     throw conflict("数据已被他人修改，请刷新后重试", assembleUser(db, row));
   }
 
-  // 禁用账户：删该用户全部 session（§5）
-  if (patch.accountStatus === "disabled") deleteSessionsByUserId(db, id);
+  // 禁用账户：删该用户全部 session（§5），并撤销 agent 令牌
+  if (patch.accountStatus === "disabled") {
+    deleteSessionsByUserId(db, id);
+    revokeAllTokensByUserId(db, id, ctx.now);
+  }
 
   return assembleUser(db, getUserByIdAny(db, id)!);
 }
@@ -135,4 +140,5 @@ export function deleteUser(db: Db, id: number, ctx: AuditContext): void {
   });
   if (changes === 0) throw notFound("用户不存在");
   deleteSessionsByUserId(db, id);
+  revokeAllTokensByUserId(db, id, ctx.now);
 }

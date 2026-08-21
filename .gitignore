@@ -6,3 +6,5 @@ coverage/
 data/
 .env.production
 e2e/.tmp/
+__pycache__/
+*.pyc

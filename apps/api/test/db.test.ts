@@ -26,6 +26,7 @@ describe("migration", () => {
       .all() as { name: string }[];
     expect(tables.map((t) => t.name)).toEqual([
       "__migrations",
+      "api_tokens",
       "channel_owners",
       "channels",
       "customer_community_channels",
@@ -75,6 +76,19 @@ describe("CHECK constraints", () => {
           "INSERT INTO customers (nickname, customer_type, created_at, updated_at) VALUES (?, ?, 1, 1)",
         )
         .run("x", "vip_customer"),
+    ).toThrowError(/CHECK/i);
+  });
+
+  it("rejects an invalid api_tokens.scope", () => {
+    tmp.sqlite
+      .prepare("INSERT INTO users (nickname, created_at, updated_at) VALUES (?, 1, 1)")
+      .run("u");
+    expect(() =>
+      tmp.sqlite
+        .prepare(
+          "INSERT INTO api_tokens (user_id, token_hash, token_prefix, scope, created_at, expires_at) VALUES (1, 'h', 'gbcrm_ro_abcd1234', 'admin', 1, 2)",
+        )
+        .run(),
     ).toThrowError(/CHECK/i);
   });
 

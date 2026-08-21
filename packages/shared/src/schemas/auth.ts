@@ -13,3 +13,17 @@ export const changePasswordSchema = z.object({
   newPassword: z.string().min(PASSWORD_MIN_LENGTH),
 });
 export type ChangePasswordBody = z.infer<typeof changePasswordSchema>;
+
+/** Agent 个人令牌范围：read = 只读 GET；write = 走现有 REST，仍受 can() 约束 */
+export const tokenScopeSchema = z.enum(["read", "write"]);
+export type TokenScope = z.infer<typeof tokenScopeSchema>;
+
+export const TOKEN_NAME_MAX_LENGTH = 64;
+
+export const mintTokenSchema = z.object({
+  username: z.string().min(1),
+  password: z.string().min(1),
+  scope: tokenScopeSchema,
+  name: z.string().min(1).max(TOKEN_NAME_MAX_LENGTH).optional(),
+});
+export type MintTokenBody = z.infer<typeof mintTokenSchema>;

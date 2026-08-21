@@ -82,6 +82,30 @@ export const sessions = sqliteTable(
   ],
 );
 
+export const apiTokens = sqliteTable(
+  "api_tokens",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    userId: integer("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    tokenHash: text("token_hash").notNull(),
+    tokenPrefix: text("token_prefix").notNull(),
+    scope: text("scope").notNull(),
+    name: text("name"),
+    createdAt: integer("created_at").notNull(),
+    expiresAt: integer("expires_at").notNull(),
+    lastUsedAt: integer("last_used_at"),
+    revokedAt: integer("revoked_at"),
+  },
+  (t) => [
+    check("api_tokens_scope_check", sql`"scope" IN ('read', 'write')`),
+    uniqueIndex("api_tokens_token_hash_uq").on(t.tokenHash),
+    index("api_tokens_user_id_idx").on(t.userId),
+    index("api_tokens_expires_at_idx").on(t.expiresAt),
+  ],
+);
+
 export const channels = sqliteTable(
   "channels",
   {

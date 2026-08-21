@@ -2,7 +2,7 @@
 
 闪光团队客户信息管理系统（品牌文案锁定 **「闪光 · 客户运营」**，禁止「女商」）。内网单进程：Vite + React 管理端 + Fastify REST + SQLite。
 
-完整架构与编号决策见 `docs/design.md`（K1–K34）。需求原文 `docs/core.md`，视觉 `docs/style.md`。本文件是给编码代理的工作契约：改代码前先对照这里，再对照 design。
+完整架构与编号决策见 `docs/design.md`（K1–K35）。需求原文 `docs/core.md`，视觉 `docs/style.md`，Agent 签发与 Skill 用法 `docs/dev.md`。本文件是给编码代理的工作契约：改代码前先对照这里，再对照 design。
 
 ## 工程结构
 
@@ -13,6 +13,7 @@ gb-crm/
   apps/web/          @gb-crm/web    Vite + React 管理端（中文 UI）
   apps/api/          @gb-crm/api    Fastify + Drizzle + better-sqlite3
   packages/shared/   @gb-crm/shared Zod schema、枚举、labels、can() ACL
+  skills/gb-crm/     Agent skill 备用包（K35；不自动扫描）
   e2e/               Playwright 冒烟（不进 npm test，不挡合并）
   docs/              core.md / design.md / dev.md / style.md
   Dockerfile + docker-compose.yml
@@ -39,7 +40,7 @@ v1 **不抽** `packages/ui`。视觉 token 在 `apps/web/src/styles/tokens.css`�
 - `src/lib/pagination.ts` / `fuzzy.ts` / `audit.ts`
 - `src/plugins/` — cookie、session-auth、rbac、error-handler、static-spa
 - `src/db/` — client（PRAGMA）、schema、migrate、bootstrap-admin
-- `drizzle/0000_init.sql` 是 migration 真相；`schema.ts` 镜像 SQL
+- `drizzle/0000_init.sql` 是主数据 migration 真相；`0001_api_tokens.sql` 是 PAT（K35）；`schema.ts` 镜像 SQL
 
 测试用 `buildApp()` + `app.inject()`，不 listen。生产入口 `src/index.ts`：parseEnv → 建库 → migrate → bootstrap → listen。
 
@@ -105,7 +106,8 @@ Workspace 依赖写法：`"@gb-crm/shared": "*"`（npm 不支持 `workspace:*`�
 
 - 服务端 session + 签名 httpOnly cookie（HMAC = `SESSION_SECRET`）。不做 JWT、不做飞书登录。
 - 密码 argon2id。登录还要求 `system_role ∈ {admin, operator, assistant}`。
-- Session 最多每 30 分钟 touch 一次（或剩余 idle < 11h）。禁用账户立即删 session。
+- Session 最多每 30 分钟 touch 一次（或剩余 idle < 11h）。禁用账户立即删 session **并撤销 PAT**。
+- Agent PAT（K35）与 cookie **并行**：`Authorization: Bearer`；有 Bearer 不回落 cookie。签发：`curl -fsSL http://<host>/agent/login.sh | sh` → `~/.gb-crm/credentials.json`。`read`/`write` ∩ `can()`。Skill 在 `skills/gb-crm/`，**不含**密钥。不要给 Agent 开任意 SQL HTTP 接口。
 - 登录限流 10 次/分钟/IP；仅 `TRUST_PROXY=true` 时才信 `X-Forwarded-For`。
 - 权限唯一来源：`packages/shared` 的 `can(role, resource, action)`。缺席 = deny。`role===null` → false。路由用 `requireCan`，不要在 service 再抄一套角色判断。
 - **无行级 ACL**（没有「只看我的客户」）。
@@ -148,13 +150,14 @@ Workspace 依赖写法：`"@gb-crm/shared": "*"`（npm 不支持 `workspace:*`�
 4. **产品目录 `/products`**：类型/状态/是否套餐/价格（分）。
 5. **客户信息 `/customers`**：分页、模糊搜索、标签、渠道、归属人/升单人、可选父客户；预留可空唯一 `wechat_openid`（不接小程序）。
 6. 每张业务表有 `created_at` / `updated_at` / `created_by` / `updated_by`。
+7. **Agent 令牌**：已有用户本机签发 PAT，skill 调 REST（K35）。
 
 `feishu_record_id` 等列仍在 schema 里（历史列）。**v1 不做飞书 / CSV 导入**，不要加回 `import-feishu` 或 `FEISHU_*` 环境变量。主数据在管理端维护。
 
 ## 明确不要做
 
 - 飞书双向同步、飞书 OAuth、飞书机器人、飞书/CSV 导入脚本
-- JWT、GraphQL、微服务、Kafka、Redis、对象存储、Postgres
+- JWT、GraphQL、微服务、Kafka、Redis、对象存储、Postgres、任意 SQL 查询/写入 HTTP 接口（K35：写走 REST）
 - 微信小程序 / 支付（只留 `wechat_openid` 列）
 - 移动 App、i18n、暗色主题
 - 行级「只看我的客户」
