@@ -63,8 +63,8 @@ GB_CRM_USERNAME=alice GB_CRM_PASSWORD='***' GB_CRM_SCOPE=read \
 
 | 范围 | 能做什么 |
 | --- | --- |
-| `read` | GET；可 `DELETE` 自己的 `/api/v1/auth/tokens/:id` |
-| `write` | 上面 + 现有 REST 的 POST/PATCH/DELETE，仍受该用户 `can()` 约束 |
+| `read` | GET；`POST /api/v1/agent/sql` 的只读语句；可 `DELETE` 自己的 `/api/v1/auth/tokens/:id` |
+| `write` | 上面 + 现有 REST 的 POST/PATCH/DELETE（仍受该用户 `can()` 约束）+ agent/sql 写语句（写还需 admin） |
 
 禁用或软删用户会撤销其全部令牌。改自己密码不撤令牌。默认 90 天过期。列表/撤销：`GET` / `DELETE /api/v1/auth/tokens`（Bearer 或 cookie）。
 
@@ -79,10 +79,9 @@ Agent 只跑脚本，不要 Read 凭证文件、不要代收密码：
 
 ```bash
 python3 skills/gb-crm/scripts/gb-crm.py me
-python3 skills/gb-crm/scripts/gb-crm.py GET /api/v1/customers q=闪光 pageSize=50
-python3 skills/gb-crm/scripts/gb-crm.py POST /api/v1/customers --json '{"nickname":"未命名客户"}'
+python3 skills/gb-crm/scripts/gb-crm.py sql "SELECT id, nickname FROM customers WHERE deleted_at IS NULL LIMIT 20"
 ```
 
 凭证查找顺序：环境变量 `GB_CRM_TOKEN` + `GB_CRM_BASE_URL`，否则 `~/.gb-crm/credentials.json`。没有文件时脚本退出码 2，并提示跑上面的 `login.sh`。
 
-v1 **不**提供任意 SQL 查询/写入 HTTP 接口。写数据走 REST，PATCH 必带 `updatedAt`。
+Agent 数据访问走单一自由 SQL 端点 `POST /api/v1/agent/sql`（仅 Bearer PAT）：`stmt.readonly` 判读写，只读语句任意 scope / 角色放行，写语句必须 admin + write scope；单语句；读上限 1000 行截断——详见 `skills/gb-crm/SKILL.md` 与 design.md K35。REST 资源路由保留给 web 管理端。
