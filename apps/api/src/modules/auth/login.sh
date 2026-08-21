@@ -111,7 +111,12 @@ req = urllib.request.Request(
     base + "/api/v1/auth/tokens",
     data=body,
     method="POST",
-    headers={"Content-Type": "application/json", "Accept": "application/json"},
+    headers={
+        "Content-Type": "application/json",
+        "Accept": "application/json",
+        # urllib 默认 UA（Python-urllib/x.y）会被 Cloudflare Bot Fight Mode 拦 1010
+        "User-Agent": "gb-crm-agent/1.0",
+    },
 )
 # 内网/本机签发不走 http_proxy，否则 localhost 会被代理转走并挂起
 opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
