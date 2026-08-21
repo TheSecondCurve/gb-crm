@@ -1,0 +1,190 @@
+/* 基础样式 — 几乎原文提取自 example/example_page.html.mhtml（女商运营管理端快照）。
+   说明：
+   - :root token 在 tokens.css；
+   - 快照中为女商业务专属的日历 / 金句 / 日程样式（cal-* / quote-* / day-* /
+     default-quote-* / duration-options / import-result）不属于本系统，未拷贝；
+   - 快照里 Blink 序列化产生的空声明（如 `border-right-color: ;`）已清理为合法 CSS；
+   - 文件末尾追加少量快照没有的组件样式（toast、加载占位），用注释分隔。
+   - `.data-table tbody tr { cursor: pointer }` 行点击样式保留，PR 9 DataGrid 会覆盖。 */
+
+* { box-sizing: border-box; }
+
+body { margin: 0; background: var(--bg); color: var(--ink); font-family: -apple-system, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif; font-size: 14px; }
+
+h1 { font-size: 20px; margin: 0; }
+
+h2 { font-size: 16px; margin: 0 0 12px; }
+
+input, button { font: inherit; }
+
+input { padding: 8px 10px; border: 1px solid var(--hairline); border-radius: 4px; background: rgb(255, 255, 255); color: var(--ink); }
+
+input:focus { outline: 1px solid var(--ink); }
+
+button { padding: 8px 14px; border: 1px solid var(--hairline); border-radius: 4px; background: rgb(255, 255, 255); color: var(--ink); cursor: pointer; }
+
+button:disabled { color: var(--text-3); cursor: not-allowed; }
+
+.btn-primary { background: var(--ink); border-color: var(--ink); color: var(--cream); }
+
+.btn-danger { color: var(--accent); border-color: var(--accent); }
+
+.layout { display: flex; min-height: 100vh; }
+
+.content { flex: 1 1 0%; min-width: 0; display: flex; flex-direction: column; }
+
+.main { flex: 1 1 0%; padding: 28px 32px; min-width: 0; }
+
+.app-header { position: sticky; top: 0; z-index: 10; display: flex; align-items: center; gap: 16px; height: 52px; padding: 0 20px; background: rgb(255, 255, 255); border-bottom: 1px solid var(--hairline); }
+
+.sidebar-toggle { border: none; background: transparent; padding: 6px 8px; font-size: 15px; line-height: 1; border-radius: 4px; }
+
+.sidebar-toggle:hover { background: var(--bg); }
+
+.breadcrumb { color: var(--text-2); font-size: 13px; }
+
+.navbar-user { margin-left: auto; display: flex; align-items: center; gap: 12px; }
+
+.navbar-username { color: var(--text-2); font-size: 13px; }
+
+.navbar-logout { padding: 6px 12px; font-size: 13px; }
+
+.sidebar { width: 220px; flex-shrink: 0; background: var(--ink); color: var(--cream); display: flex; flex-direction: column; position: sticky; top: 0; height: 100vh; margin-left: 0; transition: margin-left 0.25s; }
+
+.sidebar-hidden { margin-left: -220px; }
+
+.sidebar-brand { display: flex; align-items: center; gap: 10px; height: 52px; padding: 0 20px; font-size: 15px; font-weight: 600; border-bottom: 1px solid var(--line-dark); }
+
+.brand-mark { width: 10px; height: 10px; background: var(--accent); border-radius: 2px; flex-shrink: 0; }
+
+.sidebar-nav { flex: 1 1 0%; padding: 12px 0; display: flex; flex-direction: column; overflow-y: auto; }
+
+.nav-group-title { display: flex; align-items: center; gap: 8px; width: 100%; padding: 10px 20px; font-size: 14px; font-weight: 600; color: var(--cream); background: transparent; border: none; border-left: 3px solid transparent; border-radius: 0; text-align: left; cursor: pointer; transition: background-color 0.15s; }
+
+.nav-group-title:hover { background: rgba(237, 234, 227, 0.06); }
+
+.nav-group-arrow { margin-left: auto; width: 12px; font-size: 10px; color: var(--text-3); transition: transform 0.25s; }
+
+.nav-group-title.collapsed .nav-group-arrow { transform: rotate(-90deg); }
+
+.nav-group-items { display: grid; grid-template-rows: 1fr; transition: grid-template-rows 0.25s, visibility 0.25s; }
+
+.nav-group-items.collapsed { grid-template-rows: 0fr; visibility: hidden; }
+
+.nav-group-inner { overflow: hidden; min-height: 0; }
+
+.sidebar-nav a { display: block; padding: 10px 20px 10px 32px; color: var(--note); text-decoration: none; border-left: 3px solid transparent; transition: background-color 0.15s, color 0.15s; }
+
+.sidebar-nav a:hover { background: rgba(237, 234, 227, 0.06); color: var(--cream); }
+
+.sidebar-nav a.active { color: var(--cream); border-left-color: var(--accent); }
+
+.card { background: rgb(255, 255, 255); border: 1px solid var(--hairline); border-radius: 6px; margin-bottom: 20px; }
+
+.card-header { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 16px; border-bottom: 1px solid var(--hairline); }
+
+.card-title { font-size: 14px; font-weight: 600; margin: 0; color: var(--text-2); }
+
+.card-body { padding: 16px; }
+
+.card-body-flush { padding: 0; }
+
+.card-body-flush .data-table { border: none; border-radius: 0; }
+
+.card-footer { padding: 12px 16px; border-top: 1px solid var(--hairline); }
+
+.card-footer .pagination { margin-top: 0; }
+
+.card-header .create-bar { margin-bottom: 0; }
+
+.badge { display: inline-block; padding: 1px 8px; font-size: 12px; border-radius: 999px; border: 1px solid var(--hairline); color: var(--text-3); }
+
+.badge-accent { border-color: var(--accent); color: var(--accent); }
+
+.badge-muted { border-color: var(--hairline); color: var(--text-3); }
+
+.page-head { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 20px; }
+
+.search-bar, .create-bar { display: flex; gap: 8px; }
+
+.create-bar { margin-bottom: 20px; }
+
+.form-error { color: var(--accent); margin: 8px 0; }
+
+.page-tip { color: var(--text-2); margin: 8px 0; }
+
+.empty { color: var(--text-3); text-align: center; padding: 40px 0; }
+
+.data-table { width: 100%; border-collapse: collapse; background: rgb(255, 255, 255); border: 1px solid var(--hairline); border-radius: 6px; overflow: hidden; }
+
+.data-table th, .data-table td { text-align: left; padding: 12px 16px; border-bottom: 1px solid var(--hairline); }
+
+.data-table th { color: var(--text-2); font-weight: 500; font-size: 13px; }
+
+.data-table tbody tr { cursor: pointer; }
+
+.data-table tbody tr:hover { background: var(--bg); }
+
+.data-table tbody tr:last-child td { border-bottom: none; }
+
+.row-disabled td { color: var(--text-3); background: var(--bg); }
+
+.row-actions { display: flex; gap: 8px; align-items: center; }
+
+.row-actions button { padding: 5px 10px; font-size: 13px; }
+
+.row-actions input { padding: 5px 8px; font-size: 13px; width: 140px; }
+
+.pagination { display: flex; align-items: center; gap: 12px; margin-top: 16px; color: var(--text-2); }
+
+.pagination .total { color: var(--text-3); margin-right: auto; }
+
+.login-page { min-height: 100vh; display: flex; align-items: center; justify-content: center; }
+
+.login-card { width: 340px; background: rgb(255, 255, 255); border: 1px solid var(--hairline); border-top: 3px solid var(--ink); border-radius: 8px; padding: 32px 28px; display: flex; flex-direction: column; gap: 16px; }
+
+.login-title { font-size: 18px; text-align: center; }
+
+.field { display: flex; flex-direction: column; gap: 6px; color: var(--text-2); font-size: 13px; }
+
+.modal-mask { position: fixed; inset: 0; background: rgba(20, 18, 16, 0.4); display: flex; align-items: center; justify-content: center; }
+
+.modal { width: 420px; max-width: 90vw; background: rgb(255, 255, 255); border-radius: 8px; padding: 24px; border-top: 3px solid var(--accent); }
+
+.modal-wide { width: 560px; }
+
+.detail-list { display: grid; grid-template-columns: 88px 1fr; gap: 10px 16px; margin: 0 0 20px; }
+
+.detail-list dt { color: var(--text-3); }
+
+.detail-list dd { margin: 0; word-break: break-all; }
+
+.tabs { display: flex; gap: 8px; margin-bottom: 16px; border-bottom: 1px solid var(--hairline); }
+
+.tabs button { border: none; border-bottom: 2px solid transparent; border-radius: 0; background: transparent; padding: 8px 12px; }
+
+.tabs button[aria-selected="true"] { border-bottom-color: var(--accent); font-weight: 600; }
+
+.modal-actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 16px; }
+
+.confirm-text { margin: 0; }
+
+select, textarea { padding: 8px 10px; border: 1px solid var(--hairline); border-radius: 4px; background: rgb(255, 255, 255); color: var(--ink); font: inherit; }
+
+select:focus, textarea:focus { outline: 1px solid var(--ink); }
+
+.modal .field { margin-bottom: 12px; }
+
+.field-inline { flex-direction: row; align-items: center; gap: 8px; }
+
+.inline-field { display: flex; align-items: center; gap: 6px; color: var(--text-2); font-size: 13px; }
+
+/* ---- 以下为快照没有、本系统新增的少量样式 ---- */
+
+/* Toast（components/Toast.tsx）：玄黑底奶白字，红边只做点缀 */
+.toast-list { position: fixed; right: 20px; bottom: 20px; z-index: 100; display: flex; flex-direction: column; gap: 8px; }
+
+.toast { background: var(--ink); color: var(--cream); border-left: 3px solid var(--accent); border-radius: 4px; padding: 10px 16px; font-size: 13px; }
+
+/* 受保护路由等待 GET /auth/me 时的占位 */
+.page-loading { min-height: 100vh; display: flex; align-items: center; justify-content: center; color: var(--text-3); }
