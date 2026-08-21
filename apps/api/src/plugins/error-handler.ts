@@ -13,6 +13,7 @@ export type ErrorCode =
   | "VALIDATION"
   | "CONFLICT"
   | "RATE_LIMITED"
+  | "SQL_ERROR"
   | "INTERNAL";
 
 export class ApiError extends Error {

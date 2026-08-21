@@ -71,6 +71,7 @@ def parse_args(argv: list[str]) -> tuple[str, str, dict[str, str], str | None]:
         die(
             "用法:\n"
             "  gb-crm.py me\n"
+            "  gb-crm.py sql \"SELECT id, nickname FROM customers WHERE deleted_at IS NULL\"\n"
             "  gb-crm.py GET /api/v1/customers q=闪光 pageSize=50\n"
             "  gb-crm.py POST /api/v1/customers --json '{\"nickname\":\"未命名客户\"}'\n"
             "  gb-crm.py PATCH /api/v1/customers/1 --json '{\"nickname\":\"x\",\"updatedAt\":1}'\n"
@@ -79,6 +80,12 @@ def parse_args(argv: list[str]) -> tuple[str, str, dict[str, str], str | None]:
         )
     if argv[1].lower() in ("me", "whoami"):
         return "GET", "/api/v1/auth/me", {}, None
+    if argv[1].lower() == "sql":
+        if len(argv) < 3 or not argv[2].strip():
+            die("缺少 SQL。用法: gb-crm.py sql \"SELECT ...\"")
+        return "POST", "/api/v1/agent/sql", {}, json.dumps(
+            {"sql": argv[2]}, ensure_ascii=False
+        )
     method = argv[1].upper()
     if len(argv) < 3:
         die("缺少 PATH。")

@@ -140,7 +140,7 @@ Phase 2 表（本设计不建表、不导入）：成交表 176、用户权益�
 | K32 | **内网 + Docker**。提供 `Dockerfile` 与 `docker-compose.yml`（PR 14 **必做**）。SQLite **volume 挂载**，不进镜像。可 `HOST=0.0.0.0` 跟在内网 Caddy 后；推荐 `COOKIE_SECURE=true` + HTTPS + `TRUST_PROXY=true`。非 loopback 且未 Secure 仍启动 warn。**不**暴露公网，不追加公网威胁加固 | 2026-08-21 产品/运维拍板（原 Q7）。 |
 | K33 | UI「删除」= 软删。v1 **无**回收站、**无**管理员硬删。`ON DELETE CASCADE`/`SET NULL` 仅 schema 预留，v1 路径永不触发 | 2026-08-21 产品拍板（原 Q9）。 |
 | K34 | 侧栏与登录标题品牌文案锁定为 **「闪光 · 客户运营」**。禁止「女商」 | 2026-08-21 产品拍板（原 Q13）。PR 8 用此常量。 |
-| K35 | Agent 访问：**PAT 与 cookie session 并行**，不做 JWT。已部署 CRM 托管 `GET /agent/login.sh`（`curl \| sh` 签发）；明文 token 只返回一次，本机 `~/.gb-crm/credentials.json`（目录 700 / 文件 600）。范围 `read`/`write` **∩** `can()`。Skill 包在仓库 `skills/gb-crm/` 备用（脚本发 Bearer，skill 不含密钥）。**不**开放任意 SQL | Agent 用不了 HttpOnly cookie；JWT 难作废（K5）。无项目代码的同事只能打已部署 API。写 SQL 会绕过 PATCH 内核 / OCC / 软删 / RBAC |
+| K35 | Agent 访问：**PAT 与 cookie session 并行**，不做 JWT。已部署 CRM 托管 `GET /agent/login.sh`（`curl \| sh` 签发）；明文 token 只返回一次，本机 `~/.gb-crm/credentials.json`（目录 700 / 文件 600）。范围 `read`/`write`（REST 资源路由仍 **∩** `can()`）。Skill 包在仓库 `skills/gb-crm/` 备用（脚本发 Bearer，skill 不含密钥）。Agent 数据访问收敛为单一端点 **`POST /api/v1/agent/sql`**（自由 SQL，仅 Bearer PAT，cookie 403）：用 better-sqlite3 `stmt.readonly` 判读写——只读语句任意 scope / 角色放行（含渠道密钥列，产品接受）；写语句必须 `write` scope + admin。读上限 1000 行截断；单语句。REST 资源路由保留给 web 管理端 | Agent 用不了 HttpOnly cookie；JWT 难作废（K5）。**2026-08-21 产品拍板推翻旧决定「不开放任意 SQL」**：换 token 节省与取数灵活性；写 SQL 绕过 PATCH 内核 / OCC / 软删 / RBAC 的风险由「仅 admin+write 可写」与 SKILL.md 工作守则兜底 |
 
 ---
 
@@ -222,6 +222,7 @@ gb-crm/
         modules/channels/{routes,service,repo}.ts
         modules/products/{routes,service,repo}.ts
         modules/customers/{routes,service,repo}.ts
+        modules/agent/routes.ts    # K35：POST /api/v1/agent/sql（单文件，直连 db.$client）
         lib/{pagination,fuzzy,audit,errors,patch-kernel,assemble}.ts
       test/
         helpers/{tmp-db,build-test-app,auth}.ts
@@ -442,13 +443,13 @@ GB_CRM_USERNAME=alice GB_CRM_PASSWORD='***' GB_CRM_SCOPE=read \
 | --- | --- |
 | 明文 | `gbcrm_ro_` / `gbcrm_rw_` + 32 字节 hex；**只在 201 响应出现一次** |
 | 库内 | `api_tokens.token_hash` = SHA-256(明文) hex；另存 `token_prefix`（前 17 字符）供列表/撤销 |
-| 范围 | `read` = GET/HEAD，外加撤销自己的 `DELETE /api/v1/auth/tokens/:id`；`write` = 现有 REST 写路径 |
-| 有效权限 | **token.scope ∩ `can(role, resource, action)`**。助手的 write 令牌仍不能建客户、改归属人、看渠道密钥 |
+| 范围 | `read` = GET/HEAD + `POST /api/v1/agent/sql`，外加撤销自己的 `DELETE /api/v1/auth/tokens/:id`；`write` = 现有 REST 写路径 + agent/sql |
+| 有效权限 | REST 资源路由：**token.scope ∩ `can(role, resource, action)`**。助手的 write 令牌仍不能建客户、改归属人、看渠道密钥。`POST /api/v1/agent/sql` 例外：只读语句任意 scope / 角色放行，写语句仅 admin + write scope |
 | TTL | 默认 90 天；过期或 `revoked_at` 非空 → 401 |
 | 请求 | `Authorization: Bearer <token>`。有 Bearer 时**不回落** cookie |
 | 闸门 | 与 session 相同：用户 enabled、未软删、`system_role` 非空 |
 
-**明确不做**：任意 `INSERT/UPDATE/DELETE/DDL` 的 HTTP SQL（会绕过 PATCH 内核、OCC、软删、`can()`、审计列）。
+**Agent SQL 端点**（2026-08-21 产品拍板，推翻旧决定「不开放任意 SQL」）：`POST /api/v1/agent/sql`，body `{ "sql": string }`，仅 Bearer PAT（cookie session → 403）。用 better-sqlite3 `stmt.readonly` 判读写：只读语句（SELECT / WITH / PRAGMA）任意 scope、任意角色放行（**含渠道密钥列**，产品接受）；写语句（INSERT/UPDATE/DELETE/DDL，含 `INSERT ... RETURNING`）必须 `write` scope + `system_role='admin'`，否则 403「仅管理员可执行写 SQL」。单语句（多语句 / 语法错误 → 422 `SQL_ERROR`）。读返回 `{ columns, rows, rowCount, truncated }`（rows 为数组，上限 1000 行截断）；写包事务执行，返回 `{ changes, lastInsertRowid }`。写 SQL 绕过 PATCH 内核 / OCC / 审计列，SKILL.md 要求写时手动维护 `updated_at` / `updated_by` 且只做 CRUD。REST 资源路由（customers/channels/products/users）**保留不动**，继续服务 web 管理端。
 
 Skill 包：仓库 `skills/gb-crm/`（`SKILL.md` + `scripts/gb-crm.py`）备用。Grok 默认扫 `.grok/skills/` / `~/.grok/skills/`，要用时拷过去。脚本读凭证并发请求；skill **不含**密钥。Agent **不要** Read `credentials.json`、不要代收密码。
 
@@ -754,6 +755,7 @@ HTTP：401 / 403 / 404 / 409 / 422 / 429。校验失败 422。
 | GET | `/api/v1/auth/tokens` | 当前用户的令牌列表（prefix/scope，无 hash） |
 | DELETE | `/api/v1/auth/tokens/:id` | 撤销自己的令牌；204 |
 | GET | `/agent/login.sh` | 免登录。本机 `curl … \| sh` 签发脚本（写入 `~/.gb-crm/credentials.json`） |
+| POST | `/api/v1/agent/sql` | Agent 自由 SQL（仅 Bearer PAT，cookie 403）。`{ sql }`；只读任意 scope/角色，写需 admin + write scope；单语句；读上限 1000 行截断 |
 
 签发命令、凭证文件、Skill 用法见 `docs/dev.md` 与仓库 `skills/gb-crm/SKILL.md`。行为决策见上文 §5「Agent 个人令牌（K35）」。
 
@@ -1374,7 +1376,7 @@ sqlite3 "$DATABASE_PATH" ".backup '${DATABASE_PATH}.bak-$(date +%F)'"
 | 把 gb-crm 做成女商插件导致范围爆炸 | 中 | 低 | K1：独立应用 |
 | TDD 声明后只写快乐路径 | 中 | 中 | 80% 含 plugins/lib；`can()` 每一格有测 |
 | Agent PAT 落在 home 目录被拷走 | 中 | 低 | 文件 600；明文不落库；禁用即撤销；skill 禁止把 token 打进对话 |
-| 给 Agent 开裸 SQL 写接口 | 高 | 低（已否） | K35：写走 REST；不做 `/sql/exec` |
+| Agent SQL 端点被滥用（误写 / 拖库） | 高 | 中 | K35（2026-08-21 改判）：写仅 admin + write scope；只读全量开放（含渠道密钥列）为产品接受；单语句；读 1000 行截断；SKILL.md 守则只做 CRUD |
 
 ---
 

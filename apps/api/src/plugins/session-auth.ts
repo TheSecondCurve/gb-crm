@@ -6,7 +6,8 @@
 //   并刷新 cookie maxAge 为剩余 idle；
 // - 带 cookie 的请求以 1% 概率 GC 过期 session（K29）；
 // - Authorization: Bearer → 查 api_tokens（hash），不回落到 cookie；
-//   read 令牌仅允许 GET/HEAD，以及撤销自己的 DELETE /auth/tokens/:id；
+//   read 令牌仅允许 GET/HEAD、`POST /api/v1/agent/sql`（写防护由端点内
+//   stmt.readonly + 角色判定兜底，K35），以及撤销自己的 DELETE /auth/tokens/:id；
 // - 未登录访问 /api/v1/**（除 login / 签发 token / health）→ 401 UNAUTHORIZED。
 // 所有时间戳一律 epoch 毫秒；仅 cookie maxAge 按规范用秒（毫秒换算）。
 import { eq } from "drizzle-orm";
@@ -50,10 +51,12 @@ function isPublicApi(path: string, method: string): boolean {
   return false;
 }
 
-/** read 令牌：GET/HEAD，以及撤销自己的 DELETE /api/v1/auth/tokens/:id */
+/** read 令牌：GET/HEAD、POST /api/v1/agent/sql（端点内自行判读写），以及撤销自己的 DELETE /api/v1/auth/tokens/:id */
 function isReadTokenAllowed(method: string, path: string): boolean {
   if (method === "GET" || method === "HEAD") return true;
   if (method === "DELETE" && /^\/api\/v1\/auth\/tokens\/\d+$/.test(path)) return true;
+  // K35：Agent SQL 端点统一 POST；readonly 判定与写权限在端点内兜底
+  if (method === "POST" && path === "/api/v1/agent/sql") return true;
   return false;
 }
 
