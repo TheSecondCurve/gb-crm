@@ -21,8 +21,8 @@ export type ListEnvelope<T> = {
 };
 
 /**
- * 全库/JSON 时间戳一律 **epoch 毫秒（UTC）**（docs/design.md Data Model：`created_at INTEGER -- epoch ms UTC`，
- * 飞书导入的 feishu_created_date / last_followed_at 同为 ms）。唯一例外：HTTP cookie 的 maxAge 按规范用秒。
+ * 全库/JSON 时间戳一律 **epoch 毫秒（UTC）**（docs/design.md Data Model：`created_at INTEGER -- epoch ms UTC`）。
+ * 唯一例外：HTTP cookie 的 maxAge 按规范用秒。
  * 用于 PATCH 的行级 OCC updatedAt（K8/K24）。
  */
 export const epochMsSchema = z.number().int();

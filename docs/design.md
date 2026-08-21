@@ -15,7 +15,7 @@
 
 闪光团队目前用飞书多维表格「团队核心数据库」维护客户、渠道、产品和成员信息。该 Base 已有约 393 条客户、64 条渠道、24 条产品、16 名成员，但缺少真正的登录权限、审计字段、Excel 式就地编辑，以及后续运营流程（成交 / 跟进 / 权益）的落地点。`docs/core.md` 要求建立「客户信息管理系统和运营流程系统」；本设计把 **v1 收窄为四张主数据的权限化 CRUD**，运营流程表明确放到 Phase 2。
 
-本仓库目前几乎是空的。2026-08-21 实测：`HEAD -> main`，`main` / `origin/main` / `dev` / `origin/dev` 同停在 `df6b542 docs: initial project documentation`。**不要创建 `dev`**，它已在。该 commit 里 `docs/core.md` 与 `docs/style.md` 是 0 字节空 blob（`e69de29`）；真实需求与 `docs/dev.md`、`example/example_page.html.mhtml` 只存在于工作区、尚未进 git。v1 以 **pnpm + TypeScript monorepo** 从零搭建：`apps/web`（Vite + React）复用女商运营管理端已验证的视觉系统；`apps/api`（Fastify + Drizzle + SQLite）提供 REST；`packages/shared` 共享 Zod / ACL / label。认证用 **签名** httpOnly session cookie；表格用 TanStack Table **双击** 单元格编辑 + **行内 PATCH 队列**。规模按飞书摘录实数设计（数百行、十余人），单进程同步 SQLite 足够，不做微服务、Redis 或云厂商绑定。
+本仓库目前几乎是空的。2026-08-21 实测：`HEAD -> main`，`main` / `origin/main` / `dev` / `origin/dev` 同停在 `df6b542 docs: initial project documentation`。**不要创建 `dev`**，它已在。该 commit 里 `docs/core.md` 与 `docs/style.md` 是 0 字节空 blob（`e69de29`）；真实需求与 `docs/dev.md`、`example/example_page.html.mhtml` 只存在于工作区、尚未进 git。v1 以 **npm workspaces + TypeScript monorepo** 从零搭建：`apps/web`（Vite + React）复用女商运营管理端已验证的视觉系统；`apps/api`（Fastify + Drizzle + SQLite）提供 REST；`packages/shared` 共享 Zod / ACL / label。认证用 **签名** httpOnly session cookie；表格用 TanStack Table **双击** 单元格编辑 + **行内 PATCH 队列**。规模按飞书摘录实数设计（数百行、十余人），单进程同步 SQLite 足够，不做微服务、Redis 或云厂商绑定。
 
 ---
 
@@ -78,9 +78,9 @@ Phase 2 表（本设计不建表、不导入）：成交表 176、用户权益�
 - 登录会话、bootstrap 管理员、按 `system_role` 的 RBAC。
 - 四张主数据的分页列表、模糊搜索、单元格就地编辑、软删除。
 - 每张业务表具备 `created_at` / `updated_at` / `created_by` / `updated_by`。
-- 保留 `feishu_record_id`，提供一次性导入脚本（非实时同步）。
+- 保留 `feishu_record_id`（历史列，v1 不做飞书导入）。
 - 客户表预留可空唯一 `wechat_openid`。
-- 工程：pnpm monorepo、TypeScript strict、TDD。`apps/api` 覆盖率门禁覆盖 `src/modules/**`、`src/plugins/**`、`src/lib/**`、`src/db/**`，合计 ≥ 80%。Playwright 不挡功能合并（相对 `docs/dev.md` 的有意弱化，见 K28）。
+- 工程：npm workspaces monorepo、TypeScript strict、TDD。`apps/api` 覆盖率门禁覆盖 `src/modules/**`、`src/plugins/**`、`src/lib/**`、`src/db/**`，合计 ≥ 80%。Playwright 不挡功能合并（相对 `docs/dev.md` 的有意弱化，见 K28）。
 - Git：从 **已存在的** `dev` 拉 `feat/*` `fix/*`，PR 合入 `dev`，再定期 `dev` → `main`。
 
 ### Non-Goals（v1 明确不做）
@@ -96,7 +96,7 @@ Phase 2 表（本设计不建表、不导入）：成交表 176、用户权益�
 - 与女商运营管理端同仓同应用（K1：独立）。
 - 磁盘加密 at-rest（非目标；PII 依赖 OS / 文件权限 600）。
 - 行级 OCC 之外的列级锁；AG Grid 级粘贴整列。
-- 实时飞书同步（一次性导入 + CSV 回退，见 Alternative H）。
+- 飞书导入 / 实时同步 / CSV 回退。
 - 公网暴露 / 公网级威胁加固（K32：内网 Docker）。
 - 硬删除、回收站（K33）。
 
@@ -107,7 +107,7 @@ Phase 2 表（本设计不建表、不导入）：成交表 176、用户权益�
 | # | 决策 | 理由 |
 | --- | --- | --- |
 | K1 | **独立应用**，只复用女商的 CSS token / 布局骨架，不嵌入其 `/admin` | 女商管微信用户 / 积分 / 会员；gb-crm 管飞书主数据。合仓会把两个权限模型和发布节奏绑死。 |
-| K2 | **pnpm workspaces monorepo**：`apps/web`、`apps/api`、`packages/shared`；v1 **不抽 `packages/ui`** | 两端共享 Zod；视觉 token 直接放 `apps/web/src/styles/tokens.css`，避免过早设计系统化。 |
+| K2 | **npm workspaces monorepo**：`apps/web`、`apps/api`、`packages/shared`；v1 **不抽 `packages/ui`** | 两端共享 Zod；视觉 token 直接放 `apps/web/src/styles/tokens.css`，避免过早设计系统化。 |
 | K3 | 后端选 **Fastify**，不用 Express / Hono | `app.inject()` 适合 TDD 且不绑端口；插件封装匹配模块化；session / cookie / helmet 生态成熟。Hono 偏 edge，本系统是单 Node + SQLite。 |
 | K4 | ORM 选 **Drizzle + better-sqlite3**，不用 Prisma | SQL 一等公民、migration 是真实 SQL、无 client generate 守护进程；单连接同步 API 与 Fastify 事件循环兼容。Prisma 对临时库 TDD 更重。 |
 | K5 | 认证：**服务端 session + 签名 httpOnly cookie**，密码 **argon2id**；不做 JWT、不做飞书登录。Session **最多每 30 分钟 touch 一次**（或剩余 idle < 11h 时）。 | 第一方可作废 session。禁止每个 GET 都 UPDATE `sessions`。`SESSION_SECRET` 用于 cookie 签名，不是摆设。 |
@@ -115,13 +115,13 @@ Phase 2 表（本设计不建表、不导入）：成交表 176、用户权益�
 | K7 | API：**REST `/api/v1`**，信封 `{ data, meta }`，校验两端共用 Zod | 资源少、表格编辑是 PATCH；GraphQL 无收益。 |
 | K8 | 表格：TanStack Table；**双击进入编辑**（单击只选中）；**单格 PATCH** + 行级 `updatedAt` OCC；**每行一条 PATCH 队列**；文本 debounce 300ms；Tab/Enter **先 flush 再导航** | 单击即编会在 20+ 列 PII 表上误提交。无队列时 Tab 两格会用同一个 `updatedAt` 打出 409 并丢掉第二格。 |
 | K9 | 删除：软删除 `deleted_at`。**不**在软删时剥 join 行。GET 展开 **只 INNER 未删除** 的用户/渠道/父客户。产品锁死见 K33 | CASCADE/SET NULL 在 v1 不会触发。幽灵归属人不能 500，也不能冒充活人。 |
-| K10 | 成员字段拆分：`job_title` × `system_role` × `employment_status` × `account_status`。无登录成员仍进 `users`。离职不自动改闸门（导入脚本把 `left`→`disabled`） | 同时满足飞书岗位与 core.md 登录权限。 |
+| K10 | 成员字段拆分：`job_title` × `system_role` × `employment_status` × `account_status`。无登录成员仍进 `users`。离职不自动改闸门 | 同时满足岗位与 core.md 登录权限。 |
 | K11 | 枚举：SQLite CHECK + shared Zod；库内存英文 code；**完整** label 表（Appendix A），禁止「节选」 | 关闭集合不需要枚举表。 |
 | K12 | 主键 INTEGER AUTOINCREMENT；`feishu_record_id` 另存 | 内部工具、行数少。 |
 | K13 | 金额 **`priceCents` integer 贯穿 DB 与 JSON**。UI 展示元。禁止 JS `yuan * 100` 不 round 就写入 | SQLite 无 DECIMAL；JSON number 元会把 K13 的意义打掉。 |
 | K14 | SQLite WAL + `busy_timeout=5000` + `foreign_keys=ON`，**全部在 `db/client.ts` 每条连接上执行**，不写进 migration。单进程。**handler 是同步 SQLite，会堵住 Fastify 事件循环**；v1 不上 worker pool | `foreign_keys`/`busy_timeout` 非文件持久化。393 行可接受阻塞。不要假装并发服务器。 |
 | K15 | M2M 同前。`parent_id`：**始终**拒绝自指、环、以及深度 > 2。UI 只有一列父客户，无树视图 | 「必要时」不是决策。 |
-| K16 | 导入：一次性。INSERT 登录字段默认 `username/passwordHash/systemRole=NULL`，`accountStatus=disabled`。UPSERT 必须带与 partial unique 匹配的 `ON CONFLICT (…) WHERE …`。CSV/xlsx 为回退（Alternative H） | 导入后除 bootstrap admin 外无人能登录，这是故意的。 |
+| K16 | v1 **不做**飞书 / CSV 导入。主数据在管理端维护 | 导入脚本与飞书 app 不是运行时依赖。 |
 | K17 | Git：使用 **已存在的 `origin/dev`**（与 `main` 同 SHA `df6b542`）。从 `dev` 拉功能分支。禁止创建 `dev` | 远程已在。 |
 | K18 | 无行级 ACL。权限是 `can(role, resource, action)` 一张表，放 `packages/shared`，单一 preHandler | 避免路由抄 `requireRole`、service 再漏 assistant 细项。 |
 | K19 | 规模按摘录：客户 ~400、渠道 ~64、产品 ~24、用户 ~16。不上 Postgres | 超范围。 |
@@ -163,27 +163,25 @@ flowchart LR
     Api --> Sqlite
   end
 
-  Feishu["飞书 Base\n一次性导入脚本"] -.->|manual| Api
   Admin --> Web
   Ops --> Web
   Asst --> Web
 ```
 
-浏览器只打本系统。飞书在 v1 是 **数据源而不是运行时依赖**。微信小程序不接入，只在 `customers.wechat_openid` 留空列。
+浏览器只打本系统。v1 **不做飞书导入**；主数据在管理端维护。微信小程序不接入，只在 `customers.wechat_openid` 留空列。
 
 ### 2. 仓库目录
 
 ```
 gb-crm/
-  package.json                 # name: gb-crm, private, scripts: dev/test/lint/typecheck
-  pnpm-workspace.yaml          # packages: apps/*, packages/*
-  pnpm-lock.yaml
+  package.json                 # name: gb-crm, private, workspaces: apps/*, packages/*
+  package-lock.json
   tsconfig.base.json           # strict, noUncheckedIndexedAccess；不含 bundler
   eslint.config.js             # PR 1 起
   vitest.workspace.ts
-  .nvmrc                       # 22
+  .nvmrc                       # 24
   .gitignore                   # node_modules, dist, coverage, *.sqlite*, .env, data/
-  .github/workflows/ci.yml     # PR → dev: pnpm test + typecheck + lint
+  .github/workflows/ci.yml     # PR → dev: npm test + typecheck + lint
   Dockerfile                   # PR 14 必做；sqlite 不 COPY 进镜像
   docker-compose.yml           # 内网一键：volume + 反代建议见 README
   docs/                        # 已有 core.md / style.md / dev.md
@@ -214,7 +212,6 @@ gb-crm/
         modules/products/{routes,service,repo}.ts
         modules/customers/{routes,service,repo}.ts
         lib/{pagination,fuzzy,audit,errors,patch-kernel,assemble}.ts
-      scripts/import-feishu.ts
       test/
         helpers/{tmp-db,build-test-app,auth}.ts
         modules/...
@@ -248,25 +245,18 @@ gb-crm/
         schemas/{auth,user,channel,product,customer,common}.ts
 ```
 
-`pnpm-workspace.yaml`：
-
-```yaml
-packages:
-  - "apps/*"
-  - "packages/*"
-```
+根 `package.json` 的 `workspaces`：`apps/*`、`packages/*`。
 
 根 `package.json` 脚本：
 
 ```json
 {
   "scripts": {
-    "dev": "pnpm -r --parallel --filter @gb-crm/api --filter @gb-crm/web dev",
-    "test": "pnpm -r test",
-    "typecheck": "pnpm -r typecheck",
-    "lint": "pnpm -r lint",
-    "db:migrate": "pnpm --filter @gb-crm/api db:migrate",
-    "db:import": "pnpm --filter @gb-crm/api db:import"
+    "dev": "concurrently -n api,web \"npm run dev -w @gb-crm/api\" \"npm run dev -w @gb-crm/web\"",
+    "test": "npm run test --workspaces",
+    "typecheck": "npm run typecheck --workspaces",
+    "lint": "npm run lint --workspaces",
+    "db:migrate": "npm run db:migrate -w @gb-crm/api"
   }
 }
 ```
@@ -275,7 +265,7 @@ packages:
 
 开发时 Vite `:5173`，API `:3001`，Vite `server.proxy."/api"` 转发。localhost 不同端口仍 same-site。这是 **开发专用** 双端口（Alternative I）；生产只暴露 Fastify 一个端口 + SPA fallback。
 
-macOS 贡献者编译 `better-sqlite3` 需要 Xcode CLT 与 Python 3；README 写明 `xcode-select --install`。CI 用官方 Node 22 image。
+macOS 贡献者编译 `better-sqlite3` 需要 Xcode CLT 与 Python 3；README 写明 `xcode-select --install`。CI 用官方 Node 24 image。
 
 ### 3. 运行时架构（API 模块）
 
@@ -561,7 +551,7 @@ flowchart TB
 - **覆盖率门禁**（c8/v8）：`apps/api/src/{modules,plugins,lib,db}/**` 合计 ≥ 80%。这才罩住 session-auth / rbac / error-handler。不追 React CSS 100%。
 - Playwright **不挡** 功能 PR 合入 —— 这是相对 `docs/dev.md`「严格和完善」的 **有意弱化**（K28），不是漏写金字塔。
 - Web：Testing Library；DataGrid 必须覆盖 Tab 两格无 409、unmount flush、pageSize 切换。
-- CI：`pnpm lint && pnpm typecheck && pnpm test`。ESLint + coverage 配置在 PR 1。
+- CI：`npm run lint && npm run typecheck && npm test`。ESLint + coverage 配置在 PR 1。
 - PR 4/5 必须有：无 `systemRole` 登录 401；reset flag 无密码拒启；有 admin 无 `ADMIN_PASSWORD` 仍 listen。
 
 测试夹具示例（路由层）：
@@ -579,47 +569,13 @@ it("operator cannot create users", async () => {
 });
 ```
 
-### 11. 飞书一次性导入
+### 11. 飞书导入（v1 不做）
 
-`apps/api/scripts/import-feishu.ts`（API）以及 **CSV 回退**（Alternative H）。CI 用 committed JSON/CSV fixture，不打 live 飞书。
+v1 **不提供**飞书 API / CSV 导入脚本。四张主数据在管理端维护。
 
-```bash
-pnpm db:import                 # 读 FEISHU_* ，按字段中文名解析
-pnpm db:import -- --from=csv ./fixtures/feishu
-```
+`feishu_record_id` 仍保留为可空列（unique **不含** `deleted_at` 谓词）。`username` / `wechat_openid` 的 unique 含 `deleted_at IS NULL`。
 
-字段对照见 Appendix A。任务摘录 **没有 `fld*`**，禁止编造。导入按 **字段中文名** 匹配；拿到 live dump 后再把 id 填进同一张表。
-
-两遍扫描：
-
-1. INSERT/UPSERT 四张主表，写 `feishu_record_id`，枚举中文 → code，**不写**关系。
-2. 按 link 填 join 与 `parent_id`。找不到的 link warn，不失败整次。
-
-**INSERT 登录字段（users）固定默认**——不是只在 UPDATE 路径上「永不覆盖」：
-
-- `username = NULL`，`password_hash = NULL`，`system_role = NULL`，`account_status = 'disabled'`
-- 因此导入 16 名成员后，**只有 bootstrap admin 能登录**，直到管理员在 UI 里发账号。
-
-`employment_status='left'` 时脚本同样写 `account_status='disabled'`。
-
-**UPSERT 必须匹配 partial unique**（SQLite 否则不会走该索引）：
-
-```sql
-INSERT INTO users (feishu_record_id, nickname, /* 业务列 */, username, password_hash, system_role, account_status)
-VALUES (?, ?, /* ... */, NULL, NULL, NULL, 'disabled')
-ON CONFLICT (feishu_record_id) WHERE feishu_record_id IS NOT NULL
-DO UPDATE SET
-  nickname = excluded.nickname,
-  real_name = excluded.real_name
-  -- 明确列出业务列
-  -- 禁止 SET username / password_hash / system_role / account_status
-  -- 若目标行 deleted_at 非空：SET deleted_at = NULL（复活）
-;
-```
-
-`feishu_record_id` 的 unique **不含** `deleted_at` 谓词（外部身份，软删不释放）。`username` / `wechat_openid` 的 unique 含 `deleted_at IS NULL`。
-
-不在 v1 做：webhook、定时同步、写回飞书。formula「调休余额」、lookup「归属人_飞书用户」丢弃。
+不在 v1 做：webhook、定时同步、写回飞书、一次性导入。
 
 ### 12. Git 工作流落地
 
@@ -660,9 +616,9 @@ gitGraph
 
 ```bash
 cp .env.example .env          # 填 ADMIN_* 与 SESSION_SECRET
-pnpm install
-pnpm db:migrate
-pnpm dev                      # api :3001 + web :5173
+npm install
+npm run db:migrate
+npm run dev                   # api :3001 + web :5173
 ```
 
 生产（内网 Docker，K32）：
@@ -695,7 +651,7 @@ volumes:
   crm-data:
 ```
 
-无 Docker 的本机调试仍可用上面 `pnpm` 路径，绑 `127.0.0.1`。
+无 Docker 的本机调试仍可用上面 `npm` 路径，绑 `127.0.0.1`。
 
 ---
 
@@ -1216,16 +1172,7 @@ JWT 无状态，但作废困难（禁用账户仍持有旧 token，除非上黑�
 
 ### H. 飞书 API 导入 vs CSV/xlsx 导出
 
-v1 导入是一次性、手动。写 `import-feishu.ts` 需要飞书 app_id/secret，CI 也打不到私有 wiki。
-
-| | 飞书 API 脚本 | 从飞书导出 CSV/xlsx 再导入 |
-| --- | --- | --- |
-| 关系（record id link） | 能两遍解析 | 导出常变成人名文本，关系要手对 |
-| CI | 需 fixture 模拟 | 可提交脱敏 CSV 当 fixture |
-| 密钥进仓库 | 不提交 secret | 不需要飞书 app |
-| 工作量 | 较高 | 较低 |
-
-**主路径仍是 API 脚本**（父对话已有 Base 访问）。**回退 + CI**：`pnpm db:import -- --from=csv`，PR 12 提交一套脱敏 fixture。没有飞书 app 时用 CSV 也能灌库。不做实时同步。
+v1 **两者都不做**。主数据在管理端维护，不接飞书 app，也不提交 CSV 灌库脚本。
 
 ### I. 开发双端口 SPA vs 从第一天单进程 / Next
 
@@ -1250,7 +1197,6 @@ K20 最终是 Fastify 托管静态。开发期 Vite `:5173` + 代理保留 HMR�
 | XSS 偷 cookie | 中 | React 默认转义；`@fastify/helmet`；不做 `dangerouslySetInnerHTML` |
 | CSRF | 低 | same-site cookie；生产同源部署 |
 | 并发覆盖他人编辑 | 中 | 行级 `updatedAt` OCC + 客户端队列 |
-| 飞书 token 进仓库 | 中 | 导入脚本读 env，不写死 `FEISHU_APP_SECRET` |
 
 ### 认证细节
 
@@ -1293,13 +1239,12 @@ v1 内部工具，不做 Prometheus / Sentry 强制接入。
 
 1. **工程骨架**（PR1–3）：monorepo、shared、sqlite schema。此时无产品功能，但 CI 已绿。
 2. **API 竖切**（PR4–7）：auth → users → channels/products → customers。每 PR 可独立用 inject 测试。
-3. **Web 竖切**（PR8–11）：壳 + DataGrid + 四页。可先对本地空库，再导入。
-4. **数据**（PR12）：飞书导入脚本；在一份拷贝的 sqlite 上试跑，确认 393 客户关系。
-5. **稳定**（PR13–14）：Playwright 冒烟、SPA fallback、**Dockerfile + compose**。
+3. **Web 竖切**（PR8–11）：壳 + DataGrid + 四页。对本地空库即可。
+4. **稳定**（PR13–14）：Playwright 冒烟、SPA fallback、**Dockerfile + compose**。
 
 ### Feature flag
 
-v1 不引入 LaunchDarkly / 自研 flag。权限即开关。导入脚本是手动开关。
+v1 不引入 LaunchDarkly / 自研 flag。权限即开关。
 
 ### 发布
 
@@ -1335,9 +1280,6 @@ sqlite3 "$DATABASE_PATH" ".backup '${DATABASE_PATH}.bak-$(date +%F)'"
 | `ADMIN_BOOTSTRAP_RESET_PASSWORD` | 否 | `false` | **禁止长期 true**；true 且无密码 → 拒启 |
 | `CORS_ORIGIN` | 否 | `http://localhost:5173` | 仅开发 |
 | `LOG_LEVEL` | 否 | `info` | |
-| `FEISHU_APP_ID` | 导入时 | — | 脚本专用 |
-| `FEISHU_APP_SECRET` | 导入时 | — | 脚本专用 |
-| `FEISHU_BASE_TOKEN` | 导入时 | `IWFEbuZcfalvQus6vkOcJXUjn2d` | |
 
 `.env.example` 提交；`.env` 永不提交。
 
@@ -1350,10 +1292,9 @@ sqlite3 "$DATABASE_PATH" ".backup '${DATABASE_PATH}.bak-$(date +%F)'"
 | SQLite 写锁 / 同步 API 堵住事件循环 | 中 | 中 | WAL、busy_timeout、session 30min 才 touch；v1 不上线程池 |
 | 同一用户 Tab 两格自 409 | 高（体验） | 高（无队列时） | 行内 PATCH 队列 + rebase updatedAt |
 | 两人改同一行不同格 | 中 | 中 | 行级 OCC；409 丢本地 pending |
-| 客户 25+ 列导致表格难用，团队拒绝迁移 | 中 | 中 | 默认列子集 + 列选择器 + 冻结昵称；导入后先让运营试用客户页 |
-| 飞书脏数据（空昵称、未知枚举、坏 link）导致导入半成品 | 中 | 高 | 默认值、warn 日志、导入报告打印 skip/warn 计数；昵称空则用「未命名客户」 |
+| 客户 25+ 列导致表格难用，团队拒绝迁移 | 中 | 中 | 默认列子集 + 列选择器 + 冻结昵称 |
 | `ADMIN_PASSWORD` 长期留在 unit | 高 | 中 | 有 live admin 后可从 env 拿掉密码 |
-| 本机 sqlite 无备份丢失 393 客户 | 高 | 低 | 发布 checklist 含拷贝；可继续把飞书当冷备份直到 Phase 2 停用飞书主数据 |
+| 本机 sqlite 无备份丢失数据 | 高 | 低 | 发布 checklist 含 `.backup`（K29） |
 | 把 gb-crm 做成女商插件导致范围爆炸 | 中 | 低 | K1：独立应用 |
 | TDD 声明后只写快乐路径 | 中 | 中 | 80% 含 plugins/lib；`can()` 每一格有测 |
 
@@ -1370,7 +1311,7 @@ sqlite3 "$DATABASE_PATH" ".backup '${DATABASE_PATH}.bak-$(date +%F)'"
 | Q9 | 只软删，无硬删/回收站 | K33 |
 | Q13 | 品牌文案「闪光 · 客户运营」 | K34 |
 
-此前已关闭、不再提问：四张表（Goals/K19）、角色拆分（K10）、一次性导入（K16）、独立应用（K1）、Excel 深度（K8/K30）、父记录列（K15）、归属人 M2M（K15）、离职闸门（K10）、无登录成员进 users（K10）、`dev` 已存在（K17）。
+此前已关闭、不再提问：四张表（Goals/K19）、角色拆分（K10）、不做飞书导入（K16）、独立应用（K1）、Excel 深度（K8/K30）、父记录列（K15）、归属人 M2M（K15）、离职闸门（K10）、无登录成员进 users（K10）、`dev` 已存在（K17）。
 
 ---
 
@@ -1635,10 +1576,10 @@ Base 标题：团队核心数据库。摘录 `base_token=IWFEbuZcfalvQus6vkOcJXU
 - **影响文件**：`docs/core.md`、`docs/dev.md`、`docs/style.md`、`example/example_page.html.mhtml`
 - **说明**：替换 git 里 0 字节的 core/style；加入未跟踪的 dev.md 与 mhtml。
 
-### PR 1 — `chore: pnpm monorepo 骨架与 CI`
+### PR 1 — `chore: npm workspaces monorepo 骨架与 CI`
 
 - **依赖**：PR 0（可合并）
-- **影响文件**：根 `package.json`、`pnpm-workspace.yaml`、`tsconfig.base.json`（无 bundler）、`apps/api/tsconfig.json`（NodeNext）、`apps/web/tsconfig.json`（bundler）、`packages/shared/package.json`（`exports` → `src/index.ts`）、`eslint.config.js`、coverage 配置、`.nvmrc`、`.gitignore`、`.env.example`、`README.md`（含 Xcode CLT / Python、`origin/dev` 已在）、`.github/workflows/ci.yml`
+- **影响文件**：根 `package.json`、`package-lock.json`、`tsconfig.base.json`（无 bundler）、`apps/api/tsconfig.json`（NodeNext）、`apps/web/tsconfig.json`（bundler）、`packages/shared/package.json`（`exports` → `src/index.ts`）、`eslint.config.js`、coverage 配置、`.nvmrc`、`.gitignore`、`.env.example`、`README.md`（含 Xcode CLT / Python、`origin/dev` 已在）、`.github/workflows/ci.yml`
 - **说明**：`lint` + `typecheck` + `test`。无业务代码。
 
 ### PR 2 — `feat(shared): Zod、全量 labels、acl.can`
@@ -1701,11 +1642,11 @@ Base 标题：团队核心数据库。摘录 `base_token=IWFEbuZcfalvQus6vkOcJXU
 - **影响文件**：`UsersPage.tsx`、Sidebar 过滤、设密码 Modal
 - **说明**：可与 PR 10 并行。
 
-### PR 12 — `feat(api): 飞书导入 + CSV 回退`
+### PR 12 — ~~`feat(api): 飞书导入 + CSV 回退`~~（不做）
 
-- **依赖**：PR 7
-- **影响文件**：`scripts/import-feishu.ts`、`scripts/import-csv.ts`、脱敏 fixture、映射单测
-- **说明**：INSERT 登录字段默认 NULL/disabled；`ON CONFLICT (feishu_record_id) WHERE feishu_record_id IS NOT NULL`；CI 不打 live。
+- **依赖**：—
+- **影响文件**：—
+- **说明**：v1 不做飞书 / CSV 导入。主数据在管理端维护。
 
 ### PR 13 — `test(e2e): Playwright 冒烟`
 

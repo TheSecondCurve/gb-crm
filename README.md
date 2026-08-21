@@ -1,6 +1,6 @@
 # gb-crm — 闪光 · 客户运营
 
-闪光团队客户信息管理系统。pnpm + TypeScript monorepo：
+闪光团队客户信息管理系统。npm workspaces + TypeScript monorepo：
 
 - `apps/web` — Vite + React 管理端（中文 UI）
 - `apps/api` — Fastify + Drizzle + SQLite（WAL）REST API
@@ -10,21 +10,21 @@
 
 ## 本地开发
 
-环境：Node 22（见 `.nvmrc`）+ pnpm（corepack 启用）。
+环境：Node 24（见 `.nvmrc`）+ npm（随 Node 附带）。
 
 ```bash
 cp .env.example .env          # 填 SESSION_SECRET（≥32 字符）与 ADMIN_*
-pnpm install
-pnpm db:migrate
-pnpm dev                      # api :3001 + web :5173（Vite 代理 /api → :3001）
+npm install
+npm run db:migrate
+npm run dev                   # api :3001 + web :5173（Vite 代理 /api → :3001）
 ```
 
 常用命令：
 
 ```bash
-pnpm lint        # eslint（全部包）
-pnpm typecheck   # tsc --noEmit（全部包）
-pnpm test        # vitest（全部包；api 带 v8 覆盖率门禁）
+npm run lint        # eslint（全部包）
+npm run typecheck   # tsc --noEmit（全部包）
+npm test            # vitest（全部包；api 带 v8 覆盖率门禁）
 ```
 
 ### macOS 编译 better-sqlite3
@@ -35,7 +35,7 @@ pnpm test        # vitest（全部包；api 带 v8 覆盖率门禁）
 xcode-select --install
 ```
 
-CI 使用官方 Node 22 环境，无需额外处理。
+CI 使用官方 Node 24 环境，无需额外处理。
 
 ## Git 工作流
 
@@ -82,9 +82,8 @@ docker cp "$(docker compose ps -q crm)":/var/lib/gb-crm/gb-crm.bak-"$(date +%F)"
 
 ### 冒烟测试（e2e）
 
-Playwright 冒烟在 `e2e/`（不挡合并，K28；不进 `pnpm test`）：
+Playwright 冒烟在 `e2e/`（不挡合并，K28；不进 `npm test`）：
 
 ```bash
-pnpm e2e   # 先构建 web，再起生产模式 api（种子库）跑冒烟
+npm run e2e   # 先构建 web，再起生产模式 api（种子库）跑冒烟
 ```
-

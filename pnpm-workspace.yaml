@@ -1,9 +1,0 @@
-packages:
-  - "apps/*"
-  - "packages/*"
-allowBuilds:
-  # argon2 包自带 prebuilds；本机 glibc 2.31 与预编译二进制不兼容，已手工 node-gyp rebuild，
-  # 禁止 install 脚本重新拉取不兼容的 prebuild（详见 README/任务环境说明）。
-  argon2: false
-  better-sqlite3: true
-  esbuild: true

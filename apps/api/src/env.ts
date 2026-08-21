@@ -1,6 +1,6 @@
 // 按设计文档 Rollout「环境变量」表全量解析 process.env。
 // 拆两层（K5/K6 的落地需要）：
-//   - scriptEnv：migrate / import 等脚本使用的宽松子集，不强制 SESSION_SECRET；
+//   - scriptEnv：migrate 等脚本使用的宽松子集，不强制 SESSION_SECRET；
 //   - appEnv：app 启动（index.ts / buildApp 生产路径）强制 SESSION_SECRET ≥ 32 字符。
 // ADMIN_USERNAME / ADMIN_PASSWORD 的「何时必填」规则在 bootstrap-admin（PR 4）判定，这里只做解析。
 import { z } from "zod";
@@ -27,9 +27,6 @@ export const scriptEnvSchema = z.object({
   LOG_LEVEL: z
     .enum(["fatal", "error", "warn", "info", "debug", "trace", "silent"])
     .default("info"),
-  FEISHU_APP_ID: z.string().min(1).optional(),
-  FEISHU_APP_SECRET: z.string().min(1).optional(),
-  FEISHU_BASE_TOKEN: z.string().min(1).default("IWFEbuZcfalvQus6vkOcJXUjn2d"),
 });
 
 export const appEnvSchema = scriptEnvSchema.extend({

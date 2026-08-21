@@ -8,24 +8,22 @@
 # ---- deps：完整依赖（含 devDeps，供 web 构建）----
 # 用完整版 bookworm（自带 python3/make/g++）：better-sqlite3 在本阶段跑 install 脚本，
 # 官方镜像 glibc 足够新，prebuild 可直接用；即使要回退 node-gyp 编译也有工具链。
-FROM node:22-bookworm AS deps
+FROM node:24-bookworm AS deps
 WORKDIR /app
-RUN corepack enable
-COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
+COPY package.json package-lock.json ./
 COPY apps/api/package.json apps/api/
 COPY apps/web/package.json apps/web/
 COPY packages/shared/package.json packages/shared/
-RUN pnpm install --frozen-lockfile
+RUN npm ci
 
 # ---- prod-deps：仅生产依赖（runtime 阶段的 node_modules 来源）----
-FROM node:22-bookworm AS prod-deps
+FROM node:24-bookworm AS prod-deps
 WORKDIR /app
-RUN corepack enable
-COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
+COPY package.json package-lock.json ./
 COPY apps/api/package.json apps/api/
 COPY apps/web/package.json apps/web/
 COPY packages/shared/package.json packages/shared/
-RUN pnpm install --frozen-lockfile --prod
+RUN npm ci --omit=dev
 
 # ---- build：web 静态产物 ----
 FROM deps AS build
@@ -33,32 +31,29 @@ COPY tsconfig.base.json ./
 COPY packages/shared packages/shared
 COPY apps/api apps/api
 COPY apps/web apps/web
-RUN pnpm --filter @gb-crm/web build
+RUN npm run build -w @gb-crm/web
 
 # ---- runtime：只 COPY 运行必需 ----
-FROM node:22-bookworm-slim AS runtime
+FROM node:24-bookworm-slim AS runtime
 ENV NODE_ENV=production \
     HOST=0.0.0.0 \
     PORT=3001 \
     DATABASE_PATH=/var/lib/gb-crm/gb-crm.sqlite
 WORKDIR /app
 
-COPY package.json pnpm-workspace.yaml tsconfig.base.json ./
-# pnpm 符号链接布局：根 .pnpm 虚拟 store + 各包 node_modules 的相对软链，整体平移后仍有效
-COPY --from=prod-deps /app/node_modules ./node_modules
-COPY --from=prod-deps /app/apps/api/node_modules ./apps/api/node_modules
-COPY --from=prod-deps /app/packages/shared/node_modules ./packages/shared/node_modules
+COPY package.json tsconfig.base.json ./
 COPY apps/api/package.json apps/api/tsconfig.json ./apps/api/
+COPY apps/web/package.json ./apps/web/
+COPY packages/shared/package.json packages/shared/tsconfig.json ./packages/shared/
+# npm workspaces 默认提升到根 node_modules；workspace 包内可能还有 symlink / 未提升依赖
+COPY --from=prod-deps /app/node_modules ./node_modules
 COPY apps/api/src ./apps/api/src
 COPY apps/api/drizzle ./apps/api/drizzle
-COPY packages/shared/package.json packages/shared/tsconfig.json ./packages/shared/
 COPY packages/shared/src ./packages/shared/src
 COPY --from=build /app/apps/web/dist ./apps/web/dist
 
 RUN mkdir -p /var/lib/gb-crm && chown -R node:node /var/lib/gb-crm
 USER node
 
-WORKDIR /app/apps/api
 EXPOSE 3001
-# tsx 跑 TS 源码（见头部说明）；等价于 pnpm --filter @gb-crm/api start
-CMD ["node_modules/.bin/tsx", "src/index.ts"]
+CMD ["npm", "start", "-w", "@gb-crm/api"]

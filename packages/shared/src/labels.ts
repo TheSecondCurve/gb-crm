@@ -113,38 +113,3 @@ export const tagLabels: Record<Tag, string> = {
   guest: "嘉宾",
   partner: "合作伙伴",
 };
-
-function reverse<T extends string>(labels: Record<T, string>): Record<string, T> {
-  const out: Record<string, T> = {};
-  for (const [code, label] of Object.entries(labels) as [T, string][]) {
-    out[label] = code;
-  }
-  return out;
-}
-
-// 飞书中文 → code，导入脚本用。同一中文可能出现在多个枚举（如「IP」「嘉宾」），
-// 所以反向映射必须按枚举分开，不能合并成一张全局表。
-
-export const jobTitleFromFeishu: Record<string, JobTitle> = reverse(jobTitleLabels);
-export const systemRoleFromFeishu: Record<string, SystemRole> = reverse(systemRoleLabels);
-export const employmentStatusFromFeishu: Record<string, EmploymentStatus> =
-  reverse(employmentStatusLabels);
-export const accountStatusFromFeishu: Record<string, AccountStatus> =
-  reverse(accountStatusLabels);
-export const platformFromFeishu: Record<string, Platform> = reverse(platformLabels);
-export const channelTypeFromFeishu: Record<string, ChannelType> = reverse(channelTypeLabels);
-export const accountTypeFromFeishu: Record<string, AccountType> = reverse(accountTypeLabels);
-export const channelStatusFromFeishu: Record<string, ChannelStatus> =
-  reverse(channelStatusLabels);
-export const productTypeFromFeishu: Record<string, ProductType> = reverse(productTypeLabels);
-export const productStatusFromFeishu: Record<string, ProductStatus> =
-  reverse(productStatusLabels);
-export const customerTypeFromFeishu: Record<string, CustomerType> =
-  reverse(customerTypeLabels);
-
-// A.5 末尾说明：飞书原文无「业务阶段」前缀按 `1-10` / `10-100` 匹配，带前缀同样映射到 stage_*。
-export const tagFromFeishu: Record<string, Tag> = {
-  ...reverse(tagLabels),
-  "业务阶段 1-10": "stage_1_10",
-  "业务阶段 10-100": "stage_10_100",
-};

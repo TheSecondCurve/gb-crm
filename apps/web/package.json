@@ -1,5 +1,6 @@
 {
   "name": "@gb-crm/web",
+  "version": "0.0.0",
   "private": true,
   "type": "module",
   "scripts": {
@@ -10,7 +11,7 @@
     "lint": "eslint . --config ../../eslint.config.js"
   },
   "dependencies": {
-    "@gb-crm/shared": "workspace:*",
+    "@gb-crm/shared": "*",
     "@tanstack/react-query": "^5.101.4",
     "react": "^19.1.1",
     "react-dom": "^19.1.1",
