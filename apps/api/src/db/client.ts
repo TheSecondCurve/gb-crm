@@ -8,7 +8,9 @@ import { drizzle, type BetterSQLite3Database } from "drizzle-orm/better-sqlite3"
 
 import * as schema from "./schema.js";
 
-export type Db = BetterSQLite3Database<typeof schema>;
+// $client 是 drizzle() 返回类型上的原生 better-sqlite3 连接（modules/agent 用它做
+// 自由 SQL 的 prepare/readonly 判定）；类类型上没有，这里显式补上——createDb 永远走真实 drizzle()。
+export type Db = BetterSQLite3Database<typeof schema> & { $client: Database.Database };
 
 export interface DbHandle {
   db: Db;
