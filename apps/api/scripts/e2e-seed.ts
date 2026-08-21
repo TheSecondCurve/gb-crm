@@ -1,5 +1,5 @@
 // e2e 种子（PR 13）：重建 DATABASE_PATH 指向的库 —— bootstrap admin + 1 条客户 + 1 个 assistant 账号。
-// 直接建库插入，不走飞书导入。由 e2e/run-server.sh 在起服务前调用。
+// 直接建库插入。由 e2e/run-server.sh 在起服务前调用。
 import fs from "node:fs";
 
 import { bootstrapAdmin } from "../src/db/bootstrap-admin.js";

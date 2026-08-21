@@ -42,7 +42,7 @@ export function migrateDb(sqlite: Database.Database): string[] {
   return nowApplied;
 }
 
-// CLI 入口：pnpm --filter @gb-crm/api db:migrate
+// CLI 入口：npm run db:migrate -w @gb-crm/api
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   const env = parseScriptEnv();
   const { sqlite, close } = createDb(env.DATABASE_PATH);

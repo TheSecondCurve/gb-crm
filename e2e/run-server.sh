@@ -10,5 +10,5 @@ export NODE_ENV=production \
   DATABASE_PATH="$PWD/e2e/.tmp/e2e.sqlite" \
   SESSION_SECRET="e2e-session-secret-0123456789abcdef"
 
-pnpm --filter @gb-crm/api exec tsx scripts/e2e-seed.ts
-exec pnpm --filter @gb-crm/api start
+npm run e2e:seed -w @gb-crm/api
+exec npm start -w @gb-crm/api

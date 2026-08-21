@@ -9,7 +9,6 @@ describe("env", () => {
     expect(env.HOST).toBe("127.0.0.1");
     expect(env.PORT).toBe(3001);
     expect(env.COOKIE_SECURE).toBe(false);
-    expect(env.FEISHU_BASE_TOKEN).toBe("IWFEbuZcfalvQus6vkOcJXUjn2d");
   });
 
   it("app env requires SESSION_SECRET of at least 32 chars", () => {
