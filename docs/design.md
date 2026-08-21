@@ -140,6 +140,7 @@ Phase 2 表（本设计不建表、不导入）：成交表 176、用户权益�
 | K32 | **内网 + Docker**。提供 `Dockerfile` 与 `docker-compose.yml`（PR 14 **必做**）。SQLite **volume 挂载**，不进镜像。可 `HOST=0.0.0.0` 跟在内网 Caddy 后；推荐 `COOKIE_SECURE=true` + HTTPS + `TRUST_PROXY=true`。非 loopback 且未 Secure 仍启动 warn。**不**暴露公网，不追加公网威胁加固 | 2026-08-21 产品/运维拍板（原 Q7）。 |
 | K33 | UI「删除」= 软删。v1 **无**回收站、**无**管理员硬删。`ON DELETE CASCADE`/`SET NULL` 仅 schema 预留，v1 路径永不触发 | 2026-08-21 产品拍板（原 Q9）。 |
 | K34 | 侧栏与登录标题品牌文案锁定为 **「闪光 · 客户运营」**。禁止「女商」 | 2026-08-21 产品拍板（原 Q13）。PR 8 用此常量。 |
+| K35 | Agent 访问：**PAT 与 cookie session 并行**，不做 JWT。已部署 CRM 托管 `GET /agent/login.sh`（`curl \| sh` 签发）；明文 token 只返回一次，本机 `~/.gb-crm/credentials.json`（目录 700 / 文件 600）。范围 `read`/`write` **∩** `can()`。Skill 包在仓库 `skills/gb-crm/` 备用（脚本发 Bearer，skill 不含密钥）。**不**开放任意 SQL | Agent 用不了 HttpOnly cookie；JWT 难作废（K5）。无项目代码的同事只能打已部署 API。写 SQL 会绕过 PATCH 内核 / OCC / 软删 / RBAC |
 
 ---
 
@@ -153,22 +154,27 @@ flowchart LR
     Admin[管理员]
     Ops[团队运营]
     Asst[兼职助手]
+    Agent[本机 Agent / Skill]
   end
 
   subgraph gbCrm [gb-crm 单进程]
     Web["apps/web\nVite React"]
     Api["apps/api\nFastify"]
     Sqlite[("SQLite WAL\ngb-crm.sqlite")]
-    Web -->|同源 /api/v1| Api
+    Web -->|cookie /api/v1| Api
+    Agent -->|Bearer PAT /api/v1| Api
     Api --> Sqlite
   end
 
   Admin --> Web
   Ops --> Web
   Asst --> Web
+  Admin --> Agent
+  Ops --> Agent
+  Asst --> Agent
 ```
 
-浏览器只打本系统。v1 **不做飞书导入**；主数据在管理端维护。微信小程序不接入，只在 `customers.wechat_openid` 留空列。
+浏览器只打本系统。v1 **不做飞书导入**；主数据在管理端维护。微信小程序不接入，只在 `customers.wechat_openid` 留空列。Agent 不走 cookie，走 K35 PAT（见 §5 Agent 令牌）。
 
 ### 2. 仓库目录
 
@@ -184,7 +190,10 @@ gb-crm/
   .github/workflows/ci.yml     # PR → dev: npm test + typecheck + lint
   Dockerfile                   # PR 14 必做；sqlite 不 COPY 进镜像
   docker-compose.yml           # 内网一键：volume + 反代建议见 README
-  docs/                        # 已有 core.md / style.md / dev.md
+  docs/                        # core.md / design.md / dev.md / style.md
+  skills/gb-crm/               # Agent skill 备用包（K35）；不自动进 Grok 扫描
+    SKILL.md
+    scripts/gb-crm.py
   example/example_page.html.mhtml
   apps/
     api/
@@ -193,6 +202,7 @@ gb-crm/
       vitest.config.ts
       drizzle.config.ts
       drizzle/0000_init.sql
+      drizzle/0001_api_tokens.sql   # K35 PAT
       src/
         index.ts               # listen
         app.ts                 # buildApp() 供 inject
@@ -202,11 +212,12 @@ gb-crm/
         db/migrate.ts
         db/bootstrap-admin.ts
         plugins/cookie.ts          # 签名 cookie，secret=SESSION_SECRET
-        plugins/session-auth.ts    # decorate user；touch 节流；1% GC
+        plugins/session-auth.ts    # cookie 或 Bearer；touch 节流；1% GC
         plugins/rbac.ts            # requireCan(resource, action) 读 shared.can
         plugins/error-handler.ts
         plugins/static-spa.ts      # 生产：非 /api、非文件 → index.html
-        modules/auth/{routes,service,session-repo}.ts
+        modules/auth/{routes,service,session-repo,token-repo,token-service,login-script}.ts
+        modules/auth/login.sh      # GET /agent/login.sh 模板
         modules/users/{routes,service,repo}.ts
         modules/channels/{routes,service,repo}.ts
         modules/products/{routes,service,repo}.ts
@@ -397,14 +408,55 @@ sequenceDiagram
 - 表字段：`created_at`（登录时刻，绝对上限锚点）、`expires_at`（idle 截止）、`last_touched_at`。
 - **判定**（每次认证）：`now < created_at + 7d AND now < expires_at`，且用户仍 enabled、未删、`system_role` 非空。
 - **Touch**（避免每个 GET 都写库）：仅当 `now - last_touched_at >= 30min` **或** `expires_at - now < 11h` 时才 `UPDATE expires_at = min(now+12h, created_at+7d), last_touched_at = now`，并刷新 cookie `maxAge` 为剩余 idle。列表轮询不触发写。
-- 登出：删当前 session + 清 cookie。禁用账户 / 改密：删该用户全部 session。
+- 登出：删当前 session + 清 cookie。禁用账户 / 软删用户：删该用户全部 session **并撤销**其 PAT。改自己密码：删 session，**不**撤销 PAT（Agent 不因改密掉线）。
 - **GC**：login 时 `DELETE FROM sessions WHERE expires_at < now OR created_at < now - 7d`；其它带 cookie 的请求以 1% 概率做同样删除。
+
+#### Agent 个人令牌（K35）
+
+浏览器 session 对 CLI / Agent 不可用（HttpOnly cookie、idle 12h）。并行一条 **PAT**，不替换 cookie，不做 JWT。
+
+**签发（无项目代码、只要能访问已部署 CRM）**：
+
+```bash
+curl -fsSL http://<crm-host>/agent/login.sh | sh
+```
+
+本地开发把 host 换成 `127.0.0.1:3001`。脚本从 `/dev/tty` 问用户名、密码、范围（默认 `read`）；非交互：
+
+```bash
+GB_CRM_USERNAME=alice GB_CRM_PASSWORD='***' GB_CRM_SCOPE=read \
+  curl -fsSL http://<crm-host>/agent/login.sh | sh
+```
+
+脚本内部 `POST /api/v1/auth/tokens`（与 login 同档 10/min/IP），把结果写入：
+
+```json
+{ "baseUrl": "http://<crm-host>", "token": "gbcrm_ro_…", "scope": "read", "username": "alice" }
+```
+
+路径 `~/.gb-crm/credentials.json`（目录 `0700`，文件 `0600`）。stdout **不打印**明文 token。覆盖地址用 `GB_CRM_BASE_URL`。`Host` 写入脚本前须匹配 `host[:port]`，否则回退 `http://127.0.0.1:3001`（防注入）。
+
+**令牌形态**
+
+| | |
+| --- | --- |
+| 明文 | `gbcrm_ro_` / `gbcrm_rw_` + 32 字节 hex；**只在 201 响应出现一次** |
+| 库内 | `api_tokens.token_hash` = SHA-256(明文) hex；另存 `token_prefix`（前 17 字符）供列表/撤销 |
+| 范围 | `read` = GET/HEAD，外加撤销自己的 `DELETE /api/v1/auth/tokens/:id`；`write` = 现有 REST 写路径 |
+| 有效权限 | **token.scope ∩ `can(role, resource, action)`**。助手的 write 令牌仍不能建客户、改归属人、看渠道密钥 |
+| TTL | 默认 90 天；过期或 `revoked_at` 非空 → 401 |
+| 请求 | `Authorization: Bearer <token>`。有 Bearer 时**不回落** cookie |
+| 闸门 | 与 session 相同：用户 enabled、未软删、`system_role` 非空 |
+
+**明确不做**：任意 `INSERT/UPDATE/DELETE/DDL` 的 HTTP SQL（会绕过 PATCH 内核、OCC、软删、`can()`、审计列）。
+
+Skill 包：仓库 `skills/gb-crm/`（`SKILL.md` + `scripts/gb-crm.py`）备用。Grok 默认扫 `.grok/skills/` / `~/.grok/skills/`，要用时拷过去。脚本读凭证并发请求；skill **不含**密钥。Agent **不要** Read `credentials.json`、不要代收密码。
 
 #### 反代与限流
 
-`TRUST_PROXY=true`（或文档约定生产在 Caddy 后必须设）时 `app.set('trustProxy', true)`，登录限流 10/min 键用 `X-Forwarded-For` 第一跳。未开 trustProxy 时用 socket IP。**禁止**在未信任代理时读 `X-Forwarded-For`（可被伪造）。`HOST=0.0.0.0` 且 `COOKIE_SECURE!==true`：pino **warn**「non-loopback bind without COOKIE_SECURE; put TLS in front」，**不**拒启（内网 HTTP 可能有意）。
+`TRUST_PROXY=true`（或文档约定生产在 Caddy 后必须设）时 `app.set('trustProxy', true)`，登录限流 10/min 键用 `X-Forwarded-For` 第一跳。未开 trustProxy 时用 socket IP。**禁止**在未信任代理时读 `X-Forwarded-For`（可被伪造）。`HOST=0.0.0.0` 且 `COOKIE_SECURE!==true`：pino **warn**「non-loopback bind without COOKIE_SECURE; put TLS in front」，**不**拒启（内网 HTTP 可能有意）。签发令牌 `POST /api/v1/auth/tokens` 与 login **同一限流档**。
 
-`request.user` 由 session-auth decorate。未登录访问 `/api/v1/**`（除 login）→ 401。
+`request.user` 由 session-auth decorate。未登录访问 `/api/v1/**`（除 `POST /auth/login`、`POST /auth/tokens`、`GET /health`）→ 401。`GET /agent/login.sh` 不在 `/api/v1` 下，钩子不拦；生产 SPA fallback **不得**把它吃成 `index.html`。
 
 #### Bootstrap（migrate 之后、listen 之前）
 
@@ -698,6 +750,12 @@ HTTP：401 / 403 / 404 / 409 / 422 / 429。校验失败 422。
 | POST | `/api/v1/auth/logout` | 204；清 cookie、删 session |
 | GET | `/api/v1/auth/me` | 当前用户（无 hash） |
 | PATCH | `/api/v1/auth/password` | `{ currentPassword, newPassword }` |
+| POST | `/api/v1/auth/tokens` | 免 cookie。body `{ username, password, scope: "read"\|"write", name? }`；201，明文 token **只返回一次**。限流与 login 同档 |
+| GET | `/api/v1/auth/tokens` | 当前用户的令牌列表（prefix/scope，无 hash） |
+| DELETE | `/api/v1/auth/tokens/:id` | 撤销自己的令牌；204 |
+| GET | `/agent/login.sh` | 免登录。本机 `curl … \| sh` 签发脚本（写入 `~/.gb-crm/credentials.json`） |
+
+签发命令、凭证文件、Skill 用法见 `docs/dev.md` 与仓库 `skills/gb-crm/SKILL.md`。行为决策见上文 §5「Agent 个人令牌（K35）」。
 
 ### 资源路由（users / channels / products / customers 同构）
 
@@ -820,13 +878,14 @@ export const customerListQuerySchema = pageQuerySchema.extend({
 
 ## Data Model Changes
 
-全新库，无历史迁移负担。Drizzle schema 放 `apps/api/src/db/schema.ts`，SQL migration 放 `apps/api/drizzle/0000_init.sql`。
+全新库。Drizzle schema 放 `apps/api/src/db/schema.ts`；SQL migration 放 `apps/api/drizzle/`（`0000_init.sql` 主数据，`0001_api_tokens.sql` 为 K35 PAT）。
 
 ### ER
 
 ```mermaid
 erDiagram
   users ||--o{ sessions : has
+  users ||--o{ api_tokens : pats
   users ||--o{ channels : created
   users ||--o{ channel_owners : owns
   users ||--o{ customer_owners : owner
@@ -880,7 +939,7 @@ updated_by     INTEGER REFERENCES users(id) ON DELETE SET NULL,
 deleted_at     INTEGER                    -- NULL = 活着
 ```
 
-`sessions` 无软删、无审计人。Bootstrap 管理员 `created_by` 允许 NULL。
+`sessions` 与 `api_tokens` 无软删、无审计人。PAT 行用 `revoked_at` 作废。Bootstrap 管理员 `created_by` 允许 NULL。
 
 ### 完整 SQL（0000_init.sql 核心）
 
@@ -936,6 +995,23 @@ CREATE TABLE sessions (
 );
 CREATE INDEX sessions_user_id_idx ON sessions(user_id);
 CREATE INDEX sessions_expires_at_idx ON sessions(expires_at);
+
+-- 0001_api_tokens.sql（K35）
+CREATE TABLE api_tokens (
+  id            INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id       INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  token_hash    TEXT NOT NULL,
+  token_prefix  TEXT NOT NULL,
+  scope         TEXT NOT NULL CHECK (scope IN ('read', 'write')),
+  name          TEXT,
+  created_at    INTEGER NOT NULL,
+  expires_at    INTEGER NOT NULL,
+  last_used_at  INTEGER,
+  revoked_at    INTEGER
+);
+CREATE UNIQUE INDEX api_tokens_token_hash_uq ON api_tokens(token_hash);
+CREATE INDEX api_tokens_user_id_idx ON api_tokens(user_id);
+CREATE INDEX api_tokens_expires_at_idx ON api_tokens(expires_at);
 
 CREATE TABLE channels (
   id                INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -1152,7 +1228,7 @@ Express 类型与异步错误处理偏旧。Hono 在本机 SQLite 上没有优�
 
 ### C. 认证：JWT vs Cookie session
 
-JWT 无状态，但作废困难（禁用账户仍持有旧 token，除非上黑名单 = 又要存储）。第一方 Admin 用 session 更直接。选 cookie session，存 SQLite，不上 Redis。
+JWT 无状态，但作废困难（禁用账户仍持有旧 token，除非上黑名单 = 又要存储）。第一方 Admin 用 session 更直接。选 cookie session，存 SQLite，不上 Redis。Agent / CLI 无法持有 HttpOnly cookie，故 **另发可撤销 PAT**（K35），仍存 SQLite、只存 hash，不引入 JWT。
 
 ### D. 表格：Handsontable / AG Grid vs TanStack Table
 
@@ -1261,7 +1337,7 @@ sqlite3 "$DATABASE_PATH" ".backup '${DATABASE_PATH}.bak-$(date +%F)'"
 ### 回滚
 
 - 代码：回退到上一 `main` commit，重启。
-- Schema：v1 只有 `0000_init`；若后续 migration 失败，保留 bak 文件回拷。**不做 down migration 自动化**（SQLite 实践里 forward-fix 更稳）。
+- Schema：v1 有 `0000_init` + `0001_api_tokens`；若后续 migration 失败，保留 bak 文件回拷。**不做 down migration 自动化**（SQLite 实践里 forward-fix 更稳）。
 - 导入：导入前备份；脚本幂等，坏了可回拷 bak 再跑。
 
 ### 环境变量
@@ -1297,6 +1373,8 @@ sqlite3 "$DATABASE_PATH" ".backup '${DATABASE_PATH}.bak-$(date +%F)'"
 | 本机 sqlite 无备份丢失数据 | 高 | 低 | 发布 checklist 含 `.backup`（K29） |
 | 把 gb-crm 做成女商插件导致范围爆炸 | 中 | 低 | K1：独立应用 |
 | TDD 声明后只写快乐路径 | 中 | 中 | 80% 含 plugins/lib；`can()` 每一格有测 |
+| Agent PAT 落在 home 目录被拷走 | 中 | 低 | 文件 600；明文不落库；禁用即撤销；skill 禁止把 token 打进对话 |
+| 给 Agent 开裸 SQL 写接口 | 高 | 低（已否） | K35：写走 REST；不做 `/sql/exec` |
 
 ---
 
@@ -1310,6 +1388,7 @@ sqlite3 "$DATABASE_PATH" ".backup '${DATABASE_PATH}.bak-$(date +%F)'"
 | Q7 | 内网 + Docker（sqlite volume；非公网） | K32 |
 | Q9 | 只软删，无硬删/回收站 | K33 |
 | Q13 | 品牌文案「闪光 · 客户运营」 | K34 |
+| （后补） | Agent 用 PAT + 托管 `login.sh` + 仓库 `skills/gb-crm/`；不开 SQL | K35 |
 
 此前已关闭、不再提问：四张表（Goals/K19）、角色拆分（K10）、不做飞书导入（K16）、独立应用（K1）、Excel 深度（K8/K30）、父记录列（K15）、归属人 M2M（K15）、离职闸门（K10）、无登录成员进 users（K10）、`dev` 已存在（K17）。
 
@@ -1660,4 +1739,10 @@ Base 标题：团队核心数据库。摘录 `base_token=IWFEbuZcfalvQus6vkOcJXU
 - **影响文件**：`plugins/static-spa.ts`、**`Dockerfile`**、**`docker-compose.yml`**、`.dockerignore`、README 生产（volume、Caddy、`COOKIE_SECURE`/`TRUST_PROXY`）、`HOST` warn
 - **说明**：**Dockerfile 与 compose 为必做**（K32），不是 optional。非 `/api/*` 且非静态文件的 GET → `index.html`。sqlite **只** 在 volume。镜像不打包 `.sqlite` / `.env`。备份文档只写 `.backup`。不包含公网加固。
 
-**合并顺序**：0 → 1 → 2 → 3 → 4 → 5 → 6 → 7；4 之后并行 8 → 9；9+7 → 10；5+8+9 → 11；12 / 13 / 14 并行。不要在 PR 3 前写业务路由，不要在 PR 9 前堆业务页。
+### PR 15 — `feat(api): Agent PAT + 托管 login.sh + skills/gb-crm`
+
+- **依赖**：PR 4（login / session-auth）；资源写路径走已有 REST（PR 5–7）
+- **影响文件**：`drizzle/0001_api_tokens.sql`、`modules/auth/{token-repo,token-service,login.sh,login-script}`、`plugins/session-auth.ts`、`skills/gb-crm/**`、`docs/{design,dev}.md`
+- **说明**：K35。`POST /api/v1/auth/tokens` 用户名密码签发；Bearer 与 cookie 并行；`GET /agent/login.sh`；read 令牌拒写；禁用撤销 PAT。测试：明文不落库、Host 注入回退、`curl|sh` 非交互写入 `~/.gb-crm`（listen 须异步 spawn，避免堵事件循环）。**不开** SQL 查询接口。
+
+**合并顺序**：0 → 1 → 2 → 3 → 4 → 5 → 6 → 7；4 之后并行 8 → 9；9+7 → 10；5+8+9 → 11；12 / 13 / 14 并行；15 在 4 与资源 REST 之后。不要在 PR 3 前写业务路由，不要在 PR 9 前堆业务页。

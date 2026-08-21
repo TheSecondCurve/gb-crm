@@ -91,6 +91,23 @@ describe("static-spa（production）", () => {
     }
   });
 
+  it("GET /agent/login.sh 是已注册路由，不 fallback 成 index.html", async () => {
+    const app = buildApp({ env: prodEnv(), db: tmp.db, webDist: distDir, gcProbability: 0 });
+    try {
+      const res = await app.inject({
+        method: "GET",
+        url: "/agent/login.sh",
+        headers: { host: "crm.internal:3001" },
+      });
+      expect(res.statusCode).toBe(200);
+      expect(res.headers["content-type"]).toContain("text/x-shellscript");
+      expect(res.body).toContain("http://crm.internal:3001");
+      expect(res.body).not.toContain("gb-crm</body>");
+    } finally {
+      await app.close();
+    }
+  });
+
   it("非 production 不注册静态托管：GET /customers 仍是 404 JSON 信封", async () => {
     const app = buildApp({ env: testEnv(), db: tmp.db, gcProbability: 0 });
     try {

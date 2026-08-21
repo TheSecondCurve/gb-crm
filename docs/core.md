@@ -41,5 +41,6 @@
 
 ## 其他功能
 
-- 用环境变量设置一个管理员用户名和管理员密码 
+- 用环境变量设置一个管理员用户名和管理员密码
+- Agent / 本机脚本可用个人令牌调 REST（无需克隆仓库）。签发：`curl -fsSL http://<crm-host>/agent/login.sh | sh`。只读与读写两档，仍受系统角色约束。设计见 `docs/design.md` K35，用法见 `docs/dev.md`。 
 
