@@ -9,12 +9,13 @@ let tmp: TmpDb;
 let clock: { t: number };
 let app: FastifyInstance;
 
-const HOUR = 3600;
+// 全库时间戳一律 epoch 毫秒
+const HOUR = 3_600_000;
 const DAY = 24 * HOUR;
 
 beforeEach(() => {
   tmp = createTmpDb();
-  clock = { t: 1_800_000_000 }; // 固定起点，避免依赖真实时间
+  clock = { t: 1_800_000_000_000 }; // 固定起点（epoch ms），避免依赖真实时间
   app = buildApp({ env: testEnv(), db: tmp.db, now: () => clock.t, gcProbability: 0 });
 });
 
@@ -43,9 +44,9 @@ describe("session touch 节流（K5）", () => {
     const cookie = await loginAs(app, "alice", "password123");
     const before = sessionRow();
 
-    clock.t += 10 * 60; // +10min
+    clock.t += 10 * 60 * 1000; // +10min
     const r1 = await me(cookie);
-    clock.t += 10 * 60; // +20min
+    clock.t += 10 * 60 * 1000; // +20min
     const r2 = await me(cookie);
 
     expect(r1.statusCode).toBe(200);
@@ -60,7 +61,7 @@ describe("session touch 节流（K5）", () => {
     const cookie = await loginAs(app, "alice", "password123");
     const before = sessionRow();
 
-    clock.t += 31 * 60;
+    clock.t += 31 * 60 * 1000;
     const res = await me(cookie);
     expect(res.statusCode).toBe(200);
 
@@ -68,8 +69,8 @@ describe("session touch 节流（K5）", () => {
     expect(after.last_touched_at).toBe(clock.t);
     expect(after.expires_at).toBe(Math.min(clock.t + 12 * HOUR, before.created_at + 7 * DAY));
     expect(after.expires_at).toBe(clock.t + 12 * HOUR); // 距 7d 还远
-    // cookie 刷新为剩余 idle
-    expect(res.headers["set-cookie"] as string).toContain(`Max-Age=${12 * HOUR}`);
+    // cookie 刷新为剩余 idle（cookie 规范单位是秒：43200 = 12h）
+    expect(res.headers["set-cookie"] as string).toContain("Max-Age=43200");
   });
 
   it("剩余 idle < 11h 也触发 touch（即使 30min 内刚摸过）", async () => {
@@ -79,7 +80,7 @@ describe("session touch 节流（K5）", () => {
     // 直接操纵：刚 touch 过（30min 内不触发第一条），但 expires_at 只剩 10h59m
     tmp.sqlite
       .prepare("UPDATE sessions SET last_touched_at = ?, expires_at = ? WHERE id = ?")
-      .run(clock.t, clock.t + 11 * HOUR - 60, row.id);
+      .run(clock.t, clock.t + 11 * HOUR - 60_000, row.id);
 
     const res = await me(cookie);
     expect(res.statusCode).toBe(200);
@@ -92,19 +93,19 @@ describe("session touch 节流（K5）", () => {
     await seedUser(tmp.db);
     const cookie = await loginAs(app, "alice", "password123");
     const row = sessionRow();
-    // 创建于 6.9 天前：绝对上限只剩 2.4h
+    // 创建于 6.9 天前：绝对上限只剩 2.4h（0.1 * DAY = 8640000ms，整数无舍入）
     tmp.sqlite
       .prepare("UPDATE sessions SET created_at = ?, last_touched_at = ? WHERE id = ?")
-      .run(clock.t - 6.9 * DAY, clock.t - 31 * 60, row.id);
+      .run(clock.t - 6.9 * DAY, clock.t - 31 * 60 * 1000, row.id);
 
     const res = await me(cookie);
     expect(res.statusCode).toBe(200);
     const after = sessionRow();
-    expect(after.expires_at).toBe(Math.round(clock.t - 6.9 * DAY + 7 * DAY));
+    expect(after.expires_at).toBe(clock.t - 6.9 * DAY + 7 * DAY);
     expect(after.expires_at).toBeLessThan(clock.t + 12 * HOUR);
-    // cookie maxAge = 剩余 idle
+    // cookie maxAge = 剩余 idle（ms → 秒）
     expect(res.headers["set-cookie"] as string).toContain(
-      `Max-Age=${after.expires_at - clock.t}`,
+      `Max-Age=${(after.expires_at - clock.t) / 1000}`,
     );
   });
 
@@ -119,7 +120,7 @@ describe("session touch 节流（K5）", () => {
     await seedUser(tmp.db);
     const cookie = await loginAs(app, "alice", "password123");
     const row = sessionRow();
-    // created_at 7 天零 1 秒前；expires_at 仍在未来
+    // created_at 在 7 天前多 1ms；expires_at 仍在未来
     tmp.sqlite
       .prepare("UPDATE sessions SET created_at = ?, expires_at = ? WHERE id = ?")
       .run(clock.t - 7 * DAY - 1, clock.t + HOUR, row.id);
@@ -158,7 +159,7 @@ describe("带 cookie 请求的 1% GC（K29）", () => {
         .prepare(
           "INSERT INTO sessions (id, user_id, created_at, expires_at, last_touched_at) VALUES (?, ?, ?, ?, ?)",
         )
-        .run("stale", id, clock.t - 90000, clock.t - 1000, clock.t - 1000);
+        .run("stale", id, clock.t - 90_000_000, clock.t - 1_000_000, clock.t - 1_000_000);
 
       const res = await gcApp.inject({
         method: "GET",

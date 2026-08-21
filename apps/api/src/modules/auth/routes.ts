@@ -11,14 +11,14 @@ import {
   createSession,
   deleteSessionById,
   gcSessions,
-  SESSION_IDLE_TTL_SECONDS,
+  SESSION_IDLE_TTL_MS,
 } from "./session-repo.js";
 import { changeOwnPassword, LOGIN_FAIL_MESSAGE, verifyLogin } from "./service.js";
 
 export interface AuthRoutesOptions {
   db: Db;
   env: AppEnv;
-  /** 时钟注入（epoch 秒） */
+  /** 时钟注入（epoch 毫秒） */
   now: () => number;
   /** 登录限流上限（/min/IP），默认 10；测试可调小 */
   rateLimitMax?: number;
@@ -49,7 +49,7 @@ export function authRoutes(app: FastifyInstance, opts: AuthRoutesOptions): void 
       });
       setSessionCookie(reply, session.id, {
         secure: env.COOKIE_SECURE,
-        maxAgeSeconds: SESSION_IDLE_TTL_SECONDS,
+        maxAgeSeconds: SESSION_IDLE_TTL_MS / 1000, // cookie 规范用秒；idle TTL 与服务器 expires_at 对齐
       });
       return reply.code(204).send();
     },

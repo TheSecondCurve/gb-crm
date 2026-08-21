@@ -24,7 +24,7 @@ export interface BootstrapEnv {
 }
 
 export interface BootstrapOptions {
-  /** 时钟注入（epoch 秒），测试可替换 */
+  /** 时钟注入（epoch 毫秒），测试可替换 */
   now?: () => number;
   /** 只接收 `bootstrap=created|skipped|reset|refused`；默认 console.log */
   log?: (message: string) => void;
@@ -57,7 +57,7 @@ export async function bootstrapAdmin(
   env: BootstrapEnv,
   options: BootstrapOptions = {},
 ): Promise<BootstrapResult> {
-  const now = options.now ?? (() => Math.floor(Date.now() / 1000));
+  const now = options.now ?? (() => Date.now()); // epoch 毫秒
   const log = options.log ?? ((m: string) => console.log(m));
 
   const finish = (result: Exclude<BootstrapResult, "refused">): BootstrapResult => {

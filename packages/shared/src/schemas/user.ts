@@ -6,7 +6,7 @@ import {
   jobTitleSchema,
   systemRoleSchema,
 } from "../enums.js";
-import { pageQuerySchema } from "./common.js";
+import { epochMsSchema, pageQuerySchema } from "./common.js";
 
 const nullableText = z.string().nullable();
 
@@ -30,9 +30,7 @@ export type UserWrite = z.infer<typeof userWriteSchema>;
 
 // PATCH 内核（K24）：.partial() 只表示键可缺席，不得把缺席键绑默认值；
 // ZodOptional 包装后 undefined 短路，默认值不会在 PATCH 上触发。
-export const userPatchSchema = userWriteSchema
-  .partial()
-  .extend({ updatedAt: z.number().int() });
+export const userPatchSchema = userWriteSchema.partial().extend({ updatedAt: epochMsSchema });
 export type UserPatch = z.infer<typeof userPatchSchema>;
 
 export const userSortSchema = z.enum(["updatedAt", "createdAt", "nickname", "username"]);

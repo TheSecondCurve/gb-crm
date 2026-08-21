@@ -12,7 +12,7 @@ let app: FastifyInstance;
 
 beforeEach(() => {
   tmp = createTmpDb();
-  clock = { t: Math.floor(Date.now() / 1000) };
+  clock = { t: Date.now() }; // epoch 毫秒
   app = buildApp({ env: testEnv(), db: tmp.db, now: () => clock.t, gcProbability: 0 });
 });
 
@@ -49,7 +49,7 @@ describe("POST /api/v1/auth/login", () => {
     }[];
     expect(rows).toHaveLength(1);
     expect(rows[0]!.created_at).toBe(clock.t);
-    expect(rows[0]!.expires_at).toBe(clock.t + 12 * 3600);
+    expect(rows[0]!.expires_at).toBe(clock.t + 12 * 3600 * 1000); // idle 12h，epoch ms
     expect(rows[0]!.last_touched_at).toBe(clock.t);
   });
 
@@ -348,18 +348,18 @@ describe("argon2id 参数钉住（Security 认证细节）", () => {
 describe("session GC", () => {
   it("login 时清掉过期 session（K29）", async () => {
     const id = await seedUser(tmp.db);
-    // 插入一条已过期 session（别的用户场景同理，用同用户即可）
+    // 插入一条已过期 session（别的用户场景同理，用同用户即可）；时间戳一律 epoch ms
     tmp.sqlite
       .prepare(
         "INSERT INTO sessions (id, user_id, created_at, expires_at, last_touched_at) VALUES (?, ?, ?, ?, ?)",
       )
-      .run("expired-session", id, clock.t - 100000, clock.t - 50000, clock.t - 50000);
+      .run("expired-session", id, clock.t - 100_000_000, clock.t - 50_000_000, clock.t - 50_000_000);
     // 插入一条超 7d 绝对上限但 idle 未到期的
     tmp.sqlite
       .prepare(
         "INSERT INTO sessions (id, user_id, created_at, expires_at, last_touched_at) VALUES (?, ?, ?, ?, ?)",
       )
-      .run("ancient-session", id, clock.t - 8 * 86400, clock.t + 3600, clock.t);
+      .run("ancient-session", id, clock.t - 8 * 86400 * 1000, clock.t + 3600 * 1000, clock.t);
 
     await loginAs(app, "alice", "password123");
     const ids = (tmp.sqlite.prepare("SELECT id FROM sessions").all() as { id: string }[]).map(

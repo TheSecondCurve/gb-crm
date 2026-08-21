@@ -110,7 +110,7 @@ describe("bootstrap admin（§5 五条规则）", () => {
     const id = await seedUser(tmp.db, { username: "alice", password: "old-password-1" });
     tmp.sqlite
       .prepare(
-        "INSERT INTO sessions (id, user_id, created_at, expires_at, last_touched_at) VALUES ('s1', ?, 1, 9999999999, 1)",
+        "INSERT INTO sessions (id, user_id, created_at, expires_at, last_touched_at) VALUES ('s1', ?, 1, 9999999999999, 1)",
       )
       .run(id);
 

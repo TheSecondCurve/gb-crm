@@ -1,7 +1,7 @@
 import { z } from "zod";
 
 import { productStatusSchema, productTypeSchema } from "../enums.js";
-import { pageQuerySchema, queryBooleanSchema } from "./common.js";
+import { epochMsSchema, pageQuerySchema, queryBooleanSchema } from "./common.js";
 
 const nullableText = z.string().nullable();
 
@@ -23,7 +23,7 @@ export type ProductWrite = z.infer<typeof productWriteSchema>;
 
 export const productPatchSchema = productWriteSchema
   .partial()
-  .extend({ updatedAt: z.number().int() });
+  .extend({ updatedAt: epochMsSchema });
 export type ProductPatch = z.infer<typeof productPatchSchema>;
 
 export const productSortSchema = z.enum(["updatedAt", "createdAt", "name", "priceCents"]);

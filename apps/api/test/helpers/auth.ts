@@ -32,7 +32,7 @@ export interface SeedUserOptions {
 }
 
 export async function seedUser(db: Db, options: SeedUserOptions = {}): Promise<number> {
-  const now = Math.floor(Date.now() / 1000);
+  const now = Date.now(); // epoch 毫秒（全库统一单位）
   const password = options.password === undefined ? "password123" : options.password;
   const result = db
     .insert(users)

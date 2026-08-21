@@ -84,6 +84,7 @@ export async function verifyLogin(
  * 改自己密码：校验 currentPassword（失败 → false，路由层抛 401）。
  * 成功后按 §5「改密：删该用户全部 session」删除该用户所有 session（含当前），
  * 客户端随后 401 重新登录。
+ * @param input.now epoch 毫秒（全库统一单位）
  */
 export async function changeOwnPassword(
   db: Db,

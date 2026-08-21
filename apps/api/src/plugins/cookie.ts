@@ -12,7 +12,7 @@ export function registerCookie(app: FastifyInstance, secret: string): void {
 
 export interface SessionCookieOptions {
   secure: boolean;
-  /** 剩余 idle 秒数；与服务器 expires_at 对齐 */
+  /** cookie 规范单位是秒；由剩余 idle 毫秒换算而来（DB 内时间戳一律 epoch 毫秒） */
   maxAgeSeconds: number;
 }
 

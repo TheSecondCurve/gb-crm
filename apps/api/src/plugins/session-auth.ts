@@ -6,6 +6,7 @@
 //   并刷新 cookie maxAge 为剩余 idle；
 // - 带 cookie 的请求以 1% 概率 GC 过期 session（K29）；
 // - 未登录访问 /api/v1/**（除 /auth/login、health）→ 401 UNAUTHORIZED。
+// 所有时间戳一律 epoch 毫秒；仅 cookie maxAge 按规范用秒（毫秒换算）。
 import { eq } from "drizzle-orm";
 import type { FastifyInstance } from "fastify";
 
@@ -16,10 +17,10 @@ import { sessions, users } from "../db/schema.js";
 import {
   findSessionById,
   gcSessions,
-  SESSION_ABSOLUTE_TTL_SECONDS,
-  SESSION_IDLE_TTL_SECONDS,
-  SESSION_TOUCH_INTERVAL_SECONDS,
-  SESSION_TOUCH_REMAINING_SECONDS,
+  SESSION_ABSOLUTE_TTL_MS,
+  SESSION_IDLE_TTL_MS,
+  SESSION_TOUCH_INTERVAL_MS,
+  SESSION_TOUCH_REMAINING_MS,
 } from "../modules/auth/session-repo.js";
 import type { AuthUser } from "../modules/auth/service.js";
 import { SESSION_COOKIE_NAME, setSessionCookie } from "./cookie.js";
@@ -37,7 +38,7 @@ const PUBLIC_PATHS = new Set(["/api/v1/health", "/api/v1/auth/login"]);
 
 export interface SessionAuthOptions {
   db: Db;
-  /** 时钟注入（epoch 秒），测试可替换 */
+  /** 时钟注入（epoch 毫秒），测试可替换 */
   now: () => number;
   cookieSecure: boolean;
   /** 带 cookie 请求的 GC 概率，默认 1%（测试可注入 1 走确定路径） */
@@ -67,7 +68,7 @@ export function sessionAuth(app: FastifyInstance, opts: SessionAuthOptions): voi
 
     const session = findSessionById(db, unsigned.value);
     if (!session) throw unauthorized();
-    if (!(t < session.createdAt + SESSION_ABSOLUTE_TTL_SECONDS && t < session.expiresAt)) {
+    if (!(t < session.createdAt + SESSION_ABSOLUTE_TTL_MS && t < session.expiresAt)) {
       throw unauthorized();
     }
 
@@ -92,12 +93,12 @@ export function sessionAuth(app: FastifyInstance, opts: SessionAuthOptions): voi
 
     // Touch 节流（K5）：列表轮询不写库
     if (
-      t - session.lastTouchedAt >= SESSION_TOUCH_INTERVAL_SECONDS ||
-      session.expiresAt - t < SESSION_TOUCH_REMAINING_SECONDS
+      t - session.lastTouchedAt >= SESSION_TOUCH_INTERVAL_MS ||
+      session.expiresAt - t < SESSION_TOUCH_REMAINING_MS
     ) {
       const newExpiresAt = Math.min(
-        t + SESSION_IDLE_TTL_SECONDS,
-        session.createdAt + SESSION_ABSOLUTE_TTL_SECONDS,
+        t + SESSION_IDLE_TTL_MS,
+        session.createdAt + SESSION_ABSOLUTE_TTL_MS,
       );
       db.update(sessions)
         .set({ expiresAt: newExpiresAt, lastTouchedAt: t })
@@ -105,7 +106,8 @@ export function sessionAuth(app: FastifyInstance, opts: SessionAuthOptions): voi
         .run();
       setSessionCookie(reply, session.id, {
         secure: opts.cookieSecure,
-        maxAgeSeconds: newExpiresAt - t, // 剩余 idle
+        // cookie maxAge 按规范是秒：剩余 idle 毫秒 → 秒
+        maxAgeSeconds: Math.floor((newExpiresAt - t) / 1000),
       });
     }
 

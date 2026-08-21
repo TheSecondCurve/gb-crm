@@ -15,7 +15,7 @@ import { sessionAuth } from "./plugins/session-auth.js";
 export interface BuildAppOptions extends FastifyServerOptions {
   env: AppEnv;
   db: Db;
-  /** 时钟注入（epoch 秒）；默认 Date.now() */
+  /** 时钟注入（epoch 毫秒）；默认 Date.now() */
   now?: () => number;
   /** 登录限流上限（/min/IP），默认 10；测试可调小 */
   rateLimitMax?: number;
@@ -25,7 +25,7 @@ export interface BuildAppOptions extends FastifyServerOptions {
 
 export function buildApp(options: BuildAppOptions): FastifyInstance {
   const { env, db, now, rateLimitMax, gcProbability, ...serverOptions } = options;
-  const clock = now ?? (() => Math.floor(Date.now() / 1000));
+  const clock = now ?? (() => Date.now());
 
   const app = fastify({
     logger: false,
