@@ -1,16 +1,31 @@
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
+import { BrowserRouter } from "react-router-dom";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 
-// PR 1 骨架占位：Router / QueryClientProvider / 页面在 PR 8 起落地（K26）。
-function App() {
-  return <div>闪光 · 客户运营</div>;
-}
+import App from "./App";
+import { AuthProvider } from "./auth/AuthProvider";
+import { ToastProvider } from "./components/Toast";
+import "./styles/tokens.css";
+import "./styles/base.css";
+
+const queryClient = new QueryClient({
+  defaultOptions: { queries: { retry: false } },
+});
 
 const rootEl = document.getElementById("root");
 if (rootEl) {
   createRoot(rootEl).render(
     <StrictMode>
-      <App />
+      <QueryClientProvider client={queryClient}>
+        <BrowserRouter>
+          <AuthProvider>
+            <ToastProvider>
+              <App />
+            </ToastProvider>
+          </AuthProvider>
+        </BrowserRouter>
+      </QueryClientProvider>
     </StrictMode>,
   );
 }
