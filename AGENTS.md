@@ -34,6 +34,8 @@ v1 **不抽** `packages/ui`。视觉 token 在 `apps/web/src/styles/tokens.css`�
 | repo | `repo.ts` | SQL / Drizzle |
 | assemble | `assemble.ts` | 行 → JSON（展开 live 关联，INNER 未删除） |
 
+例外：`modules/agent/routes.ts` 是单文件模块（K35 Agent SQL 端点），直接用 `db.$client` 原生 better-sqlite3，不走三层。
+
 公共能力：
 
 - `src/lib/patch-kernel.ts` — PATCH 标量内核（键存在才 SET）
@@ -107,7 +109,7 @@ Workspace 依赖写法：`"@gb-crm/shared": "*"`（npm 不支持 `workspace:*`�
 - 服务端 session + 签名 httpOnly cookie（HMAC = `SESSION_SECRET`）。不做 JWT、不做飞书登录。
 - 密码 argon2id。登录还要求 `system_role ∈ {admin, operator, assistant}`。
 - Session 最多每 30 分钟 touch 一次（或剩余 idle < 11h）。禁用账户立即删 session **并撤销 PAT**。
-- Agent PAT（K35）与 cookie **并行**：`Authorization: Bearer`；有 Bearer 不回落 cookie。签发：`curl -fsSL http://<host>/agent/login.sh | sh` → `~/.gb-crm/credentials.json`。`read`/`write` ∩ `can()`。Skill 在 `skills/gb-crm/`，**不含**密钥。不要给 Agent 开任意 SQL HTTP 接口。
+- Agent PAT（K35）与 cookie **并行**：`Authorization: Bearer`；有 Bearer 不回落 cookie。签发：`curl -fsSL http://<host>/agent/login.sh | sh` → `~/.gb-crm/credentials.json`。REST 资源路由 `read`/`write` ∩ `can()`。Skill 在 `skills/gb-crm/`，**不含**密钥。Agent 数据访问走单一自由 SQL 端点 `POST /api/v1/agent/sql`（仅 Bearer PAT，cookie 403）：better-sqlite3 `stmt.readonly` 判读写——只读语句任意 scope/角色放行（含渠道密钥列），写语句必须 write scope + admin；单语句；读上限 1000 行截断。
 - 登录限流 10 次/分钟/IP；仅 `TRUST_PROXY=true` 时才信 `X-Forwarded-For`。
 - 权限唯一来源：`packages/shared` 的 `can(role, resource, action)`。缺席 = deny。`role===null` → false。路由用 `requireCan`，不要在 service 再抄一套角色判断。
 - **无行级 ACL**（没有「只看我的客户」）。
@@ -150,14 +152,14 @@ Workspace 依赖写法：`"@gb-crm/shared": "*"`（npm 不支持 `workspace:*`�
 4. **产品目录 `/products`**：类型/状态/是否套餐/价格（分）。
 5. **客户信息 `/customers`**：分页、模糊搜索、标签、渠道、归属人/升单人、可选父客户；预留可空唯一 `wechat_openid`（不接小程序）。
 6. 每张业务表有 `created_at` / `updated_at` / `created_by` / `updated_by`。
-7. **Agent 令牌**：已有用户本机签发 PAT，skill 调 REST（K35）。
+7. **Agent 令牌**：已有用户本机签发 PAT，skill 走单一 SQL 端点 `/api/v1/agent/sql`（K35）。
 
 `feishu_record_id` 等列仍在 schema 里（历史列）。**v1 不做飞书 / CSV 导入**，不要加回 `import-feishu` 或 `FEISHU_*` 环境变量。主数据在管理端维护。
 
 ## 明确不要做
 
 - 飞书双向同步、飞书 OAuth、飞书机器人、飞书/CSV 导入脚本
-- JWT、GraphQL、微服务、Kafka、Redis、对象存储、Postgres、任意 SQL 查询/写入 HTTP 接口（K35：写走 REST）
+- JWT、GraphQL、微服务、Kafka、Redis、对象存储、Postgres（Agent SQL 端点是 K35 已拍板的唯一例外，规则见上）
 - 微信小程序 / 支付（只留 `wechat_openid` 列）
 - 移动 App、i18n、暗色主题
 - 行级「只看我的客户」

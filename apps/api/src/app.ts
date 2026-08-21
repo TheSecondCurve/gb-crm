@@ -9,6 +9,7 @@ import fastify, { type FastifyInstance, type FastifyServerOptions } from "fastif
 import type { Db } from "./db/client.js";
 import type { AppEnv } from "./env.js";
 import { authRoutes } from "./modules/auth/routes.js";
+import { agentRoutes } from "./modules/agent/routes.js";
 import { channelsRoutes } from "./modules/channels/routes.js";
 import { customersRoutes } from "./modules/customers/routes.js";
 import { productsRoutes } from "./modules/products/routes.js";
@@ -66,6 +67,7 @@ export function buildApp(options: BuildAppOptions): FastifyInstance {
     channelsRoutes(instance, { db, now: clock });
     productsRoutes(instance, { db, now: clock });
     customersRoutes(instance, { db, now: clock });
+    agentRoutes(instance, { db });
     done();
   });
 
