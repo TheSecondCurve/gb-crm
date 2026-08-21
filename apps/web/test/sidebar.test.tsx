@@ -1,11 +1,12 @@
 import { describe, expect, it } from "vitest";
 import { fireEvent, screen } from "@testing-library/react";
 
-import { adminMe, assistantMe, mockFetch, renderApp } from "./helpers";
+import { adminMe, assistantMe, emptyList, mockFetch, renderApp } from "./helpers";
 
 function mockMe(me: typeof adminMe) {
   mockFetch((url) => {
     if (url === "/api/v1/auth/me") return { status: 200, body: { data: me } };
+    if (url.startsWith("/api/v1/customers")) return emptyList();
   });
 }
 

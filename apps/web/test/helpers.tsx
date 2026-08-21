@@ -7,6 +7,8 @@ import { vi } from "vitest";
 import App from "../src/App";
 import { AuthProvider, type Me } from "../src/auth/AuthProvider";
 
+export type { Me };
+
 export const adminMe: Me = { id: 1, username: "admin", nickname: "管理员", systemRole: "admin" };
 export const assistantMe: Me = {
   id: 2,
@@ -14,6 +16,18 @@ export const assistantMe: Me = {
   nickname: "兼职助手",
   systemRole: "assistant",
 };
+export const operatorMe: Me = {
+  id: 3,
+  username: "operator",
+  nickname: "团队运营",
+  systemRole: "operator",
+};
+
+/** 空列表响应（落在列表页但本测试不关心列表数据时用） */
+export const emptyList = (): MockResponse => ({
+  status: 200,
+  body: { data: [], meta: { page: 1, pageSize: 25, total: 0 } },
+});
 
 interface MockResponse {
   status: number;

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { fireEvent, screen } from "@testing-library/react";
 
-import { adminMe, mockFetch, renderApp, unauthorized } from "./helpers";
+import { adminMe, emptyList, mockFetch, renderApp, unauthorized } from "./helpers";
 
 describe("认证与路由", () => {
   it("未登录访问 /customers → 跳 /login", async () => {
@@ -19,6 +19,7 @@ describe("认证与路由", () => {
       if (url === "/api/v1/auth/me") {
         return loggedIn ? { status: 200, body: { data: adminMe } } : unauthorized();
       }
+      if (url.startsWith("/api/v1/customers")) return emptyList();
       if (url === "/api/v1/auth/login" && init?.method === "POST") {
         loggedIn = true;
         return { status: 204 };
@@ -63,6 +64,7 @@ describe("认证与路由", () => {
   it("已登录访问 /login → 跳 /customers", async () => {
     mockFetch((url) => {
       if (url === "/api/v1/auth/me") return { status: 200, body: { data: adminMe } };
+      if (url.startsWith("/api/v1/customers")) return emptyList();
     });
     renderApp("/login");
     expect(await screen.findByRole("heading", { name: "客户信息" })).toBeTruthy();
@@ -74,6 +76,7 @@ describe("认证与路由", () => {
       if (url === "/api/v1/auth/me") {
         return loggedIn ? { status: 200, body: { data: adminMe } } : unauthorized();
       }
+      if (url.startsWith("/api/v1/customers")) return emptyList();
       if (url === "/api/v1/auth/logout" && init?.method === "POST") {
         loggedIn = false;
         return { status: 204 };
