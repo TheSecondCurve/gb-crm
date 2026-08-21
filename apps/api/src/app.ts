@@ -8,6 +8,7 @@ import fastify, { type FastifyInstance, type FastifyServerOptions } from "fastif
 import type { Db } from "./db/client.js";
 import type { AppEnv } from "./env.js";
 import { authRoutes } from "./modules/auth/routes.js";
+import { usersRoutes, type UsersRoutesOptions } from "./modules/users/routes.js";
 import { registerCookie } from "./plugins/cookie.js";
 import { registerErrorHandler } from "./plugins/error-handler.js";
 import { sessionAuth } from "./plugins/session-auth.js";
@@ -21,10 +22,12 @@ export interface BuildAppOptions extends FastifyServerOptions {
   rateLimitMax?: number;
   /** 带 cookie 请求的 GC 概率，默认 1%（K29） */
   gcProbability?: number;
+  /** 密码 hash 函数注入（users 模块；测试可用降参数 argon2 提速） */
+  hashFn?: UsersRoutesOptions["hashFn"];
 }
 
 export function buildApp(options: BuildAppOptions): FastifyInstance {
-  const { env, db, now, rateLimitMax, gcProbability, ...serverOptions } = options;
+  const { env, db, now, rateLimitMax, gcProbability, hashFn, ...serverOptions } = options;
   const clock = now ?? (() => Date.now());
 
   const app = fastify({
@@ -49,6 +52,7 @@ export function buildApp(options: BuildAppOptions): FastifyInstance {
   void app.register((instance, _opts, done) => {
     instance.get("/api/v1/health", async () => ({ data: { ok: true } }));
     authRoutes(instance, { db, env, now: clock, rateLimitMax });
+    usersRoutes(instance, { db, now: clock, hashFn });
     done();
   });
 
