@@ -9,6 +9,7 @@ import type { Db } from "./db/client.js";
 import type { AppEnv } from "./env.js";
 import { authRoutes } from "./modules/auth/routes.js";
 import { channelsRoutes } from "./modules/channels/routes.js";
+import { customersRoutes } from "./modules/customers/routes.js";
 import { productsRoutes } from "./modules/products/routes.js";
 import { usersRoutes, type UsersRoutesOptions } from "./modules/users/routes.js";
 import { registerCookie } from "./plugins/cookie.js";
@@ -57,6 +58,7 @@ export function buildApp(options: BuildAppOptions): FastifyInstance {
     usersRoutes(instance, { db, now: clock, hashFn });
     channelsRoutes(instance, { db, now: clock });
     productsRoutes(instance, { db, now: clock });
+    customersRoutes(instance, { db, now: clock });
     done();
   });
 
