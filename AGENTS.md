@@ -13,7 +13,7 @@ gb-crm/
   apps/web/          @gb-crm/web    Vite + React 管理端（中文 UI）
   apps/api/          @gb-crm/api    Fastify + Drizzle + better-sqlite3
   packages/shared/   @gb-crm/shared Zod schema、枚举、labels、can() ACL
-  skills/gb-crm/     Agent skill 备用包（K35；不自动扫描）
+  skills/gb-crm/     Agent skill（K35 源目录）；经软链 .agents/skills/gb-crm 安装为本项目范围 skill
   e2e/               Playwright 冒烟（不进 npm test，不挡合并）
   docs/              core.md / design.md / dev.md / style.md
   Dockerfile + docker-compose.yml

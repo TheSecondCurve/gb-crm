@@ -64,6 +64,19 @@ function mockCustomersApi(me: Me, rows: CustomerDto[] = [customer]) {
         },
       };
     }
+    // 表单弹窗的 relation 选项 loader（来源渠道/所在社群 = GET /channels?pageSize=100）
+    if (url.startsWith("/api/v1/channels")) {
+      return {
+        status: 200,
+        body: {
+          data: [
+            { id: 1, name: "公众号A" },
+            { id: 2, name: "社群B" },
+          ],
+          meta: { page: 1, pageSize: 100, total: 2 },
+        },
+      };
+    }
     if (url.startsWith("/api/v1/customers")) {
       if (method === "GET") {
         return { status: 200, body: { data: rows, meta: { page: 1, pageSize: 25, total: rows.length } } };
@@ -184,6 +197,45 @@ describe("客户信息页", () => {
     });
     await waitFor(() =>
       expect(calls.filter((c) => c.method === "GET" && c.url.startsWith("/api/v1/customers")).length).toBeGreaterThanOrEqual(2),
+    );
+  });
+
+  it("修改：行尾按钮弹全字段表单（预填），PATCH 只带变更键 + updatedAt；清空标量 = null", async () => {
+    const calls = mockCustomersApi(adminMe);
+    renderApp("/customers");
+    await screen.findByText("张三");
+
+    fireEvent.click(screen.getByRole("button", { name: "修改" }));
+    const dialog = await screen.findByRole("dialog", { name: "修改客户：张三" });
+    // 弹窗阶段不发 PATCH；字段已预填当前行
+    expect(calls.some((c) => c.method === "PATCH")).toBe(false);
+    expect((within(dialog).getByLabelText("昵称") as HTMLInputElement).value).toBe("张三");
+    expect((within(dialog).getByLabelText("城市") as HTMLInputElement).value).toBe("上海");
+
+    fireEvent.change(within(dialog).getByLabelText("城市"), { target: { value: "杭州" } });
+    fireEvent.change(within(dialog).getByLabelText("手机号"), { target: { value: "" } });
+    fireEvent.click(within(dialog).getByRole("button", { name: "保存" }));
+
+    await waitFor(() => {
+      const patch = calls.find((c) => c.method === "PATCH" && c.url === "/api/v1/customers/1");
+      expect(patch).toBeTruthy();
+      // 只带变更键 + OCC updatedAt；未动的昵称/类型缺席，清空的可空标量 = null
+      expect(JSON.parse(String(patch?.body))).toEqual({
+        city: "杭州",
+        phone: null,
+        updatedAt: 2000,
+      });
+    });
+    // 列表页用 pageSize=25（弹窗里父记录 loader 是 pageSize=100，区分开）
+    await waitFor(() =>
+      expect(
+        calls.filter(
+          (c) =>
+            c.method === "GET" &&
+            c.url.startsWith("/api/v1/customers") &&
+            c.url.includes("pageSize=25"),
+        ).length,
+      ).toBeGreaterThanOrEqual(2),
     );
   });
 

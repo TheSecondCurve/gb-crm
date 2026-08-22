@@ -47,6 +47,19 @@ function mockChannelsApi(me: Me, rows: ChannelDto[] = channels) {
     const method = init?.method ?? "GET";
     calls.push({ url, method, body: init?.body });
     if (url === "/api/v1/auth/me") return { status: 200, body: { data: me } };
+    // 表单弹窗的 relation 选项 loader（负责人 = GET /users?pageSize=100）
+    if (url.startsWith("/api/v1/users")) {
+      return {
+        status: 200,
+        body: {
+          data: [
+            { id: 1, nickname: "老王" },
+            { id: 2, nickname: "小李" },
+          ],
+          meta: { page: 1, pageSize: 100, total: 2 },
+        },
+      };
+    }
     if (url.startsWith("/api/v1/channels")) {
       if (method === "GET") {
         return { status: 200, body: { data: rows, meta: { page: 1, pageSize: 25, total: rows.length } } };

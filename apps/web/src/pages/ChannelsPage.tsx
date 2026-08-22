@@ -8,7 +8,7 @@ import { channelColumns } from "../columns/channels";
 import { optionsOf } from "../columns/common";
 import { DataGrid, Pagination } from "../components/DataGrid/DataGrid";
 import { ConfirmDialog } from "../components/ConfirmDialog";
-import { CreateRecordModal } from "../components/CreateRecordModal";
+import { RecordFormModal } from "../components/RecordFormModal";
 import { SearchBar } from "../components/SearchBar";
 import { useToast } from "../components/Toast";
 import { focusEditableCell, useResourceList } from "./useResourceList";
@@ -20,10 +20,12 @@ export function ChannelsPage() {
   const list = useResourceList<ChannelDto>("channels", "status");
   const columns = useMemo(() => channelColumns(role), [role]);
   const [creating, setCreating] = useState(false);
+  const [editing, setEditing] = useState<ChannelDto | null>(null);
   const [deleting, setDeleting] = useState<ChannelDto | null>(null);
   const [busy, setBusy] = useState(false);
 
   const canCreate = can(role, "channels", "create");
+  const canUpdate = can(role, "channels", "update");
   const canDelete = can(role, "channels", "delete");
 
   const patchRow = useCallback(async (id: number, body: Record<string, unknown>) => {
@@ -55,6 +57,27 @@ export function ChannelsPage() {
       if (res?.data) focusEditableCell(res.data.id, "name");
     } catch (err) {
       showToast(err instanceof ApiError ? err.message : "创建失败，请稍后重试");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  // 修改：同一表单弹窗全字段编辑，PATCH 只带变更键（OCC 由弹窗附 updatedAt）
+  const updateChannel = async (id: number, body: Record<string, unknown>) => {
+    setBusy(true);
+    try {
+      await patchRow(id, body);
+      setEditing(null);
+      await list.invalidate();
+      showToast("已保存");
+    } catch (err) {
+      showToast(
+        err instanceof ApiError && err.status === 409
+          ? "该行已被他人更新，请刷新后重试"
+          : err instanceof ApiError
+            ? err.message
+            : "保存失败，请稍后重试",
+      );
     } finally {
       setBusy(false);
     }
@@ -110,11 +133,20 @@ export function ChannelsPage() {
             patchRow={patchRow}
             isRowDisabled={(row) => row.status === "paused"}
             renderRowActions={
-              canDelete
+              canUpdate || canDelete
                 ? (row) => (
-                    <button type="button" className="btn-danger" onClick={() => setDeleting(row)}>
-                      删除
-                    </button>
+                    <span className="row-actions">
+                      {canUpdate && (
+                        <button type="button" onClick={() => setEditing(row)}>
+                          修改
+                        </button>
+                      )}
+                      {canDelete && (
+                        <button type="button" className="btn-danger" onClick={() => setDeleting(row)}>
+                          删除
+                        </button>
+                      )}
+                    </span>
                   )
                 : undefined
             }
@@ -130,13 +162,24 @@ export function ChannelsPage() {
         </div>
       </div>
       {creating && (
-        <CreateRecordModal
+        <RecordFormModal
           title="新增渠道"
           columns={columns}
           requiredKeys={["name"]}
           busy={busy}
           onClose={() => setCreating(false)}
           onSubmit={createChannel}
+        />
+      )}
+      {editing && (
+        <RecordFormModal
+          title={`修改渠道：${editing.name}`}
+          columns={columns}
+          requiredKeys={["name"]}
+          row={editing}
+          busy={busy}
+          onClose={() => setEditing(null)}
+          onSubmit={(body) => updateChannel(editing.id, body)}
         />
       )}
       {deleting && (
