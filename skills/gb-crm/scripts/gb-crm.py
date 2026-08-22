@@ -57,10 +57,10 @@ def request(method: str, url: str, token: str, body: bytes | None) -> tuple[int,
             **({"Content-Type": "application/json"} if body is not None else {}),
         },
     )
-    # GB_CRM_INSECURE=1：跳过 TLS 证书校验（本机 python 缺 CA 包时的逃生门；
-    # 中间人可拿到 token，能修证书就别开）
+    # 本地 skill 默认跳过 TLS 校验（目标机 python.org 版 Python 无 CA 包；
+    # 中间人可拿到 token，勿在不可信网络用）。恢复校验：GB_CRM_INSECURE=0
     handlers: list = [urllib.request.ProxyHandler({})]
-    if os.environ.get("GB_CRM_INSECURE") == "1":
+    if os.environ.get("GB_CRM_INSECURE", "1") != "0":
         import ssl
 
         ctx = ssl.create_default_context()
