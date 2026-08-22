@@ -1,16 +1,13 @@
-// 业务设置页（K50/K51）：tab 结构（URL query 驱动，?tab=tags|jobs）。
-// 「客户标签词表」（K45 词表 CRUD，admin 写、其余只读）+「后台任务」（K51 运维查看，全角色）。
+// 业务设置页（K45/K50）：客户标签词表（admin 写、其余只读）。后台任务已移至系统设置页（K51）。
 import { useState, type FormEvent } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { can, tagScopeLabels } from "@gb-crm/shared";
-import { useSearchParams } from "react-router-dom";
 
 import { api, ApiError } from "../api/client";
 import type { TagDto } from "../api/types";
 import { useAuth } from "../auth/AuthProvider";
 import { badge, optionsOf, type BadgeTone } from "../columns/common";
 import { ConfirmDialog } from "../components/ConfirmDialog";
-import { JobsTab } from "../components/JobsTab";
 import { Modal } from "../components/Modal";
 import { useToast } from "../components/Toast";
 
@@ -26,8 +23,6 @@ export function BusinessSettingsPage() {
   const role = me?.systemRole ?? null;
   const showToast = useToast();
   const queryClient = useQueryClient();
-  const [searchParams, setSearchParams] = useSearchParams();
-  const tab = searchParams.get("tab") === "jobs" ? "jobs" : "tags";
   const [busy, setBusy] = useState(false);
   const [editingTag, setEditingTag] = useState<TagDto | null>(null);
   const [creatingTag, setCreatingTag] = useState(false);
@@ -100,19 +95,7 @@ export function BusinessSettingsPage() {
         <h1>业务设置</h1>
       </div>
 
-      <div className="tabs" role="tablist" aria-label="业务设置">
-        <button type="button" role="tab" aria-selected={tab === "tags"} onClick={() => setSearchParams({ tab: "tags" })}>
-          客户标签词表
-        </button>
-        <button type="button" role="tab" aria-selected={tab === "jobs"} onClick={() => setSearchParams({ tab: "jobs" })}>
-          后台任务
-        </button>
-      </div>
-
-      {tab === "jobs" ? (
-        <JobsTab />
-      ) : (
-        <div className="settings-section">
+      <div className="settings-section">
           <div className="card">
             <div className="card-head">
               <h2>客户标签词表</h2>
@@ -161,9 +144,8 @@ export function BusinessSettingsPage() {
             </div>
           </div>
         </div>
-      )}
 
-      {tab === "tags" && (creatingTag || editingTag) && (
+      {(creatingTag || editingTag) && (
         <TagFormModal
           title={creatingTag ? "新增标签" : `修改标签：${editingTag?.name}`}
           tag={editingTag}
@@ -176,7 +158,7 @@ export function BusinessSettingsPage() {
           onSubmit={(body) => submitTag(body, editingTag)}
         />
       )}
-      {tab === "tags" && deletingTag && (
+      {deletingTag && (
         <ConfirmDialog
           title="删除标签"
           message={`确定删除标签「${deletingTag.name}」吗？已打标的客户将不再显示该标签。`}

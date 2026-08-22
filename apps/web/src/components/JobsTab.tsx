@@ -1,4 +1,4 @@
-// 后台任务面板（K51，业务设置页 tab）：任务列表（状态/进度/触发/创建人）+ 详情 + 取消。
+// 后台任务面板（K51，系统设置页 tab）：任务列表（状态/进度/触发/创建人）+ 详情 + 取消。
 // 有 queued/running 任务时 3s 轮询刷新，全部结束后停止轮询。
 import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
