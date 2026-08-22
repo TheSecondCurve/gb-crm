@@ -9,7 +9,17 @@ import {
 
 import type { DealCustomerRefDto, DealDto, DealProductRefDto, UserRefDto } from "../api/types";
 import type { GridColumn } from "../components/DataGrid/DataGrid";
-import { dateToEpochMs, enumBadge, epochMsToDate, formatDateTime, optionsOf, refName, type BadgeTone } from "./common";
+import {
+  centsToYuan,
+  dateToEpochMs,
+  enumBadge,
+  epochMsToDate,
+  formatDateTime,
+  optionsOf,
+  refName,
+  yuanToCents,
+  type BadgeTone,
+} from "./common";
 import {
   customerLabelCache,
   customerOptionsLoader,
@@ -113,6 +123,28 @@ export function dealColumns(role: SystemRole | null): GridColumn<DealDto>[] {
       editable: canUpdate,
       options: optionsOf(dealStageLabels),
       render: (row) => enumBadge(dealStageLabels, STAGE_TONES)(row.stage),
+    },
+    {
+      key: "amountCents",
+      label: "金额（元）",
+      editor: "text",
+      editable: canUpdate,
+      getValue: (row) => centsToYuan(row.amountCents),
+      render: (row) => centsToYuan(row.amountCents),
+      applyOptimistic: (row, v) => ({ ...row, amountCents: yuanToCents(v) }),
+    },
+    {
+      key: "afterTaxRatio",
+      label: "税后金额比例",
+      editor: "text",
+      editable: canUpdate,
+      getValue: (row) => (row.afterTaxRatio === null ? "" : String(row.afterTaxRatio)),
+      render: (row) => (row.afterTaxRatio === null ? "" : String(row.afterTaxRatio)),
+      applyOptimistic: (row, v) => {
+        const s = String(v ?? "").trim();
+        const n = s === "" ? null : Number(s);
+        return { ...row, afterTaxRatio: n === null || !Number.isFinite(n) ? null : n };
+      },
     },
     { key: "orderNo", label: "订单号", editor: "text", editable: canUpdate },
     {
