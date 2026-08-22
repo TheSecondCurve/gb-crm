@@ -2,8 +2,9 @@
 name: gb-crm
 description: >
   闪光 · 客户运营（gb-crm）本机 HTTP 客户端。用 ~/.gb-crm/credentials.json 的 PAT
-  通过单一 SQL 端点查询或维护客户、渠道、产品、团队成员。当用户提到 CRM、客户名单、
-  渠道资产、产品目录、团队成员、gb-crm、闪光客户运营，或要查/改客户时使用。
+  通过单一 SQL 端点查询或维护客户、渠道、产品、团队成员、成交记录、交付管理。
+  当用户提到 CRM、客户名单、渠道资产、产品目录、团队成员、成交、交付、gb-crm、
+  闪光客户运营，或要查/改客户时使用。
   Use when the user runs /gb-crm.
 metadata:
   short-description: 用本机 PAT 对 gb-crm 跑 SQL
@@ -46,7 +47,7 @@ curl -fsSL http://<crm-host>/agent/login.sh | sh
 ## 工作守则
 
 1. 先 `me`，记下自己的 `id` 与 `systemRole`。
-2. 查数据前先看下面的表结构；**默认过滤软删**：`WHERE deleted_at IS NULL`（sessions / api_tokens / join 表无此列）。
+2. 查数据前先看下面的表结构；**默认过滤软删**：`WHERE deleted_at IS NULL`（sessions / api_tokens / delivery_tasks / delivery_customers / channel_owners / customer_source_channels / customer_social_accounts 无此列）。
 3. 写数据只在用户明确要求时做；删除前复述将删的行并得到确认。删除 = **软删**：`UPDATE ... SET deleted_at = <now>`，不要 `DELETE FROM`。
 4. 写时**手动维护** `updated_at = <当前 epoch 毫秒>`、`updated_by = <自己的 user id>`（`me` 拿到）；新建行同理补 `created_at` / `created_by`。
 5. 时间戳一律 **epoch 毫秒**（UTC）。金额 `price_cents` 是**分**，展示元；不要 `yuan * 100` 不 round 就写入。布尔 `is_package` 是 0/1。
@@ -55,7 +56,7 @@ curl -fsSL http://<crm-host>/agent/login.sh | sh
 
 ## 表结构
 
-真相源：`apps/api/drizzle/` 迁移最终态（`0000_init.sql` 为历史；`0002`–`0004` 删除全部飞书字段与客户表部分字段）。列全部 snake_case（SQL 层没有 camelCase）。
+真相源：`apps/api/drizzle/` 迁移最终态（`0000_init.sql` 为历史；`0002`–`0006` 删除飞书字段/客户旧字段/客户标签；`0007` 社交账号表 K41；`0008` 成交表 K42；`0010` 交付重构 K44，`0009` 旧交付模型 DROP 重建）。列全部 snake_case（SQL 层没有 camelCase）。
 
 ### users（团队成员）
 
@@ -118,6 +119,30 @@ curl -fsSL http://<crm-host>/agent/login.sh | sh
 | price_cents | INTEGER | 分；NULL = 未定价 |
 | created_at / updated_at / created_by / updated_by / deleted_at | | 同上 |
 
+### deals（成交记录，K42）
+
+| 列 | 类型 | 含义 |
+| --- | --- | --- |
+| id | INTEGER PK | |
+| customer_id | INTEGER NOT NULL FK | 客户，必填 → customers.id |
+| product_id | INTEGER | 意向产品，可空 FK → products.id |
+| owner_id | INTEGER | 负责人，单值可空 FK → users.id |
+| stage | TEXT | 默认 `gift`，枚举见下 |
+| order_no | TEXT | 订单号 |
+| payment_remark | TEXT | 支付信息备注 |
+| delivery_date | INTEGER | 交付日期，epoch 毫秒，可空 |
+| created_at / updated_at / created_by / updated_by / deleted_at | | 同上（软删） |
+
+### 交付管理（K44）
+
+交付与成交**弱关联**：交付单独立存在，客户来源可来自成交 merge（前端交互，不持久化关联）。
+
+- `delivery_types`（交付类型配置）：`name`（必填）/ `description` / `default_tasks`（多行文本，每行一个默认动作，创建交付项时预填）；软删。
+- `deliveries`（交付单）：`delivery_type_id`（必填 FK → delivery_types.id）/ `remark`；软删。
+- `delivery_customers`（交付 × 客户 M2M）：`(delivery_id, customer_id)` 复合 PK；**硬删**，无审计列。
+- `deliverables`（交付项，挂交付单）：`delivery_id`（必填 FK，cascade）/ `content`（必填，如「拉群」）/ `dimension`（`project`/`customer`，默认 `project`）/ `description` / `delivery_url`；软删。无独立状态，打勾进度即状态。
+- `delivery_tasks`（动作清单，交付项子表）：`deliverable_id`（必填 FK，cascade）/ `customer_id`（**可空**，NULL = 项目维度；客户维度按 customer 分别打勾）/ `content` / `done`（0/1）/ `done_at` / `done_by` / `remark`；**硬删**，无 deleted_at。
+
 ### 系统表（别动）
 
 `sessions`（cookie 会话）、`api_tokens`（PAT，只有 hash）——认证用，看一眼结构即可，**不要写**。
@@ -136,6 +161,8 @@ curl -fsSL http://<crm-host>/agent/login.sh | sh
 - channel status：`operating` 运营中 / `paused` 暂停 / `pending` 待开通
 - product_type：`c_consulting` C端咨询 / `b_consulting` B端咨询 / `ad_coop` 广告合作 / `content_coop` 内容合作 / `knowledge` 知识付费 / `circle_sub` 圈子订阅 / `campaign` 运营活动 / `team_delivery` 团队交付
 - product status：`on_sale` 在售 / `off_sale` 停售 / `in_dev` 开发中
+- deal stage：`gift` 赠送 / `paid` 已付款 / `refunded` 退款 / `closed` 已关闭
+- deliverable dimension：`project` 项目 / `customer` 客户
 
 对用户列出结果时用昵称/名称与中文 label，不要甩一堆 id 和 code；需要跟进时再附 id。
 
