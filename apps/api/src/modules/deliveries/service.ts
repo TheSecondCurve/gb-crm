@@ -267,6 +267,8 @@ export function createDeliverable(
       dimension: body.dimension,
       description: body.description,
       deliveryUrl: body.deliveryUrl,
+      startsAt: body.startsAt ?? null,
+      endsAt: body.endsAt ?? null,
       ...createAudit(ctx),
     });
 
@@ -284,7 +286,13 @@ export function createDeliverable(
   });
 }
 
-const DELIVERABLE_PATCHABLE_KEYS = new Set(["content", "description", "deliveryUrl"]);
+const DELIVERABLE_PATCHABLE_KEYS = new Set([
+  "content",
+  "description",
+  "deliveryUrl",
+  "startsAt",
+  "endsAt",
+]);
 
 export function patchDeliverable(
   db: Db,

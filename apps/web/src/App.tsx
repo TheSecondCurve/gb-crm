@@ -10,6 +10,8 @@ import { UsersPage } from "./pages/UsersPage";
 import { DealsPage } from "./pages/DealsPage";
 import { DeliveriesPage } from "./pages/DeliveriesPage";
 import { DeliveryDetailPage } from "./pages/DeliveryDetailPage";
+import { DeliveryGanttPage } from "./pages/DeliveryGanttPage";
+import { DeliveryMatrixPage } from "./pages/DeliveryMatrixPage";
 import { DeliveryTypesPage } from "./pages/DeliveryTypesPage";
 
 /** 未登录访问受保护页 → /login；等待 /auth/me 时显示占位 */
@@ -32,6 +34,8 @@ export default function App() {
         <Route path="/deals" element={<DealsPage />} />
         <Route path="/deliveries" element={<DeliveriesPage />} />
         <Route path="/deliveries/:id" element={<DeliveryDetailPage />} />
+        <Route path="/deliveries/:id/gantt" element={<DeliveryGanttPage />} />
+        <Route path="/deliveries/:id/matrix" element={<DeliveryMatrixPage />} />
         <Route path="/delivery-types" element={<DeliveryTypesPage />} />
         <Route path="/users" element={<UsersPage />} />
         <Route path="*" element={<Navigate to="/customers" replace />} />

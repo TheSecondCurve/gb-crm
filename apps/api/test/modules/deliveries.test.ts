@@ -368,6 +368,50 @@ describe("deliverables 交付项（双维度 + 类型模板预填）", () => {
     });
     expect(r2.statusCode).toBe(409);
   });
+
+  it("交付项起止时间：创建读写、PATCH 缺席不动/null 清空、OCC 409", async () => {
+    const { cookie, delivery } = await seedTypeAndDelivery();
+    const created = await post(`/api/v1/deliveries/${delivery.id}/items`, cookie, {
+      content: "带排期的项目",
+      startsAt: 1700000000000,
+      endsAt: 1700600000000,
+    });
+    expect(created.statusCode).toBe(201);
+    expect(created.json().data.startsAt).toBe(1700000000000);
+    expect(created.json().data.endsAt).toBe(1700600000000);
+
+    // 不传起止时间 → 均为 null
+    const noDates = await post(`/api/v1/deliveries/${delivery.id}/items`, cookie, { content: "无日期" });
+    expect(noDates.json().data.startsAt).toBeNull();
+    expect(noDates.json().data.endsAt).toBeNull();
+
+    // PATCH 只改 startsAt → endsAt 不动
+    clock.t += 1000;
+    const p1 = await patch(`/api/v1/deliveries/${delivery.id}/items/${created.json().data.id}`, cookie, {
+      startsAt: 1700100000000,
+      updatedAt: created.json().data.updatedAt,
+    });
+    expect(p1.statusCode).toBe(200);
+    expect(p1.json().data.startsAt).toBe(1700100000000);
+    expect(p1.json().data.endsAt).toBe(1700600000000);
+
+    // null 清空 startsAt
+    clock.t += 1000;
+    const p2 = await patch(`/api/v1/deliveries/${delivery.id}/items/${created.json().data.id}`, cookie, {
+      startsAt: null,
+      updatedAt: p1.json().data.updatedAt,
+    });
+    expect(p2.statusCode).toBe(200);
+    expect(p2.json().data.startsAt).toBeNull();
+    expect(p2.json().data.endsAt).toBe(1700600000000);
+
+    // 同 updatedAt 二次 → 409
+    const p3 = await patch(`/api/v1/deliveries/${delivery.id}/items/${created.json().data.id}`, cookie, {
+      startsAt: 1700200000000,
+      updatedAt: p1.json().data.updatedAt,
+    });
+    expect(p3.statusCode).toBe(409);
+  });
 });
 
 describe("delivery_tasks 动作清单", () => {
