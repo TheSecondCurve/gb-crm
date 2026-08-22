@@ -92,6 +92,7 @@ python3 - <<'PY'
 import json
 import os
 import pathlib
+import ssl
 import sys
 import urllib.error
 import urllib.request
@@ -119,7 +120,16 @@ req = urllib.request.Request(
     },
 )
 # 内网/本机签发不走 http_proxy，否则 localhost 会被代理转走并挂起
-opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+handlers = [urllib.request.ProxyHandler({})]
+# GB_CRM_INSECURE=1：跳过 TLS 证书校验（本机 python 缺 CA 包时的逃生门；
+# 明文风险自担——中间人可拿到密码与 token，能修证书就别开）
+if os.environ.get("GB_CRM_INSECURE") == "1":
+    ctx = ssl.create_default_context()
+    ctx.check_hostname = False
+    ctx.verify_mode = ssl.CERT_NONE
+    handlers.append(urllib.request.HTTPSHandler(context=ctx))
+    print("警告: GB_CRM_INSECURE=1，已跳过 TLS 证书校验。", file=sys.stderr)
+opener = urllib.request.build_opener(*handlers)
 try:
     with opener.open(req, timeout=30) as resp:
         payload = json.loads(resp.read().decode("utf-8"))
