@@ -102,6 +102,30 @@ describe("产品目录页", () => {
     await waitFor(() => expect(calls.some((c) => c.url.includes("pageSize=50"))).toBe(true));
   });
 
+  it("新增：弹字段表单，价格输入元 → POST 为分（K13）", async () => {
+    const calls = mockProductsApi(adminMe);
+    renderApp("/products");
+    await screen.findByText("咨询课A");
+
+    fireEvent.click(screen.getByRole("button", { name: "新增" }));
+    const dialog = screen.getByRole("dialog", { name: "新增产品" });
+    expect(calls.some((c) => c.method === "POST")).toBe(false);
+
+    fireEvent.change(within(dialog).getByLabelText("产品名称"), { target: { value: "新课" } });
+    fireEvent.change(within(dialog).getByLabelText("价格（元）"), { target: { value: "200.5" } });
+    fireEvent.change(within(dialog).getByLabelText("是否套餐"), { target: { value: "true" } });
+    fireEvent.click(within(dialog).getByRole("button", { name: "创建" }));
+    await waitFor(() => {
+      const post = calls.find((c) => c.method === "POST" && c.url === "/api/v1/products");
+      expect(post).toBeTruthy();
+      expect(JSON.parse(String(post?.body))).toEqual({
+        name: "新课",
+        priceCents: 20050,
+        isPackage: true,
+      });
+    });
+  });
+
   it("价格编辑：输入元 → PATCH 为分（K13：200.5 → 20050）", async () => {
     const calls = mockProductsApi(adminMe);
     renderApp("/products");

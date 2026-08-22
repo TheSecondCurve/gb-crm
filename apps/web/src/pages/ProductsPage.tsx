@@ -1,13 +1,14 @@
 import { useCallback, useMemo, useState } from "react";
 import { can, productStatusLabels } from "@gb-crm/shared";
 
-import { api } from "../api/client";
+import { api, ApiError } from "../api/client";
 import type { ProductDto } from "../api/types";
 import { useAuth } from "../auth/AuthProvider";
 import { optionsOf } from "../columns/common";
 import { productColumns, yuanToCents } from "../columns/products";
 import { DataGrid, Pagination } from "../components/DataGrid/DataGrid";
 import { ConfirmDialog } from "../components/ConfirmDialog";
+import { CreateRecordModal } from "../components/CreateRecordModal";
 import { SearchBar } from "../components/SearchBar";
 import { useToast } from "../components/Toast";
 import { focusEditableCell, useResourceList } from "./useResourceList";
@@ -18,6 +19,7 @@ export function ProductsPage() {
   const showToast = useToast();
   const list = useResourceList<ProductDto>("products", "status");
   const columns = useMemo(() => productColumns(role), [role]);
+  const [creating, setCreating] = useState(false);
   const [deleting, setDeleting] = useState<ProductDto | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -32,12 +34,26 @@ export function ProductsPage() {
     return res!.data;
   }, []);
 
-  const createRow = async () => {
+  // 新增：先弹字段表单，确认后才 POST（不再直接插空行）
+  const createProduct = async (body: Record<string, unknown>) => {
+    if ("priceCents" in body) {
+      const cents = yuanToCents(body.priceCents);
+      if (cents === null) {
+        showToast("价格需为数字（元）");
+        return;
+      }
+      body = { ...body, priceCents: cents };
+    }
+    if ("isPackage" in body) body = { ...body, isPackage: body.isPackage === "true" };
     setBusy(true);
     try {
-      const res = await api.post<{ data: ProductDto }>("/products", { name: "未命名产品" });
+      const res = await api.post<{ data: ProductDto }>("/products", body);
+      setCreating(false);
       await list.invalidate();
+      showToast("已创建产品");
       if (res?.data) focusEditableCell(res.data.id, "name");
+    } catch (err) {
+      showToast(err instanceof ApiError ? err.message : "创建失败，请稍后重试");
     } finally {
       setBusy(false);
     }
@@ -75,7 +91,7 @@ export function ProductsPage() {
             ))}
           </select>
           {canCreate && (
-            <button type="button" className="btn-primary" onClick={() => void createRow()} disabled={busy}>
+            <button type="button" className="btn-primary" onClick={() => setCreating(true)}>
               新增
             </button>
           )}
@@ -111,6 +127,16 @@ export function ProductsPage() {
           />
         </div>
       </div>
+      {creating && (
+        <CreateRecordModal
+          title="新增产品"
+          columns={columns}
+          requiredKeys={["name"]}
+          busy={busy}
+          onClose={() => setCreating(false)}
+          onSubmit={createProduct}
+        />
+      )}
       {deleting && (
         <ConfirmDialog
           title="删除产品"

@@ -149,7 +149,7 @@ button:disabled { color: var(--text-3); cursor: not-allowed; }
 
 .modal-mask { position: fixed; inset: 0; background: rgba(20, 18, 16, 0.4); display: flex; align-items: center; justify-content: center; }
 
-.modal { width: 420px; max-width: 90vw; background: rgb(255, 255, 255); border-radius: 8px; padding: 24px; border-top: 3px solid var(--accent); }
+.modal { width: 420px; max-width: 90vw; max-height: 85vh; overflow-y: auto; background: rgb(255, 255, 255); border-radius: 8px; padding: 24px; border-top: 3px solid var(--accent); }
 
 .modal-wide { width: 560px; }
 
@@ -194,7 +194,13 @@ select:focus, textarea:focus { outline: 1px solid var(--ink); }
 /* 覆盖快照的行点击语义（design.md §7.1）：单击只选中，不进入编辑 */
 .data-grid tbody tr { cursor: default; }
 
+/* 全部列默认展示，超出宽度时底部横向滚动 */
 .data-grid-scroll { overflow-x: auto; }
+
+.data-grid-table { width: max-content; min-width: 100%; font-size: 13px; }
+
+/* 紧凑密度：padding 从 12px/16px 收到 4px/8px；长文本省略，不撑爆列宽 */
+.data-grid-table th, .data-grid-table td { padding: 4px 8px; white-space: nowrap; max-width: 320px; overflow: hidden; text-overflow: ellipsis; }
 
 /* 冻结首列（Appendix B） */
 .data-grid-table th:first-child, .data-grid-table td:first-child { position: sticky; left: 0; background: rgb(255, 255, 255); z-index: 1; }
@@ -205,9 +211,9 @@ select:focus, textarea:focus { outline: 1px solid var(--ink); }
 
 .data-grid-table td.cell-selected { outline: 1px solid var(--ink); outline-offset: -1px; }
 
-.data-grid-table td input, .data-grid-table td textarea, .data-grid-table td select { width: 100%; padding: 6px 8px; }
+.data-grid-table td input, .data-grid-table td textarea, .data-grid-table td select { width: 100%; padding: 2px 6px; font-size: 13px; }
 
-.grid-toolbar { display: flex; justify-content: flex-end; padding: 8px 12px; border-bottom: 1px solid var(--hairline); }
+.grid-toolbar { display: flex; justify-content: flex-end; padding: 4px 8px; border-bottom: 1px solid var(--hairline); }
 
 .column-picker { position: relative; }
 

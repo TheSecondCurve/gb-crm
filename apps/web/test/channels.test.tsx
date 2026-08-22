@@ -109,7 +109,7 @@ describe("渠道资产页", () => {
     await waitFor(() => expect(calls.some((c) => c.url.includes("pageSize=100"))).toBe(true));
   });
 
-  it("密钥列：admin 默认可见原值；assistant 无新增/删除、密钥列默认隐藏（K27）", async () => {
+  it("密钥列：admin 可见原值；assistant 无新增/删除、密钥列显示「—」不可编（K27）", async () => {
     mockChannelsApi(adminMe);
     const { unmount } = renderApp("/channels");
     await screen.findByText("公众号A");
@@ -117,12 +117,48 @@ describe("渠道资产页", () => {
     expect(screen.getAllByText("gh_abc").length).toBeGreaterThan(0);
     unmount();
 
-    mockChannelsApi(assistantMe);
+    const masked = channels.map((c) => ({
+      ...c,
+      accountId: null,
+      registerPhone: null,
+      registrant: null,
+      realNamePerson: null,
+      loginDevice: null,
+    }));
+    mockChannelsApi(assistantMe, masked);
     renderApp("/channels");
     await screen.findByText("公众号A");
     expect(screen.queryByRole("button", { name: "新增" })).toBeNull();
     expect(screen.queryByRole("button", { name: "删除" })).toBeNull();
-    expect(headerTexts()).not.toContain("账号ID");
+    // 全部列默认展示：列头在，但 assistant 的密钥值是「—」
+    expect(headerTexts()).toContain("账号ID");
+    expect(screen.queryByText("gh_abc")).toBeNull();
+  });
+
+  it("新增：弹字段表单（不再直接 POST 空行），填名称后 POST /channels，Esc 可取消", async () => {
+    const calls = mockChannelsApi(adminMe);
+    renderApp("/channels");
+    await screen.findByText("公众号A");
+
+    fireEvent.click(screen.getByRole("button", { name: "新增" }));
+    const dialog = screen.getByRole("dialog", { name: "新增渠道" });
+    // 弹窗阶段不发请求
+    expect(calls.some((c) => c.method === "POST")).toBe(false);
+
+    fireEvent.change(within(dialog).getByLabelText("渠道名称"), { target: { value: "新渠道" } });
+    fireEvent.change(within(dialog).getByLabelText("粉丝/好友数"), { target: { value: "500" } });
+    fireEvent.click(within(dialog).getByRole("button", { name: "创建" }));
+    await waitFor(() => {
+      const post = calls.find((c) => c.method === "POST" && c.url === "/api/v1/channels");
+      expect(post).toBeTruthy();
+      expect(JSON.parse(String(post?.body))).toEqual({ name: "新渠道", followerCount: 500 });
+    });
+
+    // 再开一次，Esc 关闭
+    fireEvent.click(screen.getByRole("button", { name: "新增" }));
+    const dialog2 = screen.getByRole("dialog", { name: "新增渠道" });
+    fireEvent.keyDown(dialog2, { key: "Escape" });
+    expect(screen.queryByRole("dialog", { name: "新增渠道" })).toBeNull();
   });
 
   it("删除：ConfirmDialog → DELETE → 列表刷新", async () => {

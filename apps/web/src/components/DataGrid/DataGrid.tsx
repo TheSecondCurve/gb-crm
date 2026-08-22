@@ -106,7 +106,7 @@ export function DataGrid<Row extends GridRow>({
     } catch {
       /* localStorage 不可用时用默认 */
     }
-    return columns.filter((c) => c.defaultVisible !== false).map((c) => c.key);
+    return columns.map((c) => c.key);
   });
 
   const [selected, setSelected] = useState<CellPos | null>(null);
