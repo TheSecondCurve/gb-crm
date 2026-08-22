@@ -74,7 +74,7 @@ describe("GET /api/v1/customers/export.xlsx", () => {
       realName: "张三",
       customerType: "company",
       tagCodes: ["vip", "partner"],
-      ownerIds: [ownerId],
+      ownerId,
       sourceChannelIds: [channelId],
     });
     await createCustomer(cookie, { nickname: "客户乙" });

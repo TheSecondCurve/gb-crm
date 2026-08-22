@@ -27,9 +27,10 @@ export const customerWriteSchema = z.object({
   customerType: customerTypeSchema.default("customer"),
   wechatOpenid: nullableText.optional(),
   lastFollowedAt: z.number().int().nullable().optional(),
+  // 归属人单值（K39）：可空标量，缺席=不动，null=清空
+  ownerId: z.number().int().positive().nullable().optional(),
   // 关系数组（K24）：缺席=不动；[]=清空；[ids]=事务内整表替换
   tagCodes: z.array(tagSchema).optional(),
-  ownerIds: idArraySchema.optional(),
   sourceChannelIds: idArraySchema.optional(),
 });
 export type CustomerWrite = z.infer<typeof customerWriteSchema>;

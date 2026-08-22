@@ -25,7 +25,7 @@ const customer: CustomerDto = {
   wechatOpenid: null,
   lastFollowedAt: null,
   tagCodes: ["vip"],
-  owners: [{ id: 1, nickname: "老王" }],
+  owner: { id: 1, nickname: "老王" },
   sourceChannels: [],
   createdAt: 1000,
   updatedAt: 2000,
@@ -146,15 +146,15 @@ describe("客户信息页", () => {
     expect(screen.queryByRole("button", { name: "删除" })).toBeNull();
 
     // 归属人双击无编辑器
-    fireEvent.doubleClick(cell(1, "owners"));
-    expect(cell(1, "owners").querySelector(".cell-dropdown")).toBeNull();
+    fireEvent.doubleClick(cell(1, "owner"));
+    expect(cell(1, "owner").querySelector(".cell-dropdown")).toBeNull();
 
     // 普通字段仍可编（assistant 有 customers.update）
     fireEvent.doubleClick(cell(1, "nickname"));
     expect(cell(1, "nickname").querySelector("input")).toBeTruthy();
   });
 
-  it("admin：新增/删除可见，归属人列可编（relation 选项来自 GET /users）", async () => {
+  it("admin：新增/删除可见，归属人列可编（relation-one 单选，选项来自 GET /users）", async () => {
     const calls = mockCustomersApi(adminMe);
     renderApp("/customers");
     await screen.findByText("张三");
@@ -162,8 +162,8 @@ describe("客户信息页", () => {
     expect(screen.getByRole("button", { name: "新增" })).toBeTruthy();
     expect(screen.getByRole("button", { name: "删除" })).toBeTruthy();
 
-    fireEvent.doubleClick(cell(1, "owners"));
-    expect(await screen.findByLabelText("小李")).toBeTruthy();
+    fireEvent.doubleClick(cell(1, "owner"));
+    expect(await screen.findByRole("button", { name: "小李" })).toBeTruthy();
     expect(calls.some((c) => c.url.startsWith("/api/v1/users") && c.url.includes("pageSize=100"))).toBe(
       true,
     );

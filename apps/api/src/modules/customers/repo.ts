@@ -1,6 +1,6 @@
 // customers 表 Drizzle 查询（§3：repo 层，路由/服务不写 SQL）。
-// list 排除软删；COUNT 与列表同一 WHERE（§9）。三张 join 表的批量读与整表替换也在本层。
-// 过滤：tag → join customer_tags；ownerId → join customer_owners；
+// list 排除软删；COUNT 与列表同一 WHERE（§9）。join 表的批量读与整表替换也在本层。
+// 过滤：tag → join customer_tags；ownerId → customers.owner_id 等值；
 // channelId → 来源渠道（customer_source_channels）包含该渠道即命中。
 import { and, asc, count, desc, eq, inArray, isNull, ne, sql, type SQL } from "drizzle-orm";
 
@@ -9,7 +9,6 @@ import type { CustomerListQuery } from "@gb-crm/shared";
 import type { Db } from "../../db/client.js";
 import {
   channels,
-  customerOwners,
   customers,
   customerSourceChannels,
   customerTags,
@@ -51,9 +50,7 @@ function listWhere(query: CustomerListQuery): SQL | undefined {
     );
   }
   if (query.ownerId !== undefined) {
-    conditions.push(
-      sql`${customers.id} IN (SELECT customer_id FROM customer_owners WHERE user_id = ${query.ownerId})`,
-    );
+    conditions.push(eq(customers.ownerId, query.ownerId));
   }
   if (query.channelId !== undefined) {
     conditions.push(
@@ -162,7 +159,7 @@ export function findLiveByWechatOpenid(
     .get();
 }
 
-/** 返回 ids 中仍然 live 的用户 id 集合（ownerIds 校验：软删/不存在 → 422） */
+/** 返回 ids 中仍然 live 的用户 id 集合（ownerId 校验：软删/不存在 → 422） */
 export function findLiveUserIds(db: Db, ids: readonly number[]): Set<number> {
   if (ids.length === 0) return new Set();
   const rows = db
@@ -184,7 +181,7 @@ export function findLiveChannelIds(db: Db, ids: readonly number[]): Set<number> 
   return new Set(rows.map((r) => r.id));
 }
 
-// ---- 三张 join 表：按页批量读（避免 N+1）与整表替换 ----
+// ---- join 表：按页批量读（避免 N+1）与整表替换 ----
 
 export function listCustomerTagRows(db: Db, customerIds: readonly number[]) {
   if (customerIds.length === 0) return [];
@@ -192,15 +189,6 @@ export function listCustomerTagRows(db: Db, customerIds: readonly number[]) {
     .select()
     .from(customerTags)
     .where(inArray(customerTags.customerId, [...customerIds]))
-    .all();
-}
-
-export function listCustomerOwnerRows(db: Db, customerIds: readonly number[]) {
-  if (customerIds.length === 0) return [];
-  return db
-    .select()
-    .from(customerOwners)
-    .where(inArray(customerOwners.customerId, [...customerIds]))
     .all();
 }
 
@@ -220,16 +208,6 @@ export function replaceCustomerTags(db: Db, customerId: number, tags: readonly s
   if (unique.length === 0) return;
   db.insert(customerTags)
     .values(unique.map((tag) => ({ customerId, tag })))
-    .run();
-}
-
-/** 整表替换归属人（调用方负责事务与 live 用户校验） */
-export function replaceCustomerOwners(db: Db, customerId: number, userIds: readonly number[]): void {
-  db.delete(customerOwners).where(eq(customerOwners.customerId, customerId)).run();
-  const unique = [...new Set(userIds)];
-  if (unique.length === 0) return;
-  db.insert(customerOwners)
-    .values(unique.map((userId) => ({ customerId, userId })))
     .run();
 }
 

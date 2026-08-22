@@ -87,13 +87,15 @@ curl -fsSL http://<crm-host>/agent/login.sh | sh
 | customer_type | TEXT | 枚举见下，默认 `customer` |
 | wechat_openid | TEXT | 预留，可空唯一（live 行内唯一） |
 | last_followed_at | INTEGER | 最近跟进，epoch 毫秒 |
+| owner_id | INTEGER | 归属人，单值可空 FK → users.id（K39，非 join 表） |
 | created_at / updated_at / created_by / updated_by / deleted_at | | 同上 |
 
 关联（join 表，无主键以外的列，联合主键）：
 
 - `customer_tags(customer_id, tag)`：标签，tag 枚举见下。
-- `customer_owners(customer_id, user_id)`：归属人。
 - `customer_source_channels(customer_id, channel_id)`：来源渠道。
+
+归属人是 customers 表上的单值可空列（K39，不是 join 表）：`customers.owner_id` → users.id。
 
 ### channels（渠道资产）
 
