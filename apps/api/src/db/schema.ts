@@ -306,19 +306,46 @@ export const customerTags = sqliteTable(
   ],
 );
 
-// K46 LLM 打标配置单行表（OpenAI 兼容接口；apiKey 明文存库，响应只回 masked）
-export const aiConfig = sqliteTable(
-  "ai_config",
+// K50 统一系统配置表：code 区分（LLM 打标配置存 code='llm'，value 为 JSON 字符串）；
+// 未来新配置直接加 code 行，不再新建表。apiKey 明文存库，响应只回 masked。
+export const systemConfigs = sqliteTable(
+  "system_configs",
   {
-    id: integer("id").primaryKey(),
-    provider: text("provider"),
-    baseUrl: text("base_url"),
-    apiKey: text("api_key"),
-    model: text("model"),
-    updatedAt: integer("updated_at"),
+    code: text("code").primaryKey(),
+    value: text("value").notNull(),
+    updatedAt: integer("updated_at").notNull(),
     updatedBy: integer("updated_by").references(() => users.id, { onDelete: "set null" }),
   },
-  () => [check("ai_config_id_check", sql`"id" = 1`)],
+);
+
+// K51 后台任务：手动/未来定时触发，进程内串行执行器消费 queued 队列。
+// 状态机 queued → running → succeeded|partial|failed|cancelled；params/progress/result 均 JSON。
+export const backgroundJobs = sqliteTable(
+  "background_jobs",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    type: text("type").notNull(),
+    params: text("params").notNull().default("{}"),
+    status: text("status").notNull().default("queued"),
+    progress: text("progress").notNull().default("{}"),
+    result: text("result"),
+    error: text("error"),
+    trigger: text("trigger").notNull().default("manual"),
+    triggerSpec: text("trigger_spec"),
+    createdAt: integer("created_at").notNull(),
+    createdBy: integer("created_by").references(() => users.id, { onDelete: "set null" }),
+    startedAt: integer("started_at"),
+    finishedAt: integer("finished_at"),
+  },
+  (t) => [
+    check(
+      "background_jobs_status_check",
+      sql`"status" IN ('queued','running','succeeded','partial','failed','cancelled')`,
+    ),
+    check("background_jobs_trigger_check", sql`"trigger" IN ('manual','scheduled')`),
+    index("background_jobs_status_idx").on(t.status),
+    index("background_jobs_created_idx").on(t.createdAt),
+  ],
 );
 
 // K42 成交表：客户必填（创建）；意向产品/负责人单值可空；stage 枚举；delivery_date epoch ms。

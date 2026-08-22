@@ -1,15 +1,20 @@
 // 生产入口：parseAppEnv → 建库 → migrate → bootstrap（拒启则退出码非零）→ listen。
+// K51：启动后台任务执行器（进程内串行消费 background_jobs queued 队列；启动时恢复残留 running）。
 import { buildApp } from "./app.js";
 import { bootstrapAdmin } from "./db/bootstrap-admin.js";
 import { createDb } from "./db/client.js";
 import { migrateDb } from "./db/migrate.js";
 import { parseAppEnv } from "./env.js";
+import { createJobRunner } from "./modules/jobs/runner.js";
 
 const env = parseAppEnv();
 const { db, sqlite, close } = createDb(env.DATABASE_PATH);
 migrateDb(sqlite);
 
 const app = buildApp({ env, db, logger: { level: env.LOG_LEVEL } });
+
+const jobRunner = createJobRunner({ db, now: () => Date.now() });
+jobRunner.start();
 
 try {
   await bootstrapAdmin(db, env, { log: (m) => app.log.info(m) });

@@ -2,6 +2,7 @@
 // 复用客户列表的列定义/行内编辑/导出/修改/删除；不提供「新增」（新建行无归属人，不会出现在本列表）。
 import { useCallback, useMemo, useState } from "react";
 import { can, customerTypeLabels } from "@gb-crm/shared";
+import { useNavigate } from "react-router-dom";
 
 import { api, ApiError, buildQuery } from "../api/client";
 import type { CustomerDto } from "../api/types";
@@ -19,11 +20,15 @@ export function MyCustomersPage() {
   const { me } = useAuth();
   const role = me?.systemRole ?? null;
   const showToast = useToast();
+  const navigate = useNavigate();
   const list = useResourceList<CustomerDto>("customers", "customerType", { ownerId: me?.id });
   const columns = useMemo(() => customerColumns(role), [role]);
   const [editing, setEditing] = useState<CustomerDto | null>(null);
   const [deleting, setDeleting] = useState<CustomerDto | null>(null);
   const [busy, setBusy] = useState(false);
+  // K50：行级 AI 生成标签（生成中禁用）+ 全量生成（ownerId=当前用户）
+  const [aiBusyId, setAiBusyId] = useState<number | null>(null);
+  const [bulkOpen, setBulkOpen] = useState(false);
 
   const canUpdate = can(role, "customers", "update");
   const canDelete = can(role, "customers", "delete");
@@ -80,6 +85,38 @@ export function MyCustomersPage() {
     }
   };
 
+  // K50 行级 AI 打标（与客户总览「AI 生成标签」同一端点）；完成后刷新标签徽章列
+  const aiGenerate = async (id: number) => {
+    setAiBusyId(id);
+    try {
+      await api.post(`/customers/${id}/tags/generate`);
+      await list.invalidate();
+      showToast("AI 已更新标签");
+    } catch (err) {
+      showToast(err instanceof ApiError ? err.message : "AI 打标失败，请稍后重试");
+    } finally {
+      setAiBusyId(null);
+    }
+  };
+
+  // K51 全量生成标签：创建后台任务（固定 ownerId=当前用户，与导出一致），进度在业务设置-后台任务查看
+  const bulkGenerate = async () => {
+    setBusy(true);
+    try {
+      const params: Record<string, unknown> = { ownerId: me?.id };
+      if (list.q) params.q = list.q;
+      if (list.filter) params.customerType = list.filter;
+      await api.post("/background-jobs", { type: "customer-tags-generate-all", params });
+      setBulkOpen(false);
+      showToast("任务已创建，可在「业务设置 → 后台任务」查看进度");
+      navigate("/business-settings?tab=jobs");
+    } catch (err) {
+      showToast(err instanceof ApiError ? err.message : "创建任务失败，请稍后重试");
+    } finally {
+      setBusy(false);
+    }
+  };
+
   return (
     <>
       <div className="page-head">
@@ -101,6 +138,11 @@ export function MyCustomersPage() {
           <button type="button" onClick={exportXlsx}>
             导出 Excel
           </button>
+          {canUpdate && (
+            <button type="button" onClick={() => setBulkOpen(true)} disabled={list.total === 0}>
+              全量生成标签
+            </button>
+          )}
         </div>
       </div>
       <div className="card">
@@ -117,6 +159,15 @@ export function MyCustomersPage() {
               canUpdate || canDelete
                 ? (row) => (
                     <span className="row-actions">
+                      {canUpdate && (
+                        <button
+                          type="button"
+                          disabled={aiBusyId !== null}
+                          onClick={() => void aiGenerate(row.id)}
+                        >
+                          {aiBusyId === row.id ? "生成中…" : "AI 生成标签"}
+                        </button>
+                      )}
                       {canUpdate && (
                         <button type="button" onClick={() => setEditing(row)}>
                           修改
@@ -161,6 +212,16 @@ export function MyCustomersPage() {
           loading={busy}
           onConfirm={() => void confirmDelete()}
           onCancel={() => setDeleting(null)}
+        />
+      )}
+      {bulkOpen && (
+        <ConfirmDialog
+          title="全量生成标签"
+          message={`将为我的 ${list.total} 个客户创建 AI 打标任务（后台执行，每个客户一次调用）。确定继续吗？`}
+          confirmText="创建任务"
+          loading={busy}
+          onConfirm={() => void bulkGenerate()}
+          onCancel={() => setBulkOpen(false)}
         />
       )}
     </>

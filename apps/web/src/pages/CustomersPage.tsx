@@ -26,6 +26,8 @@ export function CustomersPage() {
   const [editing, setEditing] = useState<CustomerDto | null>(null);
   const [deleting, setDeleting] = useState<CustomerDto | null>(null);
   const [busy, setBusy] = useState(false);
+  // K50：全量生成标签（跟随当前筛选；确认框展示范围）
+  const [bulkOpen, setBulkOpen] = useState(false);
 
   const canCreate = can(role, "customers", "create");
   const canUpdate = can(role, "customers", "update");
@@ -102,6 +104,25 @@ export function CustomersPage() {
     }
   };
 
+  // K51 全量生成标签：创建后台任务（与列表同一 WHERE，跟随 q/类型/标签筛选），立即返回，进度在业务设置-后台任务查看
+  const bulkGenerate = async () => {
+    setBusy(true);
+    try {
+      const params: Record<string, unknown> = {};
+      if (list.q) params.q = list.q;
+      if (list.filter) params.customerType = list.filter;
+      if (list.secondFilter) params.tagId = Number(list.secondFilter);
+      await api.post("/background-jobs", { type: "customer-tags-generate-all", params });
+      setBulkOpen(false);
+      showToast("任务已创建，可在「业务设置 → 后台任务」查看进度");
+      navigate("/business-settings?tab=jobs");
+    } catch (err) {
+      showToast(err instanceof ApiError ? err.message : "创建任务失败，请稍后重试");
+    } finally {
+      setBusy(false);
+    }
+  };
+
   return (
     <>
       <div className="page-head">
@@ -135,6 +156,11 @@ export function CustomersPage() {
           <button type="button" onClick={exportXlsx}>
             导出 Excel
           </button>
+          {canUpdate && (
+            <button type="button" onClick={() => setBulkOpen(true)} disabled={list.total === 0}>
+              全量生成标签
+            </button>
+          )}
           {canCreate && (
             <button type="button" className="btn-primary" onClick={() => setCreating(true)}>
               新增
@@ -213,6 +239,16 @@ export function CustomersPage() {
           loading={busy}
           onConfirm={() => void confirmDelete()}
           onCancel={() => setDeleting(null)}
+        />
+      )}
+      {bulkOpen && (
+        <ConfirmDialog
+          title="全量生成标签"
+          message={`将为当前筛选范围内的 ${list.total} 个客户创建 AI 打标任务（后台执行，每个客户一次调用）。已配置的词表之外不会新增标签。确定继续吗？`}
+          confirmText="创建任务"
+          loading={busy}
+          onConfirm={() => void bulkGenerate()}
+          onCancel={() => setBulkOpen(false)}
         />
       )}
     </>

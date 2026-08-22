@@ -1,5 +1,5 @@
-// /api/v1/system 路由（K46：LLM 打标配置，仅 admin——system.read/update）。
-// 单行配置：GET 掩码返回；PATCH 单管理员、有意不做 OCC（见 service.ts 注释）。
+// /api/v1/system 路由（K46/K50：LLM 打标配置，仅 admin——system.read/update）。
+// 存储为 system_configs code='llm'；GET 掩码返回；PATCH 单管理员、有意不做 OCC（见 service.ts 注释）。
 import { aiConfigPatchSchema } from "@gb-crm/shared";
 import type { FastifyInstance } from "fastify";
 

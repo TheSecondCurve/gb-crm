@@ -26,8 +26,8 @@ describe("migration", () => {
       .all() as { name: string }[];
     expect(tables.map((t) => t.name)).toEqual([
       "__migrations",
-      "ai_config",
       "api_tokens",
+      "background_jobs",
       "channel_owners",
       "channels",
       "customer_social_accounts",
@@ -43,6 +43,7 @@ describe("migration", () => {
       "products",
       "sessions",
       "sqlite_sequence",
+      "system_configs",
       "tags",
       "users",
     ]);
