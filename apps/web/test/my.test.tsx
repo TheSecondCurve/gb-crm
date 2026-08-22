@@ -1,6 +1,6 @@
 // 「我的运营」一级菜单：我的客户（ownerId=当前用户）/ 我的成交（ownerId=当前用户）。
 import { describe, expect, it, vi } from "vitest";
-import { fireEvent, screen } from "@testing-library/react";
+import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 
 import { adminMe, assistantMe, mockFetch, operatorMe, renderApp, type Me } from "./helpers";
 import type { CustomerDto, DealDto } from "../src/api/types";
@@ -53,19 +53,30 @@ const deal: DealDto = {
 interface Call {
   url: string;
   method: string;
+  body?: string;
 }
 
 function mockCustomersApi(me: Me, rows: CustomerDto[] = [customer]) {
   const calls: Call[] = [];
   mockFetch((url, init) => {
     const method = init?.method ?? "GET";
-    calls.push({ url, method });
+    calls.push({ url, method, body: init?.body });
     if (url === "/api/v1/auth/me") return { status: 200, body: { data: me } };
     if (url.startsWith("/api/v1/customers")) {
+      // K50：行级 AI 打标（静态段优先）
+      if (url.includes("/tags/generate")) {
+        return { status: 200, body: { data: customer } };
+      }
       return {
         status: 200,
         body: { data: rows, meta: { page: 1, pageSize: 25, total: rows.length } },
       };
+    }
+    if (url.startsWith("/api/v1/background-jobs")) {
+      if (method === "GET") {
+        return { status: 200, body: { data: [], meta: { page: 1, pageSize: 50, total: 0 } } };
+      }
+      return { status: 201, body: { data: { id: 1, type: "customer-tags-generate-all", status: "queued" } } };
     }
   });
   return calls;
@@ -141,6 +152,39 @@ describe("我的运营菜单", () => {
     } finally {
       spy.mockRestore();
     }
+  });
+
+  it("我的客户：行操作「AI 生成标签」→ POST /customers/:id/tags/generate（K50）", async () => {
+    const calls = mockCustomersApi(adminMe);
+    renderApp("/my/customers");
+    await screen.findByRole("heading", { name: "我的客户" });
+    expect(await screen.findByText("张三")).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: "AI 生成标签" }));
+    await waitFor(() =>
+      expect(calls.some((c) => c.method === "POST" && c.url === "/api/v1/customers/1/tags/generate")).toBe(
+        true,
+      ),
+    );
+  });
+
+  it("我的客户：「全量生成标签」确认后创建后台任务（params 带 ownerId=当前用户）并跳转", async () => {
+    const calls = mockCustomersApi(adminMe);
+    renderApp("/my/customers");
+    await screen.findByRole("heading", { name: "我的客户" });
+    await screen.findByText("张三");
+
+    fireEvent.click(screen.getByRole("button", { name: "全量生成标签" }));
+    const dialog = screen.getByRole("dialog", { name: "全量生成标签" });
+    fireEvent.click(within(dialog).getByRole("button", { name: "创建任务" }));
+    await waitFor(() => {
+      const post = calls.find((c) => c.method === "POST" && c.url === "/api/v1/background-jobs");
+      expect(post).toBeTruthy();
+      expect(JSON.parse(String(post?.body))).toEqual({
+        type: "customer-tags-generate-all",
+        params: { ownerId: 1 },
+      });
+    });
   });
 
   it("我的成交：列表带 ownerId=当前用户（operator id=3），无「新增」按钮", async () => {

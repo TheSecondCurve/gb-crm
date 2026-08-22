@@ -53,3 +53,21 @@ export const customerListQuerySchema = pageQuerySchema.extend({
   tagId: z.coerce.number().int().positive().optional(),
 });
 export type CustomerListQuery = z.infer<typeof customerListQuerySchema>;
+
+/** K51 批量打标任务结果（存入 background_jobs.result）：逐客户串行，LLM 失败收集明细 */
+export const tagFailureSchema = z.object({
+  customerId: z.number().int(),
+  nickname: z.string(),
+  message: z.string(),
+});
+export type TagFailure = z.infer<typeof tagFailureSchema>;
+
+export const bulkTagGenerateResultSchema = z.object({
+  total: z.number().int(),
+  succeeded: z.number().int(),
+  failed: z.number().int(),
+  failures: z.array(tagFailureSchema).default([]),
+  /** K51：任务被取消时提前结束（isCancelled 回调触发） */
+  cancelled: z.boolean().default(false),
+});
+export type BulkTagGenerateResult = z.infer<typeof bulkTagGenerateResultSchema>;

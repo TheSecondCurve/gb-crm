@@ -29,6 +29,7 @@ const EXPECTED: Record<SystemRole, Partial<Record<Resource, readonly Action[]>>>
     deliveries: ["list", "read", "create", "update", "delete"],
     tags: ["list", "read", "create", "update", "delete"],
     system: ["read", "update"],
+    jobs: ["list", "read", "create", "cancel", "cancelAny"],
     auth: ["setPassword", "impersonate"],
   },
   operator: {
@@ -47,6 +48,7 @@ const EXPECTED: Record<SystemRole, Partial<Record<Resource, readonly Action[]>>>
     deals: ["list", "read", "create", "update", "delete"],
     deliveries: ["list", "read", "create", "update", "delete"],
     tags: ["list", "read"],
+    jobs: ["list", "read", "create", "cancel"],
     auth: ["setPassword"],
   },
   assistant: {
@@ -56,6 +58,7 @@ const EXPECTED: Record<SystemRole, Partial<Record<Resource, readonly Action[]>>>
     deals: ["list", "read"],
     deliveries: ["list", "read"],
     tags: ["list", "read"],
+    jobs: ["list", "read", "create", "cancel"],
     auth: ["setPassword"],
   },
 };

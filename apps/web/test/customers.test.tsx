@@ -89,6 +89,13 @@ function mockCustomersApi(me: Me, rows: CustomerDto[] = [customer]) {
       if (method === "PATCH") return { status: 200, body: { data: { ...customer, updatedAt: 2001 } } };
       if (method === "DELETE") return { status: 204 };
     }
+    // K51：创建后台任务（POST）+ 跳转后任务列表（GET）
+    if (url.startsWith("/api/v1/background-jobs")) {
+      if (method === "GET") {
+        return { status: 200, body: { data: [], meta: { page: 1, pageSize: 50, total: 0 } } };
+      }
+      return { status: 201, body: { data: { id: 1, type: "customer-tags-generate-all", status: "queued" } } };
+    }
   });
   return calls;
 }
@@ -315,5 +322,28 @@ describe("客户信息页", () => {
         calls.filter((c) => c.method === "GET" && c.url.startsWith("/api/v1/customers")).length,
       ).toBeGreaterThanOrEqual(2),
     );
+  });
+
+  it("全量生成标签：确认后创建后台任务（POST /background-jobs，无筛选 params={}）并跳转后台任务 tab", async () => {
+    const calls = mockCustomersApi(adminMe);
+    renderApp("/customers");
+    await screen.findByText("张三");
+
+    fireEvent.click(screen.getByRole("button", { name: "全量生成标签" }));
+    const dialog = screen.getByRole("dialog", { name: "全量生成标签" });
+    expect(within(dialog).getByText(/1 个客户/)).toBeTruthy();
+    expect(calls.some((c) => c.method === "POST")).toBe(false); // 确认前不发请求
+
+    fireEvent.click(within(dialog).getByRole("button", { name: "创建任务" }));
+    await waitFor(() => {
+      const post = calls.find((c) => c.method === "POST" && c.url === "/api/v1/background-jobs");
+      expect(post).toBeTruthy();
+      expect(JSON.parse(String(post?.body))).toEqual({
+        type: "customer-tags-generate-all",
+        params: {},
+      });
+    });
+    // 跳转到业务设置-后台任务 tab
+    expect(await screen.findByRole("tab", { name: "后台任务" })).toBeTruthy();
   });
 });

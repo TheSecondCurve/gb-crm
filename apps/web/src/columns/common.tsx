@@ -1,11 +1,17 @@
 // 列定义共享助手：枚举选项、徽章展示、日期格式化。labels 全部来自 @gb-crm/shared（禁止另写中文映射）。
 import type { ReactNode } from "react";
 
-export type BadgeTone = "plain" | "accent" | "muted";
+export type BadgeTone = "plain" | "accent" | "muted" | "danger";
 
 export function badge(text: string, tone: BadgeTone = "plain"): ReactNode {
   const cls =
-    tone === "accent" ? "badge badge-accent" : tone === "muted" ? "badge badge-muted" : "badge";
+    tone === "accent"
+      ? "badge badge-accent"
+      : tone === "muted"
+        ? "badge badge-muted"
+        : tone === "danger"
+          ? "badge badge-danger"
+          : "badge";
   return <span className={cls}>{text}</span>;
 }
 

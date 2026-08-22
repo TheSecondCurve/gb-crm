@@ -64,6 +64,46 @@ export interface AiConfigDto {
   apiKeyMasked: string | null;
 }
 
+/** K50 批量生成标签结果（逐客户串行，LLM 失败跳过计数） */
+export interface BulkTagGenerateResultDto {
+  total: number;
+  succeeded: number;
+  failed: number;
+}
+
+/** K51 后台任务进度 */
+export interface JobProgressDto {
+  processed: number;
+  total: number;
+  succeeded: number;
+  failed: number;
+}
+
+/** K51 后台任务失败明细（批量打标 = 单个客户 LLM 失败） */
+export interface JobFailureDto {
+  customerId: number;
+  nickname: string;
+  message: string;
+}
+
+/** K51 后台任务（manual/scheduled 触发，queued→running→succeeded|partial|failed|cancelled） */
+export interface BackgroundJobDto {
+  id: number;
+  type: string;
+  typeLabel: string | null;
+  params: Record<string, unknown>;
+  status: string;
+  progress: JobProgressDto;
+  result: Record<string, unknown> | null;
+  error: string | null;
+  trigger: string;
+  triggerSpec: string | null;
+  createdBy: UserRefDto | null;
+  createdAt: number;
+  startedAt: number | null;
+  finishedAt: number | null;
+}
+
 /** K47 客户总览 */
 export interface CustomerStatsDto {
   dealCount: number;
