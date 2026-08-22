@@ -9,7 +9,7 @@ import {
 
 import type { ProductDto } from "../api/types";
 import type { GridColumn } from "../components/DataGrid/DataGrid";
-import { badge, enumBadge, formatDateTime, optionsOf, refName, type BadgeTone } from "./common";
+import { badge, centsToYuan, enumBadge, formatDateTime, optionsOf, refName, yuanToCents, type BadgeTone } from "./common";
 
 const STATUS_TONES: Record<string, BadgeTone> = {
   on_sale: "accent",
@@ -20,19 +20,6 @@ const IS_PACKAGE_OPTIONS = [
   { value: "false", label: "否" },
   { value: "true", label: "是" },
 ];
-
-/** 元文本 → 分（K13：必须 round，禁止不 round 直接乘）；空/非数 → null */
-export function yuanToCents(value: unknown): number | null {
-  const s = String(value ?? "").trim();
-  if (s === "") return null;
-  const yuan = Number(s);
-  return Number.isFinite(yuan) ? Math.round(yuan * 100) : null;
-}
-
-/** 分 → 元展示文本（12345 → 123.45）；null → "" */
-export function centsToYuan(cents: number | null): string {
-  return cents === null ? "" : (cents / 100).toFixed(2);
-}
 
 /** Appendix B products 列规格 */
 export function productColumns(role: SystemRole | null): GridColumn<ProductDto>[] {

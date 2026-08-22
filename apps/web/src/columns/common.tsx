@@ -33,6 +33,19 @@ export function formatDateTime(ts: number | null): string {
   return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
 }
 
+/** 元文本 → 分（K13：必须 round，禁止不 round 直接乘）；空/非数 → null */
+export function yuanToCents(value: unknown): number | null {
+  const s = String(value ?? "").trim();
+  if (s === "") return null;
+  const yuan = Number(s);
+  return Number.isFinite(yuan) ? Math.round(yuan * 100) : null;
+}
+
+/** 分 → 元展示文本（12345 → 123.45）；null → "" */
+export function centsToYuan(cents: number | null): string {
+  return cents === null ? "" : (cents / 100).toFixed(2);
+}
+
 /** 审计/外键展开列展示：{ nickname } | null → 名字 */
 export function refName(ref: { nickname: string } | null): string {
   return ref?.nickname ?? "";

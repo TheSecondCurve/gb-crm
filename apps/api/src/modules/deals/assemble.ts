@@ -30,6 +30,10 @@ export interface DealDto {
   paymentRemark: string | null;
   /** epoch ms UTC；null = 未填 */
   deliveryDate: number | null;
+  /** 金额，整数分（K13，同 priceCents）；null = 未填 */
+  amountCents: number | null;
+  /** 税后金额比例 0~1（REAL，如 0.9306）；null = 未填 */
+  afterTaxRatio: number | null;
   customer: CustomerRef | null;
   product: ProductRef | null;
   owner: UserRef | null;
@@ -94,6 +98,8 @@ export function assembleDeals(db: Db, rows: readonly DealRow[]): DealDto[] {
     orderNo: row.orderNo,
     paymentRemark: row.paymentRemark,
     deliveryDate: row.deliveryDate,
+    amountCents: row.amountCents,
+    afterTaxRatio: row.afterTaxRatio,
     customer: customerRefs.get(row.customerId) ?? null,
     product: row.productId === null ? null : (productRefs.get(row.productId) ?? null),
     owner: userRef(row.ownerId),
