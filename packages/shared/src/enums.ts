@@ -101,3 +101,11 @@ export type DealStage = z.infer<typeof dealStageSchema>;
 /** 交付项维度（K44：项目维度 / 客户维度——客户维度任务按客户展开，分别打勾备注） */
 export const deliverableDimensionSchema = z.enum(["project", "customer"]);
 export type DeliverableDimension = z.infer<typeof deliverableDimensionSchema>;
+
+/** 交付类型分类（K44：咨询类 / 活动类 / 圈子类 / 其他类） */
+export const deliveryTypeKindSchema = z.enum(["consulting", "activity", "circle", "other"]);
+export type DeliveryTypeKind = z.infer<typeof deliveryTypeKindSchema>;
+
+/** 交付类型状态（K44：有效 / 失效） */
+export const deliveryTypeStatusSchema = z.enum(["active", "inactive"]);
+export type DeliveryTypeStatus = z.infer<typeof deliveryTypeStatusSchema>;

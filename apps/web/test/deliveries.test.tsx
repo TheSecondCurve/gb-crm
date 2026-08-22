@@ -3,6 +3,7 @@ import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 
 import { adminMe, assistantMe, mockFetch, renderApp, type Me } from "./helpers";
 import type { DeliveryDto } from "../src/api/types";
+import { dateToEpochMs } from "../src/columns/common";
 
 const delivery: DeliveryDto = {
   id: 1,
@@ -12,6 +13,8 @@ const delivery: DeliveryDto = {
     { id: 101, nickname: "张三" },
     { id: 102, nickname: "李四" },
   ],
+  startsAt: 1700000000000,
+  endsAt: null,
   remark: "备注甲",
   createdAt: 1000,
   updatedAt: 2000,
@@ -41,7 +44,7 @@ function mockDeliveriesApi(me: Me, rows: DeliveryDto[] = [delivery]) {
         },
       };
     }
-    // 客户搜索 / 成交（按产品类型 merge）
+    // 客户搜索 / 成交（按意向产品 merge）
     if (url.startsWith("/api/v1/customers")) {
       return {
         status: 200,
@@ -49,6 +52,19 @@ function mockDeliveriesApi(me: Me, rows: DeliveryDto[] = [delivery]) {
           data: [
             { id: 101, nickname: "张三" },
             { id: 102, nickname: "李四" },
+          ],
+          meta: { page: 1, pageSize: 100, total: 2 },
+        },
+      };
+    }
+    // 意向产品搜索
+    if (url.startsWith("/api/v1/products")) {
+      return {
+        status: 200,
+        body: {
+          data: [
+            { id: 7, name: "咨询包年" },
+            { id: 8, name: "陪跑课" },
           ],
           meta: { page: 1, pageSize: 100, total: 2 },
         },
@@ -90,7 +106,7 @@ describe("交付管理页（交付单列表）", () => {
     expect(screen.getByText("备注甲")).toBeTruthy();
   });
 
-  it("新增交付：选类型 + 手动选客户 + 按产品类型 merge → POST customerIds 合并", async () => {
+  it("新增交付：选类型 + 手动选客户 + 按意向产品 merge → POST customerIds 合并", async () => {
     const calls = mockDeliveriesApi(adminMe);
     renderApp("/deliveries");
     await screen.findByText("圈子全年交付");
@@ -103,8 +119,11 @@ describe("交付管理页（交付单列表）", () => {
     fireEvent.change(within(dialog).getByLabelText("交付类型"), { target: { value: "11" } });
     // 手动选择客户「李四」
     fireEvent.click(await within(dialog).findByLabelText("李四"));
-    // 按产品类型 merge：选 c_consulting → 候选（张三/王五）→ 勾选王五
-    fireEvent.change(within(dialog).getByLabelText("按产品类型从成交合并"), { target: { value: "c_consulting" } });
+    // 按意向产品 merge：搜索产品 → 选中「咨询包年」→ 候选（张三/王五）→ 勾选王五
+    fireEvent.change(within(dialog).getByPlaceholderText("搜索意向产品…"), {
+      target: { value: "咨询" },
+    });
+    fireEvent.click(await within(dialog).findByLabelText("咨询包年"));
     fireEvent.click(await within(dialog).findByLabelText("王五"));
 
     fireEvent.click(within(dialog).getByRole("button", { name: "创建" }));
@@ -114,6 +133,37 @@ describe("交付管理页（交付单列表）", () => {
       const body = JSON.parse(String(post?.body)) as { deliveryTypeId: number; customerIds: number[] };
       expect(body.deliveryTypeId).toBe(11);
       expect(body.customerIds.sort()).toEqual([102, 103].sort());
+    });
+  });
+
+  it("新增交付：可不选客户，起止日期经日历输入后以 epoch ms 提交", async () => {
+    const calls = mockDeliveriesApi(adminMe);
+    renderApp("/deliveries");
+    await screen.findByText("圈子全年交付");
+
+    fireEvent.click(screen.getByRole("button", { name: "新增交付" }));
+    const dialog = screen.getByRole("dialog", { name: "新增交付" });
+
+    await within(dialog).findByRole("option", { name: "圈子全年交付" });
+    fireEvent.change(within(dialog).getByLabelText("交付类型"), { target: { value: "11" } });
+    fireEvent.change(within(dialog).getByLabelText("开始日期"), { target: { value: "2026-08-01" } });
+    fireEvent.change(within(dialog).getByLabelText("结束日期"), { target: { value: "2026-08-31" } });
+    // 不选任何客户直接创建
+    fireEvent.click(within(dialog).getByRole("button", { name: "创建" }));
+
+    await waitFor(() => {
+      const post = calls.find((c) => c.method === "POST" && c.url === "/api/v1/deliveries");
+      expect(post).toBeTruthy();
+      const body = JSON.parse(String(post?.body)) as {
+        deliveryTypeId: number;
+        customerIds: number[];
+        startsAt: number | null;
+        endsAt: number | null;
+      };
+      expect(body.deliveryTypeId).toBe(11);
+      expect(body.customerIds).toEqual([]);
+      expect(body.startsAt).toBe(dateToEpochMs("2026-08-01"));
+      expect(body.endsAt).toBe(dateToEpochMs("2026-08-31"));
     });
   });
 

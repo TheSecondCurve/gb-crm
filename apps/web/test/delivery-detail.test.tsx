@@ -12,6 +12,8 @@ const delivery: DeliveryDto = {
     { id: 101, nickname: "张三" },
     { id: 102, nickname: "李四" },
   ],
+  startsAt: null,
+  endsAt: null,
   remark: "备注甲",
   createdAt: 1000,
   updatedAt: 2000,
