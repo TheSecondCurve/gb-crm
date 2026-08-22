@@ -163,16 +163,24 @@ describe("客户信息页", () => {
     );
   });
 
-  it("新增：立即 POST 默认值并刷新列表", async () => {
+  it("新增：弹字段表单（不再直接 POST 空行），填字段后 POST 并刷新列表", async () => {
     const calls = mockCustomersApi(adminMe);
     renderApp("/customers");
     await screen.findByText("张三");
 
     fireEvent.click(screen.getByRole("button", { name: "新增" }));
+    const dialog = screen.getByRole("dialog", { name: "新增客户" });
+    // 弹窗阶段不发请求
+    expect(calls.some((c) => c.method === "POST")).toBe(false);
+
+    fireEvent.change(within(dialog).getByLabelText("昵称"), { target: { value: "新客户" } });
+    fireEvent.change(within(dialog).getByLabelText("城市"), { target: { value: "北京" } });
+    fireEvent.click(within(dialog).getByRole("button", { name: "创建" }));
     await waitFor(() => {
       const post = calls.find((c) => c.method === "POST" && c.url === "/api/v1/customers");
       expect(post).toBeTruthy();
-      expect(JSON.parse(String(post?.body))).toEqual({ nickname: "未命名客户" });
+      // 只带填了值的键；未动的 select（类型）缺席，走服务端默认
+      expect(JSON.parse(String(post?.body))).toEqual({ nickname: "新客户", city: "北京" });
     });
     await waitFor(() =>
       expect(calls.filter((c) => c.method === "GET" && c.url.startsWith("/api/v1/customers")).length).toBeGreaterThanOrEqual(2),

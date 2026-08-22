@@ -1,13 +1,14 @@
 import { useCallback, useMemo, useState } from "react";
 import { can, customerTypeLabels } from "@gb-crm/shared";
 
-import { api } from "../api/client";
+import { api, ApiError } from "../api/client";
 import type { CustomerDto } from "../api/types";
 import { useAuth } from "../auth/AuthProvider";
 import { customerColumns } from "../columns/customers";
 import { optionsOf } from "../columns/common";
 import { DataGrid, Pagination } from "../components/DataGrid/DataGrid";
 import { ConfirmDialog } from "../components/ConfirmDialog";
+import { CreateRecordModal } from "../components/CreateRecordModal";
 import { SearchBar } from "../components/SearchBar";
 import { useToast } from "../components/Toast";
 import { focusEditableCell, useResourceList } from "./useResourceList";
@@ -18,6 +19,7 @@ export function CustomersPage() {
   const showToast = useToast();
   const list = useResourceList<CustomerDto>("customers", "customerType");
   const columns = useMemo(() => customerColumns(role), [role]);
+  const [creating, setCreating] = useState(false);
   const [deleting, setDeleting] = useState<CustomerDto | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -29,13 +31,17 @@ export function CustomersPage() {
     return res!.data;
   }, []);
 
-  // 新增：立即 POST 默认值，成功后插入并 focus 首行首个可编辑格（§7.7）
-  const createRow = async () => {
+  // 新增：先弹字段表单，确认后才 POST（不再直接插空行）
+  const createCustomer = async (body: Record<string, unknown>) => {
     setBusy(true);
     try {
-      const res = await api.post<{ data: CustomerDto }>("/customers", { nickname: "未命名客户" });
+      const res = await api.post<{ data: CustomerDto }>("/customers", body);
+      setCreating(false);
       await list.invalidate();
+      showToast("已创建客户");
       if (res?.data) focusEditableCell(res.data.id, "nickname");
+    } catch (err) {
+      showToast(err instanceof ApiError ? err.message : "创建失败，请稍后重试");
     } finally {
       setBusy(false);
     }
@@ -73,7 +79,7 @@ export function CustomersPage() {
             ))}
           </select>
           {canCreate && (
-            <button type="button" className="btn-primary" onClick={() => void createRow()} disabled={busy}>
+            <button type="button" className="btn-primary" onClick={() => setCreating(true)}>
               新增
             </button>
           )}
@@ -109,6 +115,16 @@ export function CustomersPage() {
           />
         </div>
       </div>
+      {creating && (
+        <CreateRecordModal
+          title="新增客户"
+          columns={columns}
+          requiredKeys={["nickname"]}
+          busy={busy}
+          onClose={() => setCreating(false)}
+          onSubmit={createCustomer}
+        />
+      )}
       {deleting && (
         <ConfirmDialog
           title="删除客户"

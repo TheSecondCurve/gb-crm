@@ -529,9 +529,9 @@ v1 不引入 AG Grid / Handsontable。mhtml 是行点击只读表，**不能**�
    - `enqueue(id, patch)`：`pending = mergeKernel(pending, patch)`（同键后者赢）；若无 inflight 则 `drain`。
    - `drain`：取出 pending，`PATCH { ...pending, updatedAt }`。200 → `updatedAt = data.updatedAt`，合并 cache；若仍有 pending 继续 drain。409 → 用响应 `data` 整行替换 cache 与 `updatedAt`，**丢弃 pending**，Toast「该行已被他人更新」。
    - 路由卸载 / 翻页：**立即 flush** 当前 debounce 并 await 该行队列排空。
-7. 新增：「新增」立刻 `POST` 默认值（客户昵称「未命名客户」），插入顶部并 focus 首个可编辑格。
+7. 新增：「新增」弹出字段表单 Modal（复用列定义的可编 text/textarea/select 列，按列顺序 Tab 切换；Enter 提交、Esc 取消），只提交填了值的键（缺席 = 服务端默认），确认后才 `POST`，成功刷新并 focus 首个可编辑格。
 8. 删除：行尾按钮 → 确认 Modal → `DELETE` 软删。密码 **不是** 表格单元格；管理员在用户页用单独「设置密码」Modal（PR 11）。
-9. 宽表：横向滚动；冻结列见 Appendix B；列选择器写入 `localStorage`。
+9. 宽表：**全部列默认展示**（无默认隐藏列），内容过宽时底部横向滚动；冻结列见 Appendix B；列选择器可隐藏列并写入 `localStorage`。
 10. Pagination：`共 N 条` + 上一页/下一页 + **`<select>` 25/50/100**（core.md 要求可改每页条数；快照没有这个控件，要加）。
 11. 过滤 UI：搜索框 `q` + 每资源一个类型/状态下拉（customers `customerType`，channels `status`，products `status`，users `accountStatus`）。`ownerId`/`tag`/`channelId` 等 API 过滤 v1 **不做 UI**。
 
@@ -1601,33 +1601,33 @@ Base 标题：团队核心数据库。摘录 `base_token=IWFEbuZcfalvQus6vkOcJXU
 | city | 城市 | text | Y | Y | 标量 |
 | owners | 归属人 | relation | Y* | Y | expansion |
 | updatedAt | 更新时间 | — | N | Y | 标量 |
-| title | 称谓 | text | Y | N | 标量 |
-| country | 国家 | text | Y | N | 标量 |
-| originStory | 元故事 | textarea | Y | N | 标量 |
-| notes | 备注 | textarea | Y | N | 标量 |
-| profileUrl | 档案页 | text | Y | N | 标量 |
-| parent | 父记录 | relation-one | Y | N | expansion |
-| wechatOpenid | OpenID | text | Y | N | 标量 |
-| lastFollowedAt | 最近跟进 | — | N | N | 标量 |
-| 社交账号列 | 视频号等 | text | Y | N | 标量 |
-| sourceChannels | 来源渠道 | relation | Y | N | expansion |
-| communityChannels | 所在社群 | relation | Y | N | expansion |
-| upsellOwners | 升单人 | relation | Y* | N | expansion |
-| id / feishuRecordId / createdAt / createdBy / updatedBy | | — | N | N | |
+| title | 称谓 | text | Y | Y | 标量 |
+| country | 国家 | text | Y | Y | 标量 |
+| originStory | 元故事 | textarea | Y | Y | 标量 |
+| notes | 备注 | textarea | Y | Y | 标量 |
+| profileUrl | 档案页 | text | Y | Y | 标量 |
+| parent | 父记录 | relation-one | Y | Y | expansion |
+| wechatOpenid | OpenID | text | Y | Y | 标量 |
+| lastFollowedAt | 最近跟进 | — | N | Y | 标量 |
+| 社交账号列 | 视频号等 | text | Y | Y | 标量 |
+| sourceChannels | 来源渠道 | relation | Y | Y | expansion |
+| communityChannels | 所在社群 | relation | Y | Y | expansion |
+| upsellOwners | 升单人 | relation | Y* | Y | expansion |
+| id / feishuRecordId / createdAt / createdBy / updatedBy | | — | N | Y | |
 
 \* assistant：`owners`/`upsellOwners` 只读（K31：`updateOwners` deny）。无「新增」按钮（K31：`create` deny）。删除按钮对助手隐藏（无 `delete`）。
 
 ### channels（冻结 `name`）
 
-默认可见：name、platform、channelType、status、owners、followerCount、updatedAt。密钥列（accountId、registerPhone、registrant、realNamePerson、loginDevice）默认对 operator/admin 可见、assistant 显示 `—`。可编：非密钥标量 + owners（admin/operator）。id/审计列只读。
+全部列默认可见。密钥列（accountId、registerPhone、registrant、realNamePerson、loginDevice）对 operator/admin 显示原值、assistant 显示 `—` 且不可编。可编：非密钥标量 + owners（admin/operator）。id/审计列只读。
 
 ### products（冻结 `name`）
 
-默认可见：name、productType、isPackage、status、priceCents（UI 元）、updatedAt。可编：admin/operator 的业务列。sopUrl、packageIncludes、deliveryCycle、notes 默认隐藏可开。
+全部列默认可见。可编：admin/operator 的业务列（name、productType、isPackage、status、priceCents（UI 元）、sopUrl、packageIncludes、deliveryCycle、notes）。
 
 ### users（冻结 `nickname`）
 
-默认可见：nickname、username、jobTitle、systemRole、employmentStatus、accountStatus、updatedAt。可编（仅 admin）：nickname、realName、phone、wechat、jobTitle、systemRole、accountStatus、duties、notes。username 创建时可写，之后只读（改用户名不在 v1）。密码列不上表。
+全部列默认可见。可编（仅 admin）：nickname、realName、phone、wechat、jobTitle、systemRole、accountStatus、duties、notes。username 创建时可写，之后只读（改用户名不在 v1）。密码列不上表。
 
 ---
 

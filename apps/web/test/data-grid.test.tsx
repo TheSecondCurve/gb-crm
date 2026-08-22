@@ -47,7 +47,6 @@ const columns: GridColumn<Row>[] = [
     label: "标签",
     editor: "multi",
     editable: true,
-    defaultVisible: false,
     options: [
       { value: "vip", label: "VIP" },
       { value: "ip", label: "IP" },
@@ -58,7 +57,6 @@ const columns: GridColumn<Row>[] = [
     label: "归属人",
     editor: "relation",
     editable: true,
-    defaultVisible: false,
     relationLoader: (search) =>
       Promise.resolve(
         [
@@ -67,7 +65,7 @@ const columns: GridColumn<Row>[] = [
         ].filter((o) => o.label.includes(search)),
       ),
   },
-  { key: "notes", label: "备注", editor: "textarea", editable: true, defaultVisible: false },
+  { key: "notes", label: "备注", editor: "textarea", editable: true },
   { key: "updatedAt", label: "更新时间", editable: false },
 ];
 
@@ -197,9 +195,6 @@ describe("DataGrid select / multi / relation 立即入队", () => {
   it("multi 勾选立即入队", async () => {
     const { patchRow, calls, waiters } = makePatchRow();
     setup(patchRow, [row1]);
-    // tagCodes 默认隐藏，先通过列选择器打开
-    fireEvent.click(screen.getByRole("button", { name: "列设置" }));
-    fireEvent.click(screen.getByLabelText("标签"));
     fireEvent.doubleClick(cell(1, "tagCodes"));
     fireEvent.click(screen.getByLabelText("IP"));
     expect(patchRow).toHaveBeenCalledTimes(1);
@@ -210,8 +205,6 @@ describe("DataGrid select / multi / relation 立即入队", () => {
   it("relation 可搜索多选立即入队", async () => {
     const { patchRow, calls, waiters } = makePatchRow();
     setup(patchRow, [row1]);
-    fireEvent.click(screen.getByRole("button", { name: "列设置" }));
-    fireEvent.click(screen.getByLabelText("归属人"));
     fireEvent.doubleClick(cell(1, "ownerIds"));
     expect(await screen.findByLabelText("赵六")).toBeTruthy();
     fireEvent.click(screen.getByLabelText("赵六"));
@@ -356,6 +349,13 @@ describe("DataGrid flush / 409 / cache", () => {
 });
 
 describe("DataGrid 列选择器与状态", () => {
+  it("默认展示全部列", () => {
+    const headerTexts = () =>
+      [...document.querySelectorAll(".data-grid-table th")].map((th) => th.textContent);
+    setup(vi.fn<PatchFn>());
+    expect(headerTexts()).toEqual(["昵称", "手机号", "类型", "标签", "归属人", "备注", "更新时间"]);
+  });
+
   it("隐藏/显示列并持久化 localStorage（按 gridId 命名空间）", () => {
     // 列设置面板里的 label 与表头同名，表头断言必须限定在 .data-grid-table th 内
     const headerTexts = () =>
@@ -370,6 +370,9 @@ describe("DataGrid 列选择器与状态", () => {
     expect(JSON.parse(localStorage.getItem("gb-crm:datagrid:test-grid:columns")!)).toEqual([
       "nickname",
       "customerType",
+      "tagCodes",
+      "ownerIds",
+      "notes",
       "updatedAt",
     ]);
 

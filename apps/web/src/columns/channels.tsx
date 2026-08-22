@@ -1,5 +1,5 @@
 // channels 列定义（docs/design.md Appendix B channels：冻结 name；K27 密钥列
-// assistant 显示「—」且不可编、默认隐藏；operator/admin 密钥列默认可编可见）。
+// assistant 显示「—」且不可编）。
 import {
   accountTypeLabels,
   can,
@@ -32,13 +32,12 @@ export function channelColumns(role: SystemRole | null): GridColumn<ChannelDto>[
   const canReadSecrets = can(role, "channels", "readChannelSecrets");
   const canEditSecrets = can(role, "channels", "updateChannelSecrets");
 
-  // 密钥列（K27）：assistant GET 已为 null，展示「—」、不可编、默认隐藏
+  // 密钥列（K27）：assistant GET 已为 null，展示「—」、不可编
   const secret = (key: string, label: string): GridColumn<ChannelDto> => ({
     key,
     label,
     editor: "text",
     editable: canEditSecrets,
-    defaultVisible: canReadSecrets,
     render: (row) => {
       if (!canReadSecrets) return "—";
       const v = row[key as keyof ChannelDto];
@@ -109,7 +108,6 @@ export function channelColumns(role: SystemRole | null): GridColumn<ChannelDto>[
       label: "账号类型",
       editor: "select",
       editable: canUpdate,
-      defaultVisible: false,
       options: optionsOf(accountTypeLabels),
       render: (row) => enumBadge(accountTypeLabels)(row.accountType),
     },
@@ -118,35 +116,31 @@ export function channelColumns(role: SystemRole | null): GridColumn<ChannelDto>[
       label: "渠道说明",
       editor: "textarea",
       editable: canUpdate,
-      defaultVisible: false,
     },
-    { key: "notes", label: "备注", editor: "textarea", editable: canUpdate, defaultVisible: false },
+    { key: "notes", label: "备注", editor: "textarea", editable: canUpdate },
     secret("accountId", "账号ID"),
     secret("registerPhone", "注册手机号"),
     secret("registrant", "注册人"),
     secret("realNamePerson", "实名认证人"),
     secret("loginDevice", "登录设备"),
-    { key: "id", label: "ID", editable: false, defaultVisible: false },
-    { key: "feishuRecordId", label: "飞书记录", editable: false, defaultVisible: false },
+    { key: "id", label: "ID", editable: false },
+    { key: "feishuRecordId", label: "飞书记录", editable: false },
     {
       key: "createdAt",
       label: "创建时间",
       editable: false,
-      defaultVisible: false,
       render: (row) => formatDateTime(row.createdAt),
     },
     {
       key: "createdBy",
       label: "创建人",
       editable: false,
-      defaultVisible: false,
       render: (row) => refName(row.createdBy),
     },
     {
       key: "updatedBy",
       label: "最后修改人",
       editable: false,
-      defaultVisible: false,
       render: (row) => refName(row.updatedBy),
     },
   ];
