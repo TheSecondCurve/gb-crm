@@ -197,3 +197,201 @@ describe("AI 打标端点（K46）", () => {
     ).toBe(401);
   });
 });
+
+describe("AI 打标扩展：行业写回 + 自建新标签", () => {
+  it("行业：非空 → 写入并覆盖已有值（总是覆盖）；空串/缺失 → 不动", async () => {
+    seedAiConfigRow();
+    const { id, cookie } = await createCustomerAsAdmin();
+
+    // 首次无行业：trim 后写入
+    const app1 = buildApp({
+      env: testEnv(), db: tmp.db, now: () => clock.t, gcProbability: 0,
+      llmFetch: llmOk({ identity: [], stage: [], interest: [], industry: " 教育 " }),
+    });
+    try {
+      const r1 = await app1.inject({ method: "POST", url: `/api/v1/customers/${id}/tags/generate`, headers: { cookie } });
+      expect(r1.statusCode).toBe(200);
+      expect(r1.json().data.industry).toBe("教育");
+    } finally {
+      await app1.close();
+    }
+
+    // 已有「教育」→ 再生成「金融」→ 总是覆盖
+    const app2 = buildApp({
+      env: testEnv(), db: tmp.db, now: () => clock.t, gcProbability: 0,
+      llmFetch: llmOk({ identity: [], stage: [], interest: [], industry: "金融" }),
+    });
+    try {
+      const r2 = await app2.inject({ method: "POST", url: `/api/v1/customers/${id}/tags/generate`, headers: { cookie } });
+      expect(r2.statusCode).toBe(200);
+      expect(r2.json().data.industry).toBe("金融");
+    } finally {
+      await app2.close();
+    }
+
+    // 空串 → 不动（保留「金融」）
+    const app3 = buildApp({
+      env: testEnv(), db: tmp.db, now: () => clock.t, gcProbability: 0,
+      llmFetch: llmOk({ identity: [], stage: [], interest: [], industry: "" }),
+    });
+    try {
+      const r3 = await app3.inject({ method: "POST", url: `/api/v1/customers/${id}/tags/generate`, headers: { cookie } });
+      expect(r3.statusCode).toBe(200);
+      expect(r3.json().data.industry).toBe("金融");
+    } finally {
+      await app3.close();
+    }
+
+    // 缺失键 → 不动
+    const app4 = buildApp({
+      env: testEnv(), db: tmp.db, now: () => clock.t, gcProbability: 0,
+      llmFetch: llmOk({ identity: [], stage: [], interest: [] }),
+    });
+    try {
+      const r4 = await app4.inject({ method: "POST", url: `/api/v1/customers/${id}/tags/generate`, headers: { cookie } });
+      expect(r4.statusCode).toBe(200);
+      expect(r4.json().data.industry).toBe("金融");
+    } finally {
+      await app4.close();
+    }
+  });
+
+  it("新标签自建：入词表（enabled=1、sort=max+1、scope 正确、审计列），客户标签含新 id", async () => {
+    seedAiConfigRow();
+    const { id, cookie } = await createCustomerAsAdmin();
+    const beforeMax = (tmp.sqlite.prepare("SELECT COALESCE(MAX(sort), 0) v FROM tags").get() as { v: number }).v;
+
+    const app2 = buildApp({
+      env: testEnv(), db: tmp.db, now: () => clock.t, gcProbability: 0,
+      llmFetch: llmOk({
+        identity: [], stage: [], interest: [],
+        newTags: [
+          { name: "内容创业者", scope: "identity" },
+          { name: "本地生活", scope: "interest" },
+        ],
+      }),
+    });
+    try {
+      const res = await app2.inject({ method: "POST", url: `/api/v1/customers/${id}/tags/generate`, headers: { cookie } });
+      expect(res.statusCode).toBe(200);
+      const names = res.json().data.tags.map((t: { name: string }) => t.name);
+      expect(names).toEqual(expect.arrayContaining(["内容创业者", "本地生活"]));
+    } finally {
+      await app2.close();
+    }
+
+    const rows = tmp.sqlite.prepare(
+      "SELECT id, name, scope, sort, enabled, created_by FROM tags WHERE deleted_at IS NULL AND name IN ('内容创业者','本地生活')",
+    ).all() as { id: number; name: string; scope: string; sort: number; enabled: number; created_by: number }[];
+    expect(rows).toHaveLength(2);
+    const byName = Object.fromEntries(rows.map((r) => [r.name, r])) as Record<string, { id: number; name: string; scope: string; sort: number; enabled: number; created_by: number }>;
+    expect(byName["内容创业者"]).toMatchObject({ scope: "identity", enabled: 1, created_by: 1 });
+    expect(byName["本地生活"]).toMatchObject({ scope: "interest", enabled: 1 });
+    expect(byName["内容创业者"]!.sort).toBe(beforeMax + 1); // 依次 max+1
+    expect(byName["本地生活"]!.sort).toBe(beforeMax + 2);
+
+    const customerTagIds = (tmp.sqlite.prepare("SELECT tag_id FROM customer_tags WHERE customer_id = ?").all(id) as { tag_id: number }[]).map((r) => r.tag_id);
+    expect(customerTagIds).toEqual(expect.arrayContaining([byName["内容创业者"]!.id, byName["本地生活"]!.id]));
+  });
+
+  it("新标签复用去重：词表已有同名 live 标签 → 复用其 id 不新建；再次运行行数不变", async () => {
+    seedAiConfigRow();
+    const { id, cookie } = await createCustomerAsAdmin();
+    const existing = (tmp.sqlite.prepare("SELECT id FROM tags WHERE name = '创业者'").get() as { id: number }).id;
+    const countBefore = (tmp.sqlite.prepare("SELECT COUNT(*) c FROM tags WHERE deleted_at IS NULL").get() as { c: number }).c;
+
+    const app2 = buildApp({
+      env: testEnv(), db: tmp.db, now: () => clock.t, gcProbability: 0,
+      llmFetch: llmOk({
+        identity: [], stage: [], interest: [],
+        newTags: [{ name: "创业者", scope: "identity" }],
+      }),
+    });
+    try {
+      const r1 = await app2.inject({ method: "POST", url: `/api/v1/customers/${id}/tags/generate`, headers: { cookie } });
+      expect(r1.statusCode).toBe(200);
+      const ids1 = (tmp.sqlite.prepare("SELECT tag_id FROM customer_tags WHERE customer_id = ?").all(id) as { tag_id: number }[]).map((r) => r.tag_id);
+      expect(ids1).toContain(existing);
+
+      const r2 = await app2.inject({ method: "POST", url: `/api/v1/customers/${id}/tags/generate`, headers: { cookie } });
+      expect(r2.statusCode).toBe(200);
+      const countAfter = (tmp.sqlite.prepare("SELECT COUNT(*) c FROM tags WHERE deleted_at IS NULL").get() as { c: number }).c;
+      expect(countAfter).toBe(countBefore);
+    } finally {
+      await app2.close();
+    }
+  });
+
+  it("预算上限：返回 3 个新标签 → 只建 2 个，第 3 个丢弃", async () => {
+    seedAiConfigRow();
+    const { id, cookie } = await createCustomerAsAdmin();
+    const app2 = buildApp({
+      env: testEnv(), db: tmp.db, now: () => clock.t, gcProbability: 0,
+      llmFetch: llmOk({
+        identity: [], stage: [], interest: [],
+        newTags: [
+          { name: "新甲", scope: "identity" },
+          { name: "新乙", scope: "interest" },
+          { name: "新丙", scope: "other" },
+        ],
+      }),
+    });
+    try {
+      const res = await app2.inject({ method: "POST", url: `/api/v1/customers/${id}/tags/generate`, headers: { cookie } });
+      expect(res.statusCode).toBe(200);
+      const names = res.json().data.tags.map((t: { name: string }) => t.name);
+      expect(names).toEqual(expect.arrayContaining(["新甲", "新乙"]));
+      expect(names).not.toContain("新丙");
+      const created = (tmp.sqlite.prepare("SELECT COUNT(*) c FROM tags WHERE name IN ('新甲','新乙','新丙')").get() as { c: number }).c;
+      expect(created).toBe(2);
+    } finally {
+      await app2.close();
+    }
+  });
+
+  it("非法输入：空名 / 非四枚举 scope / 非字符串 name → 丢弃不建", async () => {
+    seedAiConfigRow();
+    const { id, cookie } = await createCustomerAsAdmin();
+    const countBefore = (tmp.sqlite.prepare("SELECT COUNT(*) c FROM tags WHERE deleted_at IS NULL").get() as { c: number }).c;
+    const app2 = buildApp({
+      env: testEnv(), db: tmp.db, now: () => clock.t, gcProbability: 0,
+      llmFetch: llmOk({
+        identity: [], stage: [], interest: [],
+        newTags: [
+          { name: "   ", scope: "identity" }, // 空名
+          { name: "合法名", scope: "不存在的scope" }, // 非法 scope
+          { name: 123, scope: "identity" }, // 非字符串 name
+          { name: null, scope: "identity" },
+        ],
+      }),
+    });
+    try {
+      const res = await app2.inject({ method: "POST", url: `/api/v1/customers/${id}/tags/generate`, headers: { cookie } });
+      expect(res.statusCode).toBe(200);
+      const countAfter = (tmp.sqlite.prepare("SELECT COUNT(*) c FROM tags WHERE deleted_at IS NULL").get() as { c: number }).c;
+      expect(countAfter).toBe(countBefore);
+    } finally {
+      await app2.close();
+    }
+  });
+
+  it("既选词表又新建：identity 词表内标签 + newTags → 并集正确", async () => {
+    seedAiConfigRow();
+    const { id, cookie } = await createCustomerAsAdmin();
+    const app2 = buildApp({
+      env: testEnv(), db: tmp.db, now: () => clock.t, gcProbability: 0,
+      llmFetch: llmOk({
+        identity: ["创业者"], stage: [], interest: [],
+        newTags: [{ name: "新词A", scope: "identity" }],
+      }),
+    });
+    try {
+      const res = await app2.inject({ method: "POST", url: `/api/v1/customers/${id}/tags/generate`, headers: { cookie } });
+      expect(res.statusCode).toBe(200);
+      const names = res.json().data.tags.map((t: { name: string }) => t.name);
+      expect(names).toEqual(expect.arrayContaining(["创业者", "新词A"]));
+    } finally {
+      await app2.close();
+    }
+  });
+});

@@ -9,12 +9,13 @@
 // - create：nickname 必填（shared schema 要求 min(1)）；「未命名客户」默认值由 web/导入侧决定，
 //   API 不代填；customerType 默认 customer（schema default）。
 // - 删除 = 软删，join 行保留（K9/K33）。
-import type {
-  BulkTagGenerateResult,
-  CustomerListQuery,
-  CustomerPatch,
-  CustomerWrite,
-  TagFailure,
+import {
+  tagScopeSchema,
+  type BulkTagGenerateResult,
+  type CustomerListQuery,
+  type CustomerPatch,
+  type CustomerWrite,
+  type TagFailure,
 } from "@gb-crm/shared";
 
 import type { Db } from "../../db/client.js";
@@ -32,7 +33,7 @@ import {
 import { assembleDeliveries } from "../deliveries/assemble.js";
 import { listActiveCircleRowsByCustomer } from "../deliveries/repo.js";
 import { getAiConfig } from "../system/repo.js";
-import { findLiveTagIds, listEnabledLiveTags } from "../tags/repo.js";
+import { findLiveTagIds, getLiveTagByName, insertTag, listEnabledLiveTags, maxTagSort } from "../tags/repo.js";
 import {
   assembleCustomer,
   assembleCustomers,
@@ -54,6 +55,7 @@ import {
   replaceCustomerTags,
   softDeleteCustomer,
   touchCustomer,
+  updateCustomerIndustry,
   type CustomerRow,
 } from "./repo.js";
 
@@ -231,6 +233,20 @@ const SCOPE_LIMITS: Record<string, { label: string; max: number }> = {
 
 const SCOPE_KEYS = Object.keys(SCOPE_LIMITS);
 
+// K48 扩展：AI 打标同时推断行业。总是覆盖——LLM 给出非空值即写回；缺失/空串不动（防清空人工值）。
+const AI_INDUSTRY_MAX_LEN = 100;
+// AI 自建新标签（免审批自动入词表，用户拍板）：单条 ≤2，批量任务全局 ≤20，防词表爆炸。
+const AI_NEW_TAG_MAX = 2;
+const AI_NEW_TAG_BATCH_MAX = 20;
+const AI_TAG_NAME_MAX_LEN = 50; // 对齐 tagWriteSchema.name max(50)
+const AI_TAG_SCOPES: Set<string> = new Set(tagScopeSchema.options);
+
+/** AI 自建新标签预算（单条/批量共用；used 跨客户累计即批量全局上限） */
+interface NewTagBudget {
+  used: number;
+  max: number;
+}
+
 /** 客户基本信息 → prompt 用对象（K46：只给基本信息，不喂成交/交付明细） */
 function promptCustomerInfo(row: CustomerDto): Record<string, unknown> {
   return {
@@ -276,9 +292,11 @@ export function assertAiReady(db: Db): {
 
 /**
  * 单个客户打标核心（K46，单条/批量共用）：
- * 词表（仅 enabled）→ prompt → OpenAI 兼容 chat/completions（chatJson）→
- * 结果名称→tag id 映射（未知/重复丢弃）→ 与原标签取并集合并写入（不替换手动标签），
- * touch updated_at 刷新 OCC 凭证。失败（网络/超时/不可解析）→ 抛 llmError（502）。
+ * 词表（仅 enabled）+ 客户基本信息 → prompt → OpenAI 兼容 chat/completions（chatJson）→
+ * ① 词表内名称 → tag id；未命中名称按预算少量自建入词表（免审批，ensureAiTag）；
+ * ② 行业非空 → 覆盖写回（总是覆盖；缺失/空串不动）；
+ * ③ 与原标签取并集合并写入（不替换手动标签），touch updated_at 刷新 OCC 凭证。
+ * 失败（网络/超时/不可解析）→ 抛 llmError（502）。
  */
 async function aiTagCustomer(
   db: Db,
@@ -286,6 +304,7 @@ async function aiTagCustomer(
   settings: { baseUrl: string; apiKey: string; model: string },
   vocabulary: { id: number; name: string; scope: string }[],
   ctx: AuditContext,
+  budget: NewTagBudget,
   opts: { fetchFn?: typeof fetch },
 ): Promise<void> {
   const customer = assembleCustomer(db, row);
@@ -308,15 +327,20 @@ async function aiTagCustomer(
         {
           role: "system",
           content:
-            "你是客户画像整理助手。根据客户基本信息推断其身份、阶段、兴趣标签。" +
-            "只能从给定词表中选择，标签名称必须与词表完全一致，不得自造新词。" +
-            `只输出一个 JSON 对象：{"identity":[...],"stage":[...],"interest":[...]}，不要输出任何其它内容。`,
+            "你是客户画像整理助手。根据客户基本信息推断其身份、阶段、兴趣标签与所属行业。" +
+            "标签应优先从给定词表中选择，名称必须与词表完全一致；" +
+            `若客户画像确实无法被词表覆盖，可新建最多 ${AI_NEW_TAG_MAX} 个新标签` +
+            "（名称通用、可复用、≤50 字符，scope 取值 identity/stage/interest/other），" +
+            "不得新建过细的个性化标签；行业推断为客户所属行业的一句话描述，无法判断时填空字符串。" +
+            `只输出一个 JSON 对象：{"identity":[...],"stage":[...],"interest":[...],` +
+            `"newTags":[{"name":"...","scope":"..."}],"industry":"..."}，不要输出任何其它内容。`,
         },
         {
           role: "user",
-          content: `标签词表：\n${vocabText}\n\n${limitText}。\n\n客户信息（JSON）：\n${JSON.stringify(
-            promptCustomerInfo(customer),
-          )}\n\n请按约束输出 JSON。`,
+          content:
+            `标签词表：\n${vocabText}\n\n${limitText}；新标签最多 ${AI_NEW_TAG_MAX} 个` +
+            "（scope：identity/stage/interest/other）。\n\n" +
+            `客户信息（JSON）：\n${JSON.stringify(promptCustomerInfo(customer))}\n\n请按约束输出 JSON。`,
         },
       ],
     });
@@ -325,7 +349,14 @@ async function aiTagCustomer(
     throw err;
   }
 
-  // 名称 → live tag id（只认词表里的名字；未知/重复丢弃）
+  // 行业：非空字符串（trim 后）→ 覆盖写回；缺失/空串 → 不动（防止清空人工维护值）
+  let industry: string | null = null;
+  if (typeof result.industry === "string") {
+    const trimmed = result.industry.trim().slice(0, AI_INDUSTRY_MAX_LEN);
+    if (trimmed.length > 0) industry = trimmed;
+  }
+
+  // 名称 → live tag id：词表命中直接用；未命中按预算自建入词表（免审批）
   const idByName = new Map(vocabulary.map((t) => [t.name, t.id]));
   const picked: number[] = [];
   for (const key of SCOPE_KEYS) {
@@ -335,6 +366,17 @@ async function aiTagCustomer(
       const tagId = idByName.get(name);
       if (tagId !== undefined && !picked.includes(tagId)) picked.push(tagId);
     }
+  }
+  const rawNewTags = Array.isArray(result.newTags) ? (result.newTags as unknown[]) : [];
+  for (const item of rawNewTags) {
+    if (typeof item !== "object" || item === null) continue;
+    const { name, scope } = item as Record<string, unknown>;
+    if (typeof name !== "string") continue;
+    const trimmedName = name.trim().slice(0, AI_TAG_NAME_MAX_LEN);
+    if (trimmedName.length === 0) continue;
+    if (typeof scope !== "string" || !AI_TAG_SCOPES.has(scope)) continue;
+    const tagId = ensureAiTag(db, trimmedName, scope, ctx, budget);
+    if (tagId !== undefined && !picked.includes(tagId)) picked.push(tagId);
   }
 
   // 与原标签取并集（不覆盖手动标签）
@@ -346,8 +388,36 @@ async function aiTagCustomer(
   inTx(db, (tx) => {
     const audit = createAudit(ctx);
     replaceCustomerTags(tx, row.id, union, { createdAt: audit.createdAt, createdBy: audit.createdBy });
+    if (industry !== null) updateCustomerIndustry(tx, row.id, industry, updateAudit(ctx));
     touchCustomer(tx, row.id, updateAudit(ctx));
   });
+}
+
+/**
+ * AI 自建新标签（免审批自动入词表，用户拍板扩展）：词表已有同名 live 标签 → 复用其 id（不计预算）；
+ * 否则预算内 insert（enabled=1, sort=max+1, 审计列）；预算耗尽 → 丢弃返回 undefined。
+ * 名称/scope 已由调用方 sanitize（trim/截断/枚举校验）。
+ */
+function ensureAiTag(
+  db: Db,
+  name: string,
+  scope: string,
+  ctx: AuditContext,
+  budget: NewTagBudget,
+): number | undefined {
+  const existing = getLiveTagByName(db, name);
+  if (existing) return existing.id;
+  if (budget.used >= budget.max) return undefined;
+  const audit = createAudit(ctx);
+  const id = insertTag(db, {
+    name,
+    scope,
+    sort: maxTagSort(db) + 1,
+    enabled: 1,
+    ...audit,
+  });
+  budget.used += 1;
+  return id;
 }
 
 /**
@@ -363,7 +433,7 @@ export async function generateCustomerTags(
   const row = getCustomerByIdAny(db, id);
   if (!row || row.deletedAt !== null) throw notFound("客户不存在");
   const { settings, vocabulary } = assertAiReady(db);
-  await aiTagCustomer(db, row, settings, vocabulary, ctx, opts);
+  await aiTagCustomer(db, row, settings, vocabulary, ctx, { used: 0, max: AI_NEW_TAG_MAX }, opts);
   return assembleCustomer(db, getCustomerByIdAny(db, id)!);
 }
 
@@ -375,6 +445,8 @@ export interface BulkTaggingJobOptions {
   isCancelled?: () => boolean;
   /** 进度回调（初始 + 每客户后）：{ processed, total, succeeded, failed } */
   onProgress?: (p: { processed: number; total: number; succeeded: number; failed: number }) => void;
+  /** AI 自建新标签预算（测试可注入小值验证上限；默认批量全局 ≤20） */
+  newTagBudget?: NewTagBudget;
 }
 
 /**
@@ -391,6 +463,8 @@ export async function runBulkTaggingJob(
   const { settings, vocabulary } = assertAiReady(db);
   const rows = listAllCustomers(db, query);
   const total = rows.length;
+  // 批量全局预算：跨客户累计（默认 ≤20；测试注入小值）
+  const newTagBudget: NewTagBudget = opts.newTagBudget ?? { used: 0, max: AI_NEW_TAG_BATCH_MAX };
 
   let succeeded = 0;
   let failed = 0;
@@ -404,7 +478,7 @@ export async function runBulkTaggingJob(
       return { total, succeeded, failed, failures, cancelled: true };
     }
     try {
-      await aiTagCustomer(db, row, settings, vocabulary, ctx, opts);
+      await aiTagCustomer(db, row, settings, vocabulary, ctx, newTagBudget, opts);
       succeeded += 1;
     } catch (err) {
       // aiTagCustomer 已把 LlmError 映射为 502 LLM_ERROR（ApiError）；跳过该客户继续
