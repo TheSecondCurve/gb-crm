@@ -1,9 +1,9 @@
 // customers 导出 xlsx 组装（不写 SQL；输入为 assemble 后的 CustomerDto）。
 // 列与 apps/web/src/columns/customers.tsx 的 label 对齐；枚举 code → 中文 label
-// 用 shared 的 customerTypeLabels / tagLabels；时间戳写 Date 单元格 + numFmt。
+// 用 shared 的 customerTypeLabels；时间戳写 Date 单元格 + numFmt。
 import ExcelJS from "exceljs";
 
-import { customerTypeLabels, tagLabels, type CustomerType, type Tag } from "@gb-crm/shared";
+import { customerTypeLabels, type CustomerType } from "@gb-crm/shared";
 
 import type { CustomerDto } from "./assemble.js";
 
@@ -40,23 +40,12 @@ const COLUMNS: ColumnDef[] = [
     width: 10,
     value: (r) => customerTypeLabels[r.customerType as CustomerType] ?? r.customerType,
   },
-  {
-    header: "标签",
-    width: 20,
-    value: (r) => r.tagCodes.map((t) => tagLabels[t as Tag] ?? t).join("、"),
-  },
   { header: "国家", width: 10, value: (r) => r.country },
   { header: "城市", width: 10, value: (r) => r.city },
   { header: "元故事", width: 30, value: (r) => r.originStory },
   { header: "备注", width: 30, value: (r) => r.notes },
   { header: "OpenID", width: 20, value: (r) => r.wechatOpenid },
   dateCol("最近跟进", (r) => r.lastFollowedAt),
-  { header: "视频号账号", width: 16, value: (r) => r.wechatChannelsAccount },
-  { header: "小宇宙账号", width: 16, value: (r) => r.xiaoyuzhouAccount },
-  { header: "小红书账号", width: 16, value: (r) => r.xiaohongshuAccount },
-  { header: "微博账号", width: 16, value: (r) => r.weiboAccount },
-  { header: "抖音账号", width: 16, value: (r) => r.douyinAccount },
-  { header: "其他社交账号", width: 16, value: (r) => r.otherSocial },
   { header: "来源渠道", width: 20, value: (r) => joinNames(r.sourceChannels) },
   { header: "归属人", width: 14, value: (r) => r.owner?.nickname ?? null },
   dateCol("创建时间", (r) => r.createdAt),

@@ -192,12 +192,6 @@ export const customers = sqliteTable(
     title: text("title"),
     phone: text("phone"),
     wechat: text("wechat"),
-    otherSocial: text("other_social"),
-    wechatChannelsAccount: text("wechat_channels_account"),
-    xiaoyuzhouAccount: text("xiaoyuzhou_account"),
-    xiaohongshuAccount: text("xiaohongshu_account"),
-    weiboAccount: text("weibo_account"),
-    douyinAccount: text("douyin_account"),
     country: text("country"),
     city: text("city"),
     originStory: text("origin_story"),
@@ -226,20 +220,26 @@ export const customers = sqliteTable(
   ],
 );
 
-export const customerTags = sqliteTable(
-  "customer_tags",
+export const customerSocialAccounts = sqliteTable(
+  "customer_social_accounts",
   {
+    id: integer("id").primaryKey({ autoIncrement: true }),
     customerId: integer("customer_id")
       .notNull()
       .references(() => customers.id, { onDelete: "cascade" }),
-    tag: text("tag").notNull(),
+    platform: text("platform").notNull(),
+    account: text("account").notNull(),
+    createdAt: integer("created_at").notNull(),
+    updatedAt: integer("updated_at").notNull(),
+    createdBy: integer("created_by").references(() => users.id, { onDelete: "set null" }),
+    updatedBy: integer("updated_by").references(() => users.id, { onDelete: "set null" }),
   },
   (t) => [
     check(
-      "customer_tags_tag_check",
-      sql`"tag" IN ('stage_0_1','stage_1_10','stage_10_100','vip','ip','side_hustle','guest','partner')`,
+      "customer_social_accounts_platform_check",
+      sql`"platform" IN ('wechat_channels','xiaoyuzhou','xiaohongshu','weibo','douyin','other')`,
     ),
-    primaryKey({ columns: [t.customerId, t.tag] }),
+    index("customer_social_accounts_customer_id_idx").on(t.customerId),
   ],
 );
 

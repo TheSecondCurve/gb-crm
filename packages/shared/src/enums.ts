@@ -83,14 +83,13 @@ export const customerTypeSchema = z.enum([
 ]);
 export type CustomerType = z.infer<typeof customerTypeSchema>;
 
-export const tagSchema = z.enum([
-  "stage_0_1",
-  "stage_1_10",
-  "stage_10_100",
-  "vip",
-  "ip",
-  "side_hustle",
-  "guest",
-  "partner",
+/** 客户社交媒体平台（K41，沿用原 customers 表 6 个账号字段的类型） */
+export const socialPlatformSchema = z.enum([
+  "wechat_channels",
+  "xiaoyuzhou",
+  "xiaohongshu",
+  "weibo",
+  "douyin",
+  "other",
 ]);
-export type Tag = z.infer<typeof tagSchema>;
+export type SocialPlatform = z.infer<typeof socialPlatformSchema>;

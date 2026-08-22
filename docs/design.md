@@ -145,6 +145,8 @@ Phase 2 表（本设计不建表、不导入）：成交表 176、用户权益�
 | K37 | users / channels / products 删除 飞书记录（`feishu_record_id` 列 + 各表 partial unique 索引） | 2026-08-22 产品决策。`0003_drop_feishu_record_ids.sql` 迁移删除 |
 | K38 | 清理最后三个飞书历史列：users.feishu_user_id / products.feishu_created_date / customers.feishu_created_date | 2026-08-22 产品决策。`0004_drop_feishu_remnants.sql` 迁移删除 |
 | K39 | 客户归属人 **M2M → 单值**：删 `customer_owners` join 表，`customers.owner_id` 可空 FK 单值。缺席=不动、`null`=清空、新值=覆盖。多归属人存量迁移保留最小 `user_id`。**渠道 `channel_owners` 保持 M2M**。K31 不变：PATCH 含 `ownerId` 键仍需 `customers.updateOwners`（assistant ✗） | 2026-08-22 产品决策撤销 K15 的客户归属人 M2M。`0005_single_customer_owner.sql` 迁移 |
+| K40 | **删除客户标签**：`customer_tags` 表、`tagCodes` 字段、API `tag` 过滤、UI 标签徽章列、导出 Excel 标签列全部移除 | 2026-08-22 产品决策：客户画像未来单独做。`0006_drop_customer_tags.sql` 迁移 |
+| K41 | **客户社交媒体信息表** `customer_social_accounts`（`customer × platform × account` 三元组 + 审计列）。platform 枚举沿用原 customers 表 6 类（wechat_channels/xiaoyuzhou/xiaohongshu/weibo/douyin/other），**同平台允许多账号**（不设唯一约束）。customers 表 6 个账号字段迁移进新表后删除。列表页/导出 **不展示**（仅数据层 + API，UI 等画像/详情页） | 2026-08-22 产品决策。`0007_customer_social_accounts.sql` 迁移 |
 
 ---
 
@@ -537,7 +539,7 @@ v1 不引入 AG Grid / Handsontable。mhtml 是行点击只读表，**不能**�
 8. 删除：行尾按钮 → 确认 Modal → `DELETE` 软删。密码 **不是** 表格单元格；管理员在用户页用单独「设置密码」Modal（PR 11）。
 9. 宽表：**全部列默认展示**（无默认隐藏列），内容过宽时底部横向滚动；冻结列见 Appendix B；列选择器可隐藏列并写入 `localStorage`。
 10. Pagination：`共 N 条` + 上一页/下一页 + **`<select>` 25/50/100**（core.md 要求可改每页条数；快照没有这个控件，要加）。
-11. 过滤 UI：搜索框 `q` + 每资源一个类型/状态下拉（customers `customerType`，channels `status`，products `status`，users `accountStatus`）。`ownerId`/`tag`/`channelId` 等 API 过滤 v1 **不做 UI**。
+11. 过滤 UI：搜索框 `q` + 每资源一个类型/状态下拉（customers `customerType`，channels `status`，products `status`，users `accountStatus`）。`ownerId`/`channelId` 等 API 过滤 v1 **不做 UI**。
 
 不在 v1 做：多格框选、公式、撤销栈、粘贴整列、离线编辑。
 
@@ -778,7 +780,7 @@ HTTP：401 / 403 / 404 / 409 / 422 / 429。校验失败 422。
 - users：`systemRole`、`accountStatus`（UI）、`employmentStatus`、`jobTitle`
 - channels：`platform`、`channelType`、`accountType`、`status`（UI）
 - products：`productType`、`status`（UI）、`isPackage`
-- customers：`customerType`（UI）、`tag`、`ownerId`、`channelId`
+- customers：`customerType`（UI）、`ownerId`、`channelId`
 
 ### PATCH 内核（所有资源，`lib/patch-kernel.ts`）
 
@@ -813,7 +815,7 @@ Zod：`customerPatchSchema = customerWriteSchema.partial().extend({ updatedAt: z
 一页最多 25–100 行。`assembleCustomers(ids)`：
 
 1. `SELECT * FROM customers WHERE id IN (…) AND deleted_at IS NULL`
-2. `SELECT * FROM customer_tags WHERE customer_id IN (…)`
+2. `SELECT * FROM customer_social_accounts WHERE customer_id IN (…)`（K41）
 3. 同样拉 source join（owner 是主行标量 `owner_id`，无 join）
 4. `SELECT id, nickname FROM users WHERE id IN (…) AND deleted_at IS NULL`
 5. `SELECT id, name FROM channels WHERE id IN (…) AND deleted_at IS NULL`
@@ -823,8 +825,8 @@ Zod：`customerPatchSchema = customerWriteSchema.partial().extend({ updatedAt: z
 ```ts
 {
   owner: { id, nickname } | null;      // 只含 live（K9：软删 → null，owner_id 保留）
+  socialAccounts: { platform, account }[];  // K41
   sourceChannels: { id, name }[];
-  tagCodes: TagCode[];
   createdBy: { id, nickname } | null;  // live only
   updatedBy: { id, nickname } | null;
 }
@@ -865,7 +867,7 @@ export const customerListQuerySchema = pageQuerySchema.extend({
   /* 其余标量 … */
   customerType?: CustomerType;
   wechatOpenid?: string | null;
-  tagCodes?: TagCode[];        // 缺席=不动；[]=清空
+  socialAccounts?: { platform: SocialPlatform; account: string }[];  // 缺席=不动；[]=清空（K41）
   ownerId?: number | null;     // 单值（K39）：缺席=不动；null=清空
   sourceChannelIds?: number[];
   updatedAt: number;           // 必填
@@ -876,7 +878,7 @@ export const customerListQuerySchema = pageQuerySchema.extend({
 
 ## Data Model Changes
 
-全新库。Drizzle schema 放 `apps/api/src/db/schema.ts`；SQL migration 放 `apps/api/drizzle/`（`0000_init.sql` 主数据，`0001_api_tokens.sql` 为 K35 PAT，`0002_drop_customer_fields.sql` 为 K36 客户字段删除，`0003_drop_feishu_record_ids.sql` 为 K37 三表飞书 id 删除，`0004_drop_feishu_remnants.sql` 为 K38 飞书历史列清理，`0005_single_customer_owner.sql` 为 K39 客户归属人单值）。
+全新库。Drizzle schema 放 `apps/api/src/db/schema.ts`；SQL migration 放 `apps/api/drizzle/`（`0000_init.sql` 主数据，`0001_api_tokens.sql` 为 K35 PAT，`0002_drop_customer_fields.sql` 为 K36 客户字段删除，`0003_drop_feishu_record_ids.sql` 为 K37 三表飞书 id 删除，`0004_drop_feishu_remnants.sql` 为 K38 飞书历史列清理，`0005_single_customer_owner.sql` 为 K39 客户归属人单值，`0006_drop_customer_tags.sql` 为 K40 删客户标签，`0007_customer_social_accounts.sql` 为 K41 客户社交媒体信息表）。
 
 ### ER
 
@@ -889,7 +891,7 @@ erDiagram
   users ||--o{ customers : owns    # customers.owner_id（K39 单值）
   channels ||--o{ channel_owners : has
   channels ||--o{ customer_source_channels : source
-  customers ||--o{ customer_tags : tagged
+  customers ||--o{ customer_social_accounts : social  # K41
   customers ||--o{ customer_source_channels : from
 
   users {
@@ -1444,18 +1446,18 @@ Base 标题：团队核心数据库。摘录 `base_token=IWFEbuZcfalvQus6vkOcJXU
 | 用户称谓 Title | text | | `title` | |
 | 手机号 | phone | | `phone` | |
 | 微信号 | text | | `wechat` | |
-| 其他社交账号 | text | | `other_social` | |
-| 视频号账号 | text | | `wechat_channels_account` | |
-| 小宇宙账号 | text | | `xiaoyuzhou_account` | |
-| 小红书账号 | text | | `xiaohongshu_account` | |
-| 微博账号 | text | | `weibo_account` | |
-| 抖音账号 | text | | `douyin_account` | |
+| 其他社交账号 | text | | `customer_social_accounts(platform='other')` | K41 迁移 |
+| 视频号账号 | text | | `customer_social_accounts(platform='wechat_channels')` | K41 迁移 |
+| 小宇宙账号 | text | | `customer_social_accounts(platform='xiaoyuzhou')` | K41 迁移 |
+| 小红书账号 | text | | `customer_social_accounts(platform='xiaohongshu')` | K41 迁移 |
+| 微博账号 | text | | `customer_social_accounts(platform='weibo')` | K41 迁移 |
+| 抖音账号 | text | | `customer_social_accounts(platform='douyin')` | K41 迁移 |
 | 国家 | text | | `country` | |
 | 城市 | text | | `city` | |
 | 3句话元故事 | text | | `origin_story` | |
 | 备注 | text | | `notes` | |
 | 客户类型 | select | 嘉宾 / 客户 / 企业 / 邀请 / 合作伙伴 | `customer_type` | |
-| 客户标签 | multi | 业务阶段 0-1 / 1-10 / 10-100 / VIP / IP / 副业 / 嘉宾 / 合作伙伴 | `customer_tags.tag` | |
+| 客户标签 | multi | 业务阶段 0-1 / 1-10 / 10-100 / VIP / IP / 副业 / 嘉宾 / 合作伙伴 | DROP | K40 删标签 |
 | 最近跟进时间 | datetime | | `last_followed_at` | |
 | 来源渠道 | link → 渠道 | | `customer_source_channels` | |
 | 归属人 | link → 成员 | | `customers.owner_id` | K39 单值 |
@@ -1522,16 +1524,14 @@ Base 标题：团队核心数据库。摘录 `base_token=IWFEbuZcfalvQus6vkOcJXU
 | customer_type | company | 企业 |
 | customer_type | invite | 邀请 |
 | customer_type | partner | 合作伙伴 |
-| tag | stage_0_1 | 业务阶段 0-1 |
-| tag | stage_1_10 | 1-10 |
-| tag | stage_10_100 | 10-100 |
-| tag | vip | VIP |
-| tag | ip | IP |
-| tag | side_hustle | 副业 |
-| tag | guest | 嘉宾 |
-| tag | partner | 合作伙伴 |
+| social_platform | wechat_channels | 视频号 |
+| social_platform | xiaoyuzhou | 小宇宙 |
+| social_platform | xiaohongshu | 小红书 |
+| social_platform | weibo | 微博 |
+| social_platform | douyin | 抖音 |
+| social_platform | other | 其他 |
 
-「业务阶段 1-10 / 10-100」飞书原文无「业务阶段」前缀则按 `1-10`、`10-100` 匹配；带前缀同样映射到 `stage_*`。
+「业务阶段 1-10 / 10-100」等 tag 枚举已随 K40 删除（客户画像未来单独做）。
 
 ---
 
@@ -1548,7 +1548,6 @@ Base 标题：团队核心数据库。摘录 `base_token=IWFEbuZcfalvQus6vkOcJXU
 | phone | 手机号 | text | Y | Y | 标量 |
 | wechat | 微信号 | text | Y | Y | 标量 |
 | customerType | 类型 | select | Y | Y | 标量 |
-| tagCodes | 标签 | multi | Y | Y | expansion |
 | city | 城市 | text | Y | Y | 标量 |
 | owner | 归属人 | relation-one | Y* | Y | expansion（K39 单值） |
 | updatedAt | 更新时间 | — | N | Y | 标量 |
@@ -1558,11 +1557,12 @@ Base 标题：团队核心数据库。摘录 `base_token=IWFEbuZcfalvQus6vkOcJXU
 | notes | 备注 | textarea | Y | Y | 标量 |
 | wechatOpenid | OpenID | text | Y | Y | 标量 |
 | lastFollowedAt | 最近跟进 | — | N | Y | 标量 |
-| 社交账号列 | 视频号等 | text | Y | Y | 标量 |
 | sourceChannels | 来源渠道 | relation | Y | Y | expansion |
 | id / createdAt / createdBy / updatedBy | | — | N | Y | |
 
 \* assistant：`owner` 只读（K31：`updateOwners` deny）。无「新增」按钮（K31：`create` deny）。删除按钮对助手隐藏（无 `delete`）。
+
+社交账号 **不在列表页/导出**（K41：独立表 `customer_social_accounts`，仅数据层 + API；列表页已无标签列（K40），画像/详情页再做 UI）。
 
 ### channels（冻结 `name`）
 
@@ -1644,7 +1644,7 @@ Base 标题：团队核心数据库。摘录 `base_token=IWFEbuZcfalvQus6vkOcJXU
 
 - **依赖**：PR 6
 - **影响文件**：`modules/customers/**`、`lib/{patch-kernel,assemble}.ts`
-- **说明**：两张 join（tags / sourceChannels）+ 归属人单值（K39）、`wechatOpenid`。必测：partial PATCH、`ownerId null` vs `{}`、双 PATCH 同 `updatedAt` 第二条 409、软删 owner 后 GET `owner:null`（`owner_id` 保留）、**assistant POST 403**、**assistant PATCH ownerId 403**（K31 锁定策略，不是待改默认）、list 带 expansions。
+- **说明**：社交账号 / 来源渠道子表 + 归属人单值（K39）、`wechatOpenid`。必测：partial PATCH、`ownerId null` vs `{}`、`socialAccounts []` vs `{}`、双 PATCH 同 `updatedAt` 第二条 409、软删 owner 后 GET `owner:null`（`owner_id` 保留）、**assistant POST 403**、**assistant PATCH ownerId 403**（K31 锁定策略，不是待改默认）、list 带 expansions。
 
 ### PR 8 — `feat(web): 视觉壳、router、登录`
 

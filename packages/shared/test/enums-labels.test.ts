@@ -22,10 +22,10 @@ import {
   productStatusSchema,
   productTypeLabels,
   productTypeSchema,
+  socialPlatformLabels,
+  socialPlatformSchema,
   systemRoleLabels,
   systemRoleSchema,
-  tagLabels,
-  tagSchema,
 } from "../src/index";
 
 const ALL: [name: string, schema: z.ZodEnum<[string, ...string[]]>, labels: Record<string, string>][] =
@@ -41,7 +41,7 @@ const ALL: [name: string, schema: z.ZodEnum<[string, ...string[]]>, labels: Reco
     ["productType", productTypeSchema, productTypeLabels],
     ["productStatus", productStatusSchema, productStatusLabels],
     ["customerType", customerTypeSchema, customerTypeLabels],
-    ["tag", tagSchema, tagLabels],
+    ["socialPlatform", socialPlatformSchema, socialPlatformLabels],
   ];
 
 describe("枚举与 labels 完整性（Appendix A.5 全量）", () => {

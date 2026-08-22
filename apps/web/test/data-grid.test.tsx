@@ -12,7 +12,7 @@ interface Row {
   nickname: string;
   phone: string;
   customerType: string;
-  tagCodes: string[];
+  multiCodes: string[];
   ownerIds: number[];
   notes: string;
 }
@@ -23,7 +23,7 @@ const row1: Row = {
   nickname: "张三",
   phone: "138",
   customerType: "customer",
-  tagCodes: ["vip"],
+  multiCodes: ["vip"],
   ownerIds: [1],
   notes: "",
 };
@@ -43,7 +43,7 @@ const columns: GridColumn<Row>[] = [
     ],
   },
   {
-    key: "tagCodes",
+    key: "multiCodes",
     label: "标签",
     editor: "multi",
     editable: true,
@@ -195,11 +195,11 @@ describe("DataGrid select / multi / relation 立即入队", () => {
   it("multi 勾选立即入队", async () => {
     const { patchRow, calls, waiters } = makePatchRow();
     setup(patchRow, [row1]);
-    fireEvent.doubleClick(cell(1, "tagCodes"));
+    fireEvent.doubleClick(cell(1, "multiCodes"));
     fireEvent.click(screen.getByLabelText("IP"));
     expect(patchRow).toHaveBeenCalledTimes(1);
-    expect(calls[0]!.body).toEqual({ tagCodes: ["vip", "ip"], updatedAt: 100 });
-    await act(async () => waiters[0]!.resolve({ ...row1, tagCodes: ["vip", "ip"], updatedAt: 101 }));
+    expect(calls[0]!.body).toEqual({ multiCodes: ["vip", "ip"], updatedAt: 100 });
+    await act(async () => waiters[0]!.resolve({ ...row1, multiCodes: ["vip", "ip"], updatedAt: 101 }));
   });
 
   it("relation 可搜索多选立即入队", async () => {
@@ -370,7 +370,7 @@ describe("DataGrid 列选择器与状态", () => {
     expect(JSON.parse(localStorage.getItem("gb-crm:datagrid:test-grid:columns")!)).toEqual([
       "nickname",
       "customerType",
-      "tagCodes",
+      "multiCodes",
       "ownerIds",
       "notes",
       "updatedAt",
