@@ -253,7 +253,7 @@ describe("POST /api/v1/auth/impersonate/:id", () => {
 
 describe("POST /api/v1/auth/impersonate/stop", () => {
   it("未登录 → 401；未扮演时 stop → 409", async () => {
-    const ids = await seedFixture();
+    await seedFixture();
     const anon = await app.inject({ method: "POST", url: STOP_URL });
     expect(anon.statusCode).toBe(401);
     const cookie = await loginAs(app, "admin", "password123");
