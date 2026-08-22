@@ -6,6 +6,7 @@ import { LoginPage } from "./pages/LoginPage";
 import { CustomersPage } from "./pages/CustomersPage";
 import { CustomerOverviewPage } from "./pages/CustomerOverviewPage";
 import { SettingsPage } from "./pages/SettingsPage";
+import { BusinessSettingsPage } from "./pages/BusinessSettingsPage";
 import { ChannelsPage } from "./pages/ChannelsPage";
 import { ProductsPage } from "./pages/ProductsPage";
 import { UsersPage } from "./pages/UsersPage";
@@ -38,6 +39,7 @@ export default function App() {
         <Route path="/customers" element={<CustomersPage />} />
         <Route path="/customers/:id" element={<CustomerOverviewPage />} />
         <Route path="/settings" element={<SettingsPage />} />
+        <Route path="/business-settings" element={<BusinessSettingsPage />} />
         <Route path="/channels" element={<ChannelsPage />} />
         <Route path="/products" element={<ProductsPage />} />
         <Route path="/deals" element={<DealsPage />} />

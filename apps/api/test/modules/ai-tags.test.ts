@@ -3,7 +3,7 @@ import type { FastifyInstance } from "fastify";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { buildApp } from "../../src/app.js";
-import { aiConfig } from "../../src/db/schema.js";
+import { systemConfigs } from "../../src/db/schema.js";
 import { loginAs, seedUser, testEnv } from "../helpers/auth.js";
 import { createTmpDb, type TmpDb } from "../helpers/tmp-db.js";
 
@@ -34,16 +34,13 @@ const post = (url: string, cookie: string, payload?: JsonBody) =>
 const patch = (url: string, cookie: string, payload: JsonBody) =>
   app.inject({ method: "PATCH", url, headers: { cookie }, payload });
 
-/** 直接种 ai_config（绕过 API，等价于设置页已保存） */
+/** 直接种 system_configs code='llm'（绕过 API，等价于设置页已保存，K50） */
 function seedAiConfigRow(baseUrl = "https://llm.example/v1", apiKey = "sk-test-key", model = "m1"): void {
   tmp.db
-    .insert(aiConfig)
+    .insert(systemConfigs)
     .values({
-      id: 1,
-      provider: "test",
-      baseUrl,
-      apiKey,
-      model,
+      code: "llm",
+      value: JSON.stringify({ provider: "test", baseUrl, apiKey, model }),
       updatedAt: clock.t,
       updatedBy: null,
     })

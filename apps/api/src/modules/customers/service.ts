@@ -9,13 +9,19 @@
 // - create：nickname 必填（shared schema 要求 min(1)）；「未命名客户」默认值由 web/导入侧决定，
 //   API 不代填；customerType 默认 customer（schema default）。
 // - 删除 = 软删，join 行保留（K9/K33）。
-import type { CustomerListQuery, CustomerPatch, CustomerWrite } from "@gb-crm/shared";
+import type {
+  BulkTagGenerateResult,
+  CustomerListQuery,
+  CustomerPatch,
+  CustomerWrite,
+  TagFailure,
+} from "@gb-crm/shared";
 
 import type { Db } from "../../db/client.js";
 import { chatJson, LlmError } from "../../lib/llm.js";
 import { createAudit, updateAudit, type AuditContext } from "../../lib/audit.js";
 import { applyScalarPatch } from "../../lib/patch-kernel.js";
-import { conflict, llmError, notFound, unprocessable } from "../../plugins/error-handler.js";
+import { ApiError, conflict, llmError, notFound, unprocessable } from "../../plugins/error-handler.js";
 import { assembleDeals } from "../deals/assemble.js";
 import {
   countLiveDealsByCustomer,
@@ -48,6 +54,7 @@ import {
   replaceCustomerTags,
   softDeleteCustomer,
   touchCustomer,
+  type CustomerRow,
 } from "./repo.js";
 
 // better-sqlite3 事务是同步的；tx 与 Db 的查询接口同构，收窄类型以复用 repo 函数
@@ -241,36 +248,47 @@ function promptCustomerInfo(row: CustomerDto): Record<string, unknown> {
 }
 
 /**
- * AI 一键打标（K46）：
- * 1. 客户 live 校验；ai_config 未配置 → 422；
- * 2. 词表（仅 enabled）→ prompt → OpenAI 兼容 chat/completions（chatJson）；
- * 3. 结果名称→tag id 映射，未知/重复丢弃；
- * 4. 与原标签取并集合并写入（不替换手动标签），touch updated_at 刷新 OCC 凭证。
- * 失败（网络/超时/不可解析）→ 502 LLM_ERROR。
+ * 前置校验：LLM 已配置 + 词表非空（单条/批量共用；未就绪 → 422）。
+ * 返回收窄后的 settings（baseUrl/apiKey/model 均非空）与 enabled 词表。
+ * 导出供 K51 jobs 注册表复用（创建任务时预检）。
  */
-export async function generateCustomerTags(
-  db: Db,
-  id: number,
-  ctx: AuditContext,
-  opts: { fetchFn?: typeof fetch } = {},
-): Promise<CustomerDto> {
-  const row = getCustomerByIdAny(db, id);
-  if (!row || row.deletedAt !== null) throw notFound("客户不存在");
-  const customer = assembleCustomer(db, row);
-
+export function assertAiReady(db: Db): {
+  settings: { baseUrl: string; apiKey: string; model: string };
+  vocabulary: { id: number; name: string; scope: string }[];
+} {
   const cfg = getAiConfig(db);
   if (!cfg?.apiKey || !cfg?.baseUrl || !cfg?.model) {
     throw unprocessable("请先在「系统设置」配置 LLM 服务", [
       { path: "ai-config", message: "缺少 baseUrl/apiKey/model" },
     ]);
   }
-
   const vocabulary = listEnabledLiveTags(db);
   if (vocabulary.length === 0) {
-    throw unprocessable("标签词表为空，请先在「系统设置」维护标签", [
+    throw unprocessable("标签词表为空，请先在「业务设置」维护标签", [
       { path: "tags", message: "无可用标签" },
     ]);
   }
+  return {
+    settings: { baseUrl: cfg.baseUrl, apiKey: cfg.apiKey, model: cfg.model },
+    vocabulary,
+  };
+}
+
+/**
+ * 单个客户打标核心（K46，单条/批量共用）：
+ * 词表（仅 enabled）→ prompt → OpenAI 兼容 chat/completions（chatJson）→
+ * 结果名称→tag id 映射（未知/重复丢弃）→ 与原标签取并集合并写入（不替换手动标签），
+ * touch updated_at 刷新 OCC 凭证。失败（网络/超时/不可解析）→ 抛 llmError（502）。
+ */
+async function aiTagCustomer(
+  db: Db,
+  row: CustomerRow,
+  settings: { baseUrl: string; apiKey: string; model: string },
+  vocabulary: { id: number; name: string; scope: string }[],
+  ctx: AuditContext,
+  opts: { fetchFn?: typeof fetch },
+): Promise<void> {
+  const customer = assembleCustomer(db, row);
 
   const vocabText = SCOPE_KEYS.map((key) => {
     const { label } = SCOPE_LIMITS[key]!;
@@ -284,7 +302,7 @@ export async function generateCustomerTags(
   let result: Record<string, unknown>;
   try {
     result = await chatJson({
-      settings: { baseUrl: cfg.baseUrl, apiKey: cfg.apiKey, model: cfg.model },
+      settings,
       fetchFn: opts.fetchFn,
       messages: [
         {
@@ -321,16 +339,85 @@ export async function generateCustomerTags(
 
   // 与原标签取并集（不覆盖手动标签）
   const existing = new Set(
-    listCustomerTagRows(db, [id]).map((r) => r.tagId),
+    listCustomerTagRows(db, [row.id]).map((r) => r.tagId),
   );
   const union = [...new Set([...existing, ...picked])];
 
-  return inTx(db, (tx) => {
+  inTx(db, (tx) => {
     const audit = createAudit(ctx);
-    replaceCustomerTags(tx, id, union, { createdAt: audit.createdAt, createdBy: audit.createdBy });
-    touchCustomer(tx, id, updateAudit(ctx));
-    return assembleCustomer(tx, getCustomerByIdAny(tx, id)!);
+    replaceCustomerTags(tx, row.id, union, { createdAt: audit.createdAt, createdBy: audit.createdBy });
+    touchCustomer(tx, row.id, updateAudit(ctx));
   });
+}
+
+/**
+ * AI 一键打标（K46）：客户 live 校验 → assertAiReady → aiTagCustomer；
+ * 一键直接保存、无人工确认步骤（用户拍板）。失败（未配置/词表空 422，LLM 502）。
+ */
+export async function generateCustomerTags(
+  db: Db,
+  id: number,
+  ctx: AuditContext,
+  opts: { fetchFn?: typeof fetch } = {},
+): Promise<CustomerDto> {
+  const row = getCustomerByIdAny(db, id);
+  if (!row || row.deletedAt !== null) throw notFound("客户不存在");
+  const { settings, vocabulary } = assertAiReady(db);
+  await aiTagCustomer(db, row, settings, vocabulary, ctx, opts);
+  return assembleCustomer(db, getCustomerByIdAny(db, id)!);
+}
+
+// ---- K51 批量打标（后台任务执行核心） ----
+
+export interface BulkTaggingJobOptions {
+  fetchFn?: typeof fetch;
+  /** 每客户处理前检查；返回 true 则提前结束（result.cancelled=true，供任务取消） */
+  isCancelled?: () => boolean;
+  /** 进度回调（初始 + 每客户后）：{ processed, total, succeeded, failed } */
+  onProgress?: (p: { processed: number; total: number; succeeded: number; failed: number }) => void;
+}
+
+/**
+ * 批量生成客户标签（K51，jobs 任务执行核心）：与列表/导出同一 WHERE（q/customerType/tagId/ownerId），
+ * 不分页逐客户串行打标（复用 aiTagCustomer）；单个客户 LLM 失败（502 LLM_ERROR）跳过并收集明细，
+ * 不中断整体；返回 { total, succeeded, failed, failures, cancelled }。未配置/词表空 → 422（跑之前即拦）。
+ */
+export async function runBulkTaggingJob(
+  db: Db,
+  query: CustomerListQuery,
+  ctx: AuditContext,
+  opts: BulkTaggingJobOptions = {},
+): Promise<BulkTagGenerateResult> {
+  const { settings, vocabulary } = assertAiReady(db);
+  const rows = listAllCustomers(db, query);
+  const total = rows.length;
+
+  let succeeded = 0;
+  let failed = 0;
+  const failures: TagFailure[] = [];
+  const report = () =>
+    opts.onProgress?.({ processed: succeeded + failed, total, succeeded, failed });
+  report();
+
+  for (const row of rows) {
+    if (opts.isCancelled?.()) {
+      return { total, succeeded, failed, failures, cancelled: true };
+    }
+    try {
+      await aiTagCustomer(db, row, settings, vocabulary, ctx, opts);
+      succeeded += 1;
+    } catch (err) {
+      // aiTagCustomer 已把 LlmError 映射为 502 LLM_ERROR（ApiError）；跳过该客户继续
+      if (err instanceof ApiError && err.code === "LLM_ERROR") {
+        failed += 1;
+        failures.push({ customerId: row.id, nickname: row.nickname, message: err.message });
+      } else {
+        throw err;
+      }
+    }
+    report();
+  }
+  return { total, succeeded, failed, failures, cancelled: false };
 }
 
 // ---- K47 客户总览 ----

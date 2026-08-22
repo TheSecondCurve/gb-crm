@@ -130,6 +130,15 @@ button:disabled { color: var(--text-3); cursor: not-allowed; }
 
 .badge-muted { border-color: var(--hairline); color: var(--text-3); }
 
+/* K51：失败/部分失败状态（冷漆红加粗） */
+.badge-danger { border-color: var(--accent); color: var(--accent); font-weight: 600; }
+
+/* K51：后台任务进度条 */
+.progress-track { height: 8px; border-radius: 999px; background: var(--hairline); overflow: hidden; min-width: 80px; }
+.progress-fill { height: 100%; background: var(--accent); border-radius: 999px; transition: width 0.3s; }
+.job-detail-meta { display: grid; grid-template-columns: 90px 1fr; gap: 6px 12px; font-size: 13px; }
+.job-detail-meta .detail-label { color: var(--text-2); }
+
 /* K45：客户标签徽章列表（列表列 / 总览页 / 设置页共用） */
 .tag-list { display: inline-flex; flex-wrap: wrap; gap: 4px; align-items: center; }
 

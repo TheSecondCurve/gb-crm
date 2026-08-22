@@ -13,6 +13,7 @@ export const resourceSchema = z.enum([
   "deliveries",
   "tags",
   "system",
+  "jobs",
   "auth",
 ]);
 export type Resource = z.infer<typeof resourceSchema>;
@@ -29,6 +30,8 @@ export const actionSchema = z.enum([
   "readChannelSecrets",
   "updateChannelSecrets",
   "impersonate",
+  "cancel",
+  "cancelAny",
 ]);
 export type Action = z.infer<typeof actionSchema>;
 
@@ -60,6 +63,9 @@ const ALL_DELIVERY_ACTIONS: readonly Action[] = ["list", "read", "create", "upda
 const ALL_TAG_ACTIONS: readonly Action[] = ["list", "read", "create", "update", "delete"];
 // K46：系统配置（LLM 打标）——仅 admin
 const SYSTEM_ACTIONS: readonly Action[] = ["read", "update"];
+// K51：后台任务——全角色可创建/查看/取消自己的；取消他人任务需 cancelAny（仅 admin）。
+// 任务数据全角色可见（内网、参数不敏感，非行级 ACL 收紧）；业务型权限按任务类型在创建时校验。
+const ALL_JOB_ACTIONS: readonly Action[] = ["list", "read", "create", "cancel", "cancelAny"];
 
 const MATRIX: Record<SystemRole, Readonly<Partial<Record<Resource, readonly Action[]>>>> = {
   admin: {
@@ -71,6 +77,7 @@ const MATRIX: Record<SystemRole, Readonly<Partial<Record<Resource, readonly Acti
     deliveries: ALL_DELIVERY_ACTIONS,
     tags: ALL_TAG_ACTIONS,
     system: SYSTEM_ACTIONS,
+    jobs: ALL_JOB_ACTIONS,
     // K49：扮演用户（act as user）仅 admin
     auth: ["setPassword", "impersonate"],
   },
@@ -83,6 +90,7 @@ const MATRIX: Record<SystemRole, Readonly<Partial<Record<Resource, readonly Acti
     deals: ALL_DEAL_ACTIONS,
     deliveries: ALL_DELIVERY_ACTIONS,
     tags: ["list", "read"],
+    jobs: ["list", "read", "create", "cancel"],
     auth: ["setPassword"],
   },
   assistant: {
@@ -95,6 +103,7 @@ const MATRIX: Record<SystemRole, Readonly<Partial<Record<Resource, readonly Acti
     deals: ["list", "read"],
     deliveries: ["list", "read"],
     tags: ["list", "read"],
+    jobs: ["list", "read", "create", "cancel"],
     auth: ["setPassword"],
   },
 };

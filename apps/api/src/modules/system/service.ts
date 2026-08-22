@@ -1,6 +1,6 @@
-// system 配置业务规则（K46）：
+// system 配置业务规则（K46/K50，存储为 system_configs code='llm'）：
 // - GET 只回掩码：apiKeySet + apiKeyMasked，永不全量返回 apiKey；
-// - PATCH：单行、单管理员，有意不做 OCC（偏离 K24 内核：无并发写场景，做了反而要
+// - PATCH：单配置、单管理员，有意不做 OCC（偏离 K24 内核：无并发写场景，做了反而要
 //   每次先 GET 拿 updatedAt，纯负担）；apiKey 空/缺席保留旧值（placeholder 语义）。
 import type { AiConfigGet, AiConfigPatch } from "@gb-crm/shared";
 
