@@ -29,7 +29,6 @@ describe("migration", () => {
       "api_tokens",
       "channel_owners",
       "channels",
-      "customer_owners",
       "customer_source_channels",
       "customer_tags",
       "customers",
@@ -101,14 +100,12 @@ describe("CHECK constraints", () => {
 });
 
 describe("foreign keys", () => {
-  it("rejects a join row referencing a non-existent user", () => {
+  it("rejects customers.owner_id referencing a non-existent user", () => {
     tmp.sqlite
       .prepare("INSERT INTO customers (nickname, created_at, updated_at) VALUES (?, 1, 1)")
       .run("c");
     expect(() =>
-      tmp.sqlite
-        .prepare("INSERT INTO customer_owners (customer_id, user_id) VALUES (1, 999)")
-        .run(),
+      tmp.sqlite.prepare("UPDATE customers SET owner_id = 999 WHERE id = 1").run(),
     ).toThrowError(/FOREIGN KEY/i);
   });
 });

@@ -1,5 +1,5 @@
 // customers 列定义（docs/design.md Appendix B customers：冻结 nickname，assistant 的
-// owners 只读 = K31 updateOwners deny）。labels 全部来自 @gb-crm/shared。
+// owner 只读 = K31 updateOwners deny）。labels 全部来自 @gb-crm/shared。
 import { can, customerTypeLabels, tagLabels, type SystemRole } from "@gb-crm/shared";
 
 import type { ChannelRefDto, CustomerDto, UserRefDto } from "../api/types";
@@ -45,18 +45,24 @@ export function customerColumns(role: SystemRole | null): GridColumn<CustomerDto
     },
     { key: "city", label: "城市", editor: "text", editable: canUpdate },
     {
-      key: "owners",
+      key: "owner",
       label: "归属人",
-      editor: "relation",
+      editor: "relation-one",
       editable: canUpdateOwners, // K31：assistant 只读
-      patchKey: "ownerIds",
+      patchKey: "ownerId",
       relationLoader: userOptionsLoader,
-      getValue: (row) => idsOf(row.owners),
-      render: (row) => row.owners.map((o) => o.nickname).join("、"),
-      applyOptimistic: (row, ids) => ({
-        ...row,
-        owners: applyRefs(row.owners, ids, userLabelCache, makeUserRef),
-      }),
+      getValue: (row) => row.owner?.id ?? null,
+      render: (row) => row.owner?.nickname ?? "—",
+      applyOptimistic: (row, v) => {
+        const id = typeof v === "number" ? v : null;
+        return {
+          ...row,
+          owner:
+            id === null
+              ? null
+              : makeUserRef(id, userLabelCache.get(id) ?? row.owner?.nickname ?? `#${id}`),
+        };
+      },
     },
     {
       key: "updatedAt",

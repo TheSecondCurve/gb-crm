@@ -77,11 +77,11 @@ describe("patch schema（K24：键可缺席，不得绑默认值）", () => {
     expect(r.updatedAt).toBe(1724000000000);
     expect("customerType" in r).toBe(false);
     expect("nickname" in r).toBe(false);
-    expect("ownerIds" in r).toBe(false);
+    expect("ownerId" in r).toBe(false);
   });
 
-  it("{ ownerIds: [] } 通过（关系 [] = 清空）", () => {
-    expect(customerPatchSchema.parse({ ownerIds: [], updatedAt: 1 }).ownerIds).toEqual([]);
+  it("{ ownerId: null } 通过（单值归属人 null = 清空；channel 关系 [] = 清空）", () => {
+    expect(customerPatchSchema.parse({ ownerId: null, updatedAt: 1 }).ownerId).toBeNull();
     expect(channelPatchSchema.parse({ ownerIds: [], updatedAt: 1 }).ownerIds).toEqual([]);
   });
 
@@ -115,7 +115,7 @@ describe("patch schema（K24：键可缺席，不得绑默认值）", () => {
       customerPatchSchema.safeParse({ tagCodes: ["nope"], updatedAt: 1 }).success,
     ).toBe(false);
     expect(
-      customerPatchSchema.safeParse({ ownerIds: [1.5], updatedAt: 1 }).success,
+      customerPatchSchema.safeParse({ ownerId: 1.5, updatedAt: 1 }).success,
     ).toBe(false);
   });
 });

@@ -144,6 +144,7 @@ Phase 2 表（本设计不建表、不导入）：成交表 176、用户权益�
 | K36 | 客户表删除 父记录 / 档案页 / 所在社群 / 升单人 / 飞书记录（`parent_id` / `profile_url` / `feishu_record_id` 列 + `customer_upsell_owners` / `customer_community_channels` join 表） | 2026-08-22 产品决策。`0002_drop_customer_fields.sql` 迁移删除 |
 | K37 | users / channels / products 删除 飞书记录（`feishu_record_id` 列 + 各表 partial unique 索引） | 2026-08-22 产品决策。`0003_drop_feishu_record_ids.sql` 迁移删除 |
 | K38 | 清理最后三个飞书历史列：users.feishu_user_id / products.feishu_created_date / customers.feishu_created_date | 2026-08-22 产品决策。`0004_drop_feishu_remnants.sql` 迁移删除 |
+| K39 | 客户归属人 **M2M → 单值**：删 `customer_owners` join 表，`customers.owner_id` 可空 FK 单值。缺席=不动、`null`=清空、新值=覆盖。多归属人存量迁移保留最小 `user_id`。**渠道 `channel_owners` 保持 M2M**。K31 不变：PATCH 含 `ownerId` 键仍需 `customers.updateOwners`（assistant ✗） | 2026-08-22 产品决策撤销 K15 的客户归属人 M2M。`0005_single_customer_owner.sql` 迁移 |
 
 ---
 
@@ -507,12 +508,12 @@ export function can(role: SystemRole | null, resource: Resource, action: Action)
 | users create/update/delete/updateRole/setPassword | ✓ | ✗ | ✗ | |
 | auth 改自己密码 | ✓ | ✓ | ✓ | `PATCH /auth/password` |
 
-路由：`preHandler: requireCan('customers', 'update')`。PATCH customers 若 body **含** `ownerIds`，再加 `requireCan('customers','updateOwners')`。PATCH channels 若含密钥键，再加 `updateChannelSecrets`。测试必须锁住矩阵每一格，至少包括：
+路由：`preHandler: requireCan('customers', 'update')`。PATCH customers 若 body **含** `ownerId`，再加 `requireCan('customers','updateOwners')`。PATCH channels 若含密钥键，再加 `updateChannelSecrets`。测试必须锁住矩阵每一格，至少包括：
 
 - assistant PATCH product → 403
 - assistant POST customer → 403（K31）
 - assistant PATCH customer `{ nickname, updatedAt }` → 200
-- assistant PATCH customer `{ ownerIds, updatedAt }` → 403（K31）
+- assistant PATCH customer `{ ownerId, updatedAt }` → 403（K31，null 也算）
 - assistant GET channel → `accountId` 等为 `null`
 - `system_role` null 即使用户 enabled 也不能 login
 
@@ -801,7 +802,7 @@ Zod：`customerPatchSchema = customerWriteSchema.partial().extend({ updatedAt: z
 必测：
 
 1. 行有 `phone='1'`，`PATCH { nickname, updatedAt }` → phone 仍 `'1'`。
-2. `PATCH {}` 仅 `updatedAt` → join 不变；`PATCH { ownerIds: [], updatedAt }` → 归属人清空。
+2. `PATCH {}` 仅 `updatedAt` → join 与 owner 不变；`PATCH { ownerId: null, updatedAt }` → 归属人清空。
 3. 同一 `id` 两条 inject PATCH 带 **同一个** `updatedAt`：第一条 200，第二条 409。
 4. 第二条用第一条返回的 `updatedAt`：200。
 
@@ -813,7 +814,7 @@ Zod：`customerPatchSchema = customerWriteSchema.partial().extend({ updatedAt: z
 
 1. `SELECT * FROM customers WHERE id IN (…) AND deleted_at IS NULL`
 2. `SELECT * FROM customer_tags WHERE customer_id IN (…)`
-3. 同样拉 owners / source join
+3. 同样拉 source join（owner 是主行标量 `owner_id`，无 join）
 4. `SELECT id, nickname FROM users WHERE id IN (…) AND deleted_at IS NULL`
 5. `SELECT id, name FROM channels WHERE id IN (…) AND deleted_at IS NULL`
 
@@ -821,7 +822,7 @@ Zod：`customerPatchSchema = customerWriteSchema.partial().extend({ updatedAt: z
 
 ```ts
 {
-  owners: { id, nickname }[];          // 只含 live
+  owner: { id, nickname } | null;      // 只含 live（K9：软删 → null，owner_id 保留）
   sourceChannels: { id, name }[];
   tagCodes: TagCode[];
   createdBy: { id, nickname } | null;  // live only
@@ -829,7 +830,7 @@ Zod：`customerPatchSchema = customerWriteSchema.partial().extend({ updatedAt: z
 }
 ```
 
-软删用户 **不** 删 `customer_owners` 行。GET 只是不把死人展开进去。列表测试：给客户一个 owner，软删该 user，GET customer → `owners: []`，join 表仍有行。
+软删用户 **不** 清 `customers.owner_id`（K9 精神）。GET 只是不把死人展开进去。列表测试：给客户一个 owner，软删该 user，GET customer → `owner: null`，`owner_id` 列仍指向原用户。
 
 渠道 GET：assistant 的 `accountId`/`registerPhone`/`registrant`/`realNamePerson`/`loginDevice` 为 `null`；operator/admin 原值。
 
@@ -865,7 +866,7 @@ export const customerListQuerySchema = pageQuerySchema.extend({
   customerType?: CustomerType;
   wechatOpenid?: string | null;
   tagCodes?: TagCode[];        // 缺席=不动；[]=清空
-  ownerIds?: number[];
+  ownerId?: number | null;     // 单值（K39）：缺席=不动；null=清空
   sourceChannelIds?: number[];
   updatedAt: number;           // 必填
 }
@@ -875,7 +876,7 @@ export const customerListQuerySchema = pageQuerySchema.extend({
 
 ## Data Model Changes
 
-全新库。Drizzle schema 放 `apps/api/src/db/schema.ts`；SQL migration 放 `apps/api/drizzle/`（`0000_init.sql` 主数据，`0001_api_tokens.sql` 为 K35 PAT，`0002_drop_customer_fields.sql` 为 K36 客户字段删除，`0003_drop_feishu_record_ids.sql` 为 K37 三表飞书 id 删除，`0004_drop_feishu_remnants.sql` 为 K38 飞书历史列清理）。
+全新库。Drizzle schema 放 `apps/api/src/db/schema.ts`；SQL migration 放 `apps/api/drizzle/`（`0000_init.sql` 主数据，`0001_api_tokens.sql` 为 K35 PAT，`0002_drop_customer_fields.sql` 为 K36 客户字段删除，`0003_drop_feishu_record_ids.sql` 为 K37 三表飞书 id 删除，`0004_drop_feishu_remnants.sql` 为 K38 飞书历史列清理，`0005_single_customer_owner.sql` 为 K39 客户归属人单值）。
 
 ### ER
 
@@ -885,11 +886,10 @@ erDiagram
   users ||--o{ api_tokens : pats
   users ||--o{ channels : created
   users ||--o{ channel_owners : owns
-  users ||--o{ customer_owners : owner
+  users ||--o{ customers : owns    # customers.owner_id（K39 单值）
   channels ||--o{ channel_owners : has
   channels ||--o{ customer_source_channels : source
   customers ||--o{ customer_tags : tagged
-  customers ||--o{ customer_owners : has
   customers ||--o{ customer_source_channels : from
 
   users {
@@ -917,6 +917,7 @@ erDiagram
     int id PK
     text nickname
     text wechat_openid
+    int owner_id FK
   }
 ```
 
@@ -1350,7 +1351,7 @@ sqlite3 "$DATABASE_PATH" ".backup '${DATABASE_PATH}.bak-$(date +%F)'"
 | Q13 | 品牌文案「闪光 · 客户运营」 | K34 |
 | （后补） | Agent 用 PAT + 托管 `login.sh` + 仓库 `skills/gb-crm/`；不开 SQL | K35 |
 
-此前已关闭、不再提问：四张表（Goals/K19）、角色拆分（K10）、不做飞书导入（K16）、独立应用（K1）、Excel 深度（K8/K30）、父记录列（K15，2026-08-22 由 K36 撤销）、归属人 M2M（K15）、离职闸门（K10）、无登录成员进 users（K10）、`dev` 已存在（K17）。
+此前已关闭、不再提问：四张表（Goals/K19）、角色拆分（K10）、不做飞书导入（K16）、独立应用（K1）、Excel 深度（K8/K30）、父记录列（K15，2026-08-22 由 K36 撤销）、归属人 M2M（K15，2026-08-22 由 K39 撤销为单值）、离职闸门（K10）、无登录成员进 users（K10）、`dev` 已存在（K17）。
 
 ---
 
@@ -1389,8 +1390,8 @@ Base 标题：团队核心数据库。摘录 `base_token=IWFEbuZcfalvQus6vkOcJXU
 | 其他备注 | text | | `notes` | 原样 |
 | 调休余额 | formula | | DROP | |
 | 负责的渠道 | link → 渠道资产 | | `channel_owners` | 第二遍 |
-| 负责的客户 | link → 客户名单 | | `customer_owners` | 第二遍 |
-| 客户名单 | link → 客户名单 | 与「负责的客户」可能重叠 | 并入 `customer_owners` | 第二遍去重 |
+| 负责的客户 | link → 客户名单 | | `customers.owner_id` | 第二遍（K39 单值） |
+| 客户名单 | link → 客户名单 | 与「负责的客户」可能重叠 | `customers.owner_id` | 第二遍去重（K39 单值） |
 | 负责的线索 | link → 成交 | | DROP | |
 | 调休加班记录 | link | | DROP | |
 | 客户跟进记录 | link | | DROP | |
@@ -1457,7 +1458,7 @@ Base 标题：团队核心数据库。摘录 `base_token=IWFEbuZcfalvQus6vkOcJXU
 | 客户标签 | multi | 业务阶段 0-1 / 1-10 / 10-100 / VIP / IP / 副业 / 嘉宾 / 合作伙伴 | `customer_tags.tag` | |
 | 最近跟进时间 | datetime | | `last_followed_at` | |
 | 来源渠道 | link → 渠道 | | `customer_source_channels` | |
-| 归属人 | link → 成员 | | `customer_owners` | |
+| 归属人 | link → 成员 | | `customers.owner_id` | K39 单值 |
 | 归属人_飞书用户 | lookup | | DROP | |
 | 交付/线索成交/跟进 | link | | DROP | |
 | （本系统） | — | | `wechat_openid` | INSERT NULL |
@@ -1549,7 +1550,7 @@ Base 标题：团队核心数据库。摘录 `base_token=IWFEbuZcfalvQus6vkOcJXU
 | customerType | 类型 | select | Y | Y | 标量 |
 | tagCodes | 标签 | multi | Y | Y | expansion |
 | city | 城市 | text | Y | Y | 标量 |
-| owners | 归属人 | relation | Y* | Y | expansion |
+| owner | 归属人 | relation-one | Y* | Y | expansion（K39 单值） |
 | updatedAt | 更新时间 | — | N | Y | 标量 |
 | title | 称谓 | text | Y | Y | 标量 |
 | country | 国家 | text | Y | Y | 标量 |
@@ -1561,7 +1562,7 @@ Base 标题：团队核心数据库。摘录 `base_token=IWFEbuZcfalvQus6vkOcJXU
 | sourceChannels | 来源渠道 | relation | Y | Y | expansion |
 | id / createdAt / createdBy / updatedBy | | — | N | Y | |
 
-\* assistant：`owners` 只读（K31：`updateOwners` deny）。无「新增」按钮（K31：`create` deny）。删除按钮对助手隐藏（无 `delete`）。
+\* assistant：`owner` 只读（K31：`updateOwners` deny）。无「新增」按钮（K31：`create` deny）。删除按钮对助手隐藏（无 `delete`）。
 
 ### channels（冻结 `name`）
 
@@ -1643,7 +1644,7 @@ Base 标题：团队核心数据库。摘录 `base_token=IWFEbuZcfalvQus6vkOcJXU
 
 - **依赖**：PR 6
 - **影响文件**：`modules/customers/**`、`lib/{patch-kernel,assemble}.ts`
-- **说明**：三张 join、`wechatOpenid`。必测：partial PATCH、`ownerIds []` vs `{}`、双 PATCH 同 `updatedAt` 第二条 409、软删 owner 后 GET `owners:[]`、**assistant POST 403**、**assistant PATCH ownerIds 403**（K31 锁定策略，不是待改默认）、list 带 expansions。
+- **说明**：两张 join（tags / sourceChannels）+ 归属人单值（K39）、`wechatOpenid`。必测：partial PATCH、`ownerId null` vs `{}`、双 PATCH 同 `updatedAt` 第二条 409、软删 owner 后 GET `owner:null`（`owner_id` 保留）、**assistant POST 403**、**assistant PATCH ownerId 403**（K31 锁定策略，不是待改默认）、list 带 expansions。
 
 ### PR 8 — `feat(web): 视觉壳、router、登录`
 

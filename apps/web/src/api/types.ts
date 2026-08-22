@@ -32,7 +32,7 @@ export interface CustomerDto {
   wechatOpenid: string | null;
   lastFollowedAt: number | null;
   tagCodes: string[];
-  owners: UserRefDto[];
+  owner: UserRefDto | null;
   sourceChannels: ChannelRefDto[];
   createdAt: number;
   updatedAt: number;

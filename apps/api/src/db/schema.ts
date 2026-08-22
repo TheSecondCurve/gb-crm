@@ -205,6 +205,7 @@ export const customers = sqliteTable(
     customerType: text("customer_type").notNull().default("customer"),
     wechatOpenid: text("wechat_openid"),
     lastFollowedAt: integer("last_followed_at"),
+    ownerId: integer("owner_id").references(() => users.id, { onDelete: "set null" }),
     createdAt: integer("created_at").notNull(),
     updatedAt: integer("updated_at").notNull(),
     createdBy: integer("created_by").references(() => users.id, { onDelete: "set null" }),
@@ -221,6 +222,7 @@ export const customers = sqliteTable(
       .on(t.wechatOpenid)
       .where(sql`"wechat_openid" IS NOT NULL AND "deleted_at" IS NULL`),
     index("customers_phone_idx").on(t.phone),
+    index("customers_owner_id_idx").on(t.ownerId),
   ],
 );
 
@@ -239,19 +241,6 @@ export const customerTags = sqliteTable(
     ),
     primaryKey({ columns: [t.customerId, t.tag] }),
   ],
-);
-
-export const customerOwners = sqliteTable(
-  "customer_owners",
-  {
-    customerId: integer("customer_id")
-      .notNull()
-      .references(() => customers.id, { onDelete: "cascade" }),
-    userId: integer("user_id")
-      .notNull()
-      .references(() => users.id, { onDelete: "cascade" }),
-  },
-  (t) => [primaryKey({ columns: [t.customerId, t.userId] })],
 );
 
 export const customerSourceChannels = sqliteTable(
