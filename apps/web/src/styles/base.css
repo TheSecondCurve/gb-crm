@@ -317,3 +317,99 @@ select:focus, textarea:focus { outline: 1px solid var(--ink); }
 .delivery-picker-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 
 .delivery-picker-toolbar .btn-link { padding: 0; border: none; background: none; color: var(--accent); font-size: 12px; cursor: pointer; }
+
+/* ---- K44 增强：甘特图（项目维度交付项）/ 状态矩阵（客户维度交付项） ---- */
+
+/* 甘特：左列 sticky + 天粒度横向滚动时间轴 */
+.gantt-scroll { overflow-x: auto; }
+
+.gantt-head { display: flex; border-bottom: 1px solid var(--hairline); }
+
+.gantt-head-label { position: sticky; left: 0; z-index: 2; width: 280px; min-width: 280px; padding: 8px 16px; font-size: 13px; color: var(--text-2); font-weight: 500; background: rgb(255, 255, 255); border-right: 1px solid var(--hairline); }
+
+.gantt-months { display: grid; border-bottom: 1px solid var(--hairline); }
+
+.gantt-month { padding: 3px 0 2px 4px; font-size: 12px; color: var(--text-3); border-right: 1px solid var(--hairline); overflow: hidden; white-space: nowrap; }
+
+.gantt-days { display: grid; }
+
+.gantt-day { padding: 2px 0 2px 4px; font-size: 11px; color: var(--text-3); border-right: 1px solid var(--hairline); overflow: hidden; }
+
+.gantt-row { display: flex; border-bottom: 1px solid var(--hairline); }
+
+.gantt-row:last-child { border-bottom: none; }
+
+.gantt-row-label { position: sticky; left: 0; z-index: 1; display: flex; align-items: center; gap: 10px; width: 280px; min-width: 280px; padding: 6px 16px; font-size: 13px; background: rgb(255, 255, 255); border-right: 1px solid var(--hairline); }
+
+.gantt-item-title { flex: 1; min-width: 0; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.gantt-item-dates { display: flex; align-items: center; gap: 4px; }
+
+.gantt-item-dates input { width: 104px; padding: 3px 6px; font-size: 12px; }
+
+.gantt-item-meta { font-size: 12px; color: var(--muted); white-space: nowrap; }
+
+.gantt-item-delete { padding: 3px 8px; font-size: 12px; }
+
+.gantt-track { position: relative; height: 44px; background-image: repeating-linear-gradient(to right, var(--hairline) 0 1px, transparent 1px 28px); }
+
+.gantt-bar { position: absolute; top: 8px; height: 28px; display: flex; align-items: center; padding: 0 8px; border-radius: 4px; background: var(--ink); color: var(--cream); font-size: 12px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+
+/* 矩阵：sticky 表头/首列 + 三态格 + 备注 hover 气泡 */
+.matrix-scroll { overflow: auto; max-height: 72vh; }
+
+.matrix-table { border-collapse: collapse; font-size: 13px; }
+
+.matrix-table th, .matrix-table td { border: 1px solid var(--hairline); padding: 6px 10px; text-align: center; white-space: nowrap; }
+
+.matrix-table thead th { position: sticky; top: 0; z-index: 2; background: rgb(255, 255, 255); color: var(--text-2); font-weight: 500; font-size: 12px; }
+
+.matrix-corner { position: sticky; left: 0; z-index: 3; background: rgb(255, 255, 255); }
+
+.matrix-table thead .matrix-corner { z-index: 4; }
+
+.matrix-row-head { position: sticky; left: 0; z-index: 3; background: rgb(255, 255, 255); text-align: left; font-weight: 500; }
+
+.matrix-col-title { max-width: 140px; overflow: hidden; text-overflow: ellipsis; }
+
+.matrix-col-progress { font-size: 11px; color: var(--muted); }
+
+.matrix-hint { display: block; font-size: 11px; color: var(--muted); font-weight: 400; }
+
+.matrix-cell { position: relative; min-width: 88px; cursor: pointer; }
+
+.matrix-cell-empty { cursor: default; color: var(--text-3); }
+
+.matrix-state { font-size: 12px; }
+
+.matrix-cell-done .matrix-state { color: var(--accent); font-weight: 500; }
+
+.matrix-remark-badge { margin-left: 6px; padding: 0 4px; font-size: 11px; color: var(--text-3); border: 1px solid var(--hairline); border-radius: 3px; }
+
+.matrix-cell-editing input { width: 120px; padding: 2px 6px; font-size: 12px; }
+
+.matrix-row-sum { color: var(--text-2); font-size: 12px; }
+
+/* 备注气泡：hover 显示完整文字 */
+.matrix-cell[data-remark]::after {
+  content: attr(data-remark);
+  position: absolute;
+  bottom: calc(100% + 6px);
+  left: 50%;
+  transform: translateX(-50%);
+  max-width: 280px;
+  padding: 4px 8px;
+  border-radius: 4px;
+  background: var(--ink);
+  color: var(--cream);
+  font-size: 12px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.12s;
+  z-index: 5;
+}
+
+.matrix-cell[data-remark]:hover::after { opacity: 1; }

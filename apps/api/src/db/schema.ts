@@ -347,7 +347,8 @@ export const deliveryCustomers = sqliteTable(
   ],
 );
 
-// K44 交付项：挂交付单；双维度（项目/客户）；无独立状态，打勾进度即状态。
+// K44 交付项：挂交付单；双维度（项目/客户）；无独立状态，打勾进度即状态；
+// starts_at/ends_at 可空（项目维度甘特排期；客户维度通常不填）。
 export const deliverables = sqliteTable(
   "deliverables",
   {
@@ -359,6 +360,8 @@ export const deliverables = sqliteTable(
     dimension: text("dimension").notNull().default("project"),
     description: text("description"),
     deliveryUrl: text("delivery_url"),
+    startsAt: integer("starts_at"),
+    endsAt: integer("ends_at"),
     createdAt: integer("created_at").notNull(),
     updatedAt: integer("updated_at").notNull(),
     createdBy: integer("created_by").references(() => users.id, { onDelete: "set null" }),

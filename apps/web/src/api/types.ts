@@ -155,7 +155,7 @@ export interface DeliveryTaskDto {
   updatedAt: number;
 }
 
-/** 交付项（K44：项目维度 / 客户维度；无独立状态，打勾进度即状态） */
+/** 交付项（K44：项目维度 / 客户维度；无独立状态，打勾进度即状态；起止时间可空） */
 export interface DeliverableDto {
   id: number;
   deliveryId: number;
@@ -163,6 +163,8 @@ export interface DeliverableDto {
   dimension: string;
   description: string | null;
   deliveryUrl: string | null;
+  startsAt: number | null;
+  endsAt: number | null;
   tasks: DeliveryTaskDto[];
   createdAt: number;
   updatedAt: number;

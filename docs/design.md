@@ -151,7 +151,7 @@ Phase 2 表（本设计不建表、不导入）：活动交付 12、内容资产
 | K41 | **客户社交媒体信息表** `customer_social_accounts`（`customer × platform × account` 三元组 + 审计列）。platform 枚举沿用原 customers 表 6 类（wechat_channels/xiaoyuzhou/xiaohongshu/weibo/douyin/other），**同平台允许多账号**（不设唯一约束）。customers 表 6 个账号字段迁移进新表后删除。列表页/导出 **不展示**（仅数据层 + API，UI 等画像/详情页） | 2026-08-22 产品决策。`0007_customer_social_accounts.sql` 迁移 |
 | K42 | **成交表 v1 化**：`deals` 表（对照飞书「团队核心数据库 → 成交表」176 条）。字段裁剪：客户 / 意向产品 / 负责人均为 **单值 FK**（`customer_id` 创建必填；`product_id` / `owner_id` 可空，缺席不动 / null 清空）；`stage` 枚举 gift/paid/refunded/closed（默认 gift 赠送）+ `order_no` / `payment_remark` / `delivery_date`（epoch ms）。**不做**：成交人、财务类（税后系数 / 提现基数 / 奖金系数 / 金额 / 成交人比例 / 各类奖金 / 奖金核算记录）、是否进群 / 是否发货、线索标题 formula、Excel 导出。客户 ref 展开带 `city`（「客户城市」只读列）。**assistant 只读**（list/read），admin/operator 全 CRUD。列表过滤：stage（UI）+ customerId/productId/ownerId（API） | 2026-08-22 产品决策（参考飞书成交表现字段，逐项裁剪）。`0008_deals.sql` 迁移。侧栏新增「运营流程 → 成交记录」 |
 | K43 | **交付项 + 动作打勾清单**：`deliverables`（交付项，对照飞书「用户权益明细表」526 条）+ `delivery_tasks`（动作清单子表，硬删）。交付项挂成交（`deal_id` NOT NULL，一个成交可拆多条，客户从成交继承）；`status` 枚举 pending/delivering/delivered/cancelled + 计划/实际交付日期、有效期、交付说明、交付物链接。**动作模板**：`products.default_tasks` 多行文本（每行一个默认动作），**新建交付项时服务端复制为初始清单**，之后完全独立（模板不实时同步、允许单独增删改）。打勾子端点：POST/PATCH/DELETE `/deliverables/:id/tasks`，PATCH `done` 翻转时服务端记 `done_at`/`done_by`（任务行级 OCC）。**assistant 只读**。列表过滤：status（UI）+ dealId/productId/customerId、q 搜客户昵称（API） | 2026-08-22 产品决策。`0009_deliverables.sql` 迁移。侧栏新增「运营流程 → 交付管理」。**K44 已重构本模型：交付项改挂交付单（弱关联成交），status/日期/产品模板移除** |
-| K44 | **交付重构（弱关联交付单 + 交付类型配置表 + 客户维度打勾）**：`delivery_types`（配置表：name/kind（咨询/活动/圈子/其他）/status（有效/失效）/description/`default_tasks` 模板）+ `deliveries`（精简字段：类型 + 客户集合 M2M `delivery_customers` + 起止日期（epoch ms 可空，日历输入）+ 备注，**不挂成交**，**客户可不选（空交付单）**）+ 重建 `deliverables`（挂 `delivery_id`，`dimension` project/customer，无独立状态——打勾进度即状态）+ `delivery_tasks`（**`customer_id` 可空：NULL=项目维度单组；非 NULL=每客户一组，分别打勾/备注**）。**客户来源**：创建交付单时手动多选（单选/部分/全选）∪「按意向产品从成交 merge」（deals 列表加 `productId` 过滤，前端取成交客户去重合并）。**模板预填**：新建交付项按交付类型 default_tasks 为每个目标客户生成任务（客户维度省略 customerIds = 全部客户）。**产品 `default_tasks` 移除**（模板统一归交付类型）。权限统一为 `deliveries` resource（类型/交付单/交付项/任务共用，assistant 只读）。**不做**：交付单状态/负责人、交付项状态与日期、活动交付记录 | 2026-08-22 产品决策（用户拍板：客户维度=交付项×客户展开；交付单精简字段；类型带默认动作）。`0010_deliverables_v2.sql` 迁移（旧 K43 表无数据直接重建）。侧栏「运营流程 → 交付管理 / 交付类型」。**2026-08-22 追加**：交付单补 `starts_at`/`ends_at`（`0012_delivery_dates.sql`）；交付类型补 `kind`/`status`（`0013_delivery_type_kind_status.sql`）；客户来源改按**意向产品**（productId）过滤 |
+| K44 | **交付重构（弱关联交付单 + 交付类型配置表 + 客户维度打勾）**：`delivery_types`（配置表：name/kind（咨询/活动/圈子/其他）/status（有效/失效）/description/`default_tasks` 模板）+ `deliveries`（精简字段：类型 + 客户集合 M2M `delivery_customers` + 起止日期（epoch ms 可空，日历输入）+ 备注，**不挂成交**，**客户可不选（空交付单）**）+ 重建 `deliverables`（挂 `delivery_id`，`dimension` project/customer，无独立状态——打勾进度即状态）+ `delivery_tasks`（**`customer_id` 可空：NULL=项目维度单组；非 NULL=每客户一组，分别打勾/备注**）。**客户来源**：创建交付单时手动多选（单选/部分/全选）∪「按意向产品从成交 merge」（deals 列表加 `productId` 过滤，前端取成交客户去重合并）。**模板预填**：新建交付项按交付类型 default_tasks 为每个目标客户生成任务（客户维度省略 customerIds = 全部客户）。**产品 `default_tasks` 移除**（模板统一归交付类型）。权限统一为 `deliveries` resource（类型/交付单/交付项/任务共用，assistant 只读）。**不做**：交付单状态/负责人、交付项状态与日期、活动交付记录 | 2026-08-22 产品决策（用户拍板：客户维度=交付项×客户展开；交付单精简字段；类型带默认动作）。`0010_deliverables_v2.sql` 迁移（旧 K43 表无数据直接重建）。侧栏「运营流程 → 交付管理 / 交付类型」。**2026-08-22 追加**：交付单补 `starts_at`/`ends_at`（`0012_delivery_dates.sql`）；交付类型补 `kind`/`status`（`0013_delivery_type_kind_status.sql`）；客户来源改按**意向产品**（productId）过滤。**2026-08-22 再追加**：交付项补 `starts_at`/`ends_at`（`0014_deliverable_dates.sql`，可空，甘特排期用）；新增两个前端透视页——项目维度**甘特图** `/deliveries/:id/gantt`（天粒度时间轴条块 + 行内改起止日期/新增/删除，两端齐全才入时间轴，缺一端列「未排期」区）与客户维度**状态矩阵** `/deliveries/:id/matrix`（行=交付客户，列=客户维度交付项，格=该客户该交付项任务：未完成/完成/备注 hover 气泡；单击打勾、双击内联备注，均走 task PATCH OCC；**无任务记录=未完成，不建记录**——后加入交付单的客户自动出现且全未完成）。矩阵/甘特复用 `GET /deliveries/:id` 与 `/items`，零新增查询端点 |
 
 ---
 
@@ -1613,17 +1613,21 @@ K43 初版（已由 K44 重构）：交付项挂成交（`deal_id`，客户从�
 
 全部列默认可见。可编（admin/operator）：customer（relation-one 单值，必填）、product（relation-one）、owner（relation-one）、stage（select）、orderNo（text）、deliveryDate（text，UI YYYY-MM-DD → epoch ms）、paymentRemark（textarea）。city（客户城市）只读，来自 `customer.city` expansion。assistant 整表只读（K42：deals update deny），无「新增」按钮。
 
-### deliveries 域（K44，三个页面）
+### deliveries 域（K44，五个页面）
 
 **交付类型页 `/delivery-types`**：DataGrid——类型名称（text）、类型 kind（select：咨询类/活动类/圈子类/其他类）、状态 status（select：有效/失效）、说明（textarea）、默认动作模板（textarea，每行一个动作，创建交付项时预填）。新增/修改/删除；删除被交付单引用 → 422。
 
-**交付管理页 `/deliveries`**：DataGrid——交付类型（只读展示）、客户数（`N 人`）、开始日期/结束日期（date 日历输入，UI YYYY-MM-DD → epoch ms）、备注（textarea 可编）、更新时间。新建/修改用 DeliveryFormModal：**类型下拉 + 起止日期（date 输入，可空）+ 客户选择（① 手动搜索多选 ② 按意向产品从成交 merge，两类选择合并提交 customerIds）+ 备注；客户可不选（空交付单）**。行操作：详情（→ 交付单详情页）、修改、删除。q 搜客户昵称。
+**交付管理页 `/deliveries`**：DataGrid——交付类型（只读展示）、客户数（`N 人`）、开始日期/结束日期（date 日历输入，UI YYYY-MM-DD → epoch ms）、备注（textarea 可编）、更新时间。新建/修改用 DeliveryFormModal：**类型下拉 + 起止日期（date 输入，可空）+ 客户选择（① 手动搜索多选 ② 按意向产品从成交 merge：意向产品**多选**，分页拉全各产品成交客户合并去重，可一键「合并全部成交」）+ 备注；客户可不选（空交付单）**。行操作：详情（→ 交付单详情页）、修改、删除。q 搜客户昵称。
 
-**交付单详情页 `/deliveries/:id`**：信息卡（类型/客户 chips/备注/动作总进度）+ 交付项列表（content、维度 badge、进度：项目 `n/m`、客户 `k/m 客户已覆盖 · n/m`、说明/链接）+ 新增交付项弹窗（标题、维度单选；客户维度选覆盖客户默认全选）+ 修改/删除 + 「动作」按钮打开 ItemModal。
+**交付单详情页 `/deliveries/:id`**：信息卡（类型/客户 chips/备注/动作总进度）+ 交付项列表（content、维度 badge、进度：项目 `n/m`、客户 `k/m 客户已覆盖 · n/m`、说明/链接）+ 新增交付项弹窗（标题、维度单选；客户维度选覆盖客户默认全选）+ 修改/删除 + 「动作」按钮打开 ItemModal + 页头「甘特图 / 状态矩阵」入口。
+
+**甘特图页 `/deliveries/:id/gantt`**（项目维度交付项，纯 CSS 网格无第三方库）：时间范围 = 已排期项 ∪ 交付单起止（天粒度，横向滚动，左列 sticky）；行 = 项目交付项（标题 + 起止日期行内编辑 + 进度 + 删除），条块按日期绝对定位；两端日期齐全才入时间轴，缺一端列「未排期」区。可新增项目交付项（标题必填 + 起止日期可选）。起止日期 PATCH 走交付项 updatedAt OCC。
+
+**状态矩阵页 `/deliveries/:id/matrix`**（客户维度交付项）：行 = 交付单客户，列 = 客户维度交付项；格由 `item.tasks` 按客户匹配——无记录（如后加入的客户）= 未完成（不建记录、点击仅提示）；`done` 未完成/完成（✓）；`remark` 角标 + hover 气泡。单击格打勾（250ms 防双击）、双击格内联编辑备注，均 PATCH 任务（updatedAt OCC）；列头显示交付项进度，行尾显示客户完成数。
 
 **ItemModal（动作打勾）**：项目维度单组清单；客户维度按客户分组，每组独立打勾/备注/增删动作。打勾/备注即时 PATCH（任务 updatedAt 行级 OCC）。
 
-assistant 全域只读（无新增/修改/删除/动作按钮）。
+assistant 全域只读（无新增/修改/删除/动作按钮；甘特/矩阵仅展示）。
 
 ---
 

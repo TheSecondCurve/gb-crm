@@ -124,6 +124,12 @@ export function DeliveryDetailPage() {
           <button type="button" onClick={() => navigate("/deliveries")}>
             返回列表
           </button>
+          <button type="button" onClick={() => navigate(`/deliveries/${deliveryId}/gantt`)}>
+            甘特图
+          </button>
+          <button type="button" onClick={() => navigate(`/deliveries/${deliveryId}/matrix`)}>
+            状态矩阵
+          </button>
           {canUpdate && (
             <button type="button" className="btn-primary" onClick={() => setEditingDelivery(true)}>
               修改交付
