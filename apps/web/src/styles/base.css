@@ -351,9 +351,28 @@ select:focus, textarea:focus { outline: 1px solid var(--ink); }
 
 .gantt-item-delete { padding: 3px 8px; font-size: 12px; }
 
-.gantt-track { position: relative; height: 44px; background-image: repeating-linear-gradient(to right, var(--hairline) 0 1px, transparent 1px 28px); }
+.gantt-track { position: relative; height: 44px; overflow: hidden; background-image: repeating-linear-gradient(to right, var(--hairline) 0 1px, transparent 1px 28px); }
 
 .gantt-bar { position: absolute; top: 8px; height: 28px; display: flex; align-items: center; padding: 0 8px; border-radius: 4px; background: var(--ink); color: var(--cream); font-size: 12px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+
+/* 全部项目交付项 todo 清单（按开始时间排序） */
+.gantt-todo { display: flex; flex-direction: column; }
+
+.gantt-todo-row { display: flex; align-items: center; gap: 12px; padding: 10px 16px; border-bottom: 1px solid var(--hairline); }
+
+.gantt-todo-row:last-child { border-bottom: none; }
+
+.gantt-todo-dot { flex-shrink: 0; width: 10px; height: 10px; border-radius: 50%; border: 1px solid var(--text-3); background: rgb(255, 255, 255); }
+
+.gantt-todo-dot.gantt-todo-done { border-color: var(--accent); background: var(--accent); }
+
+.gantt-todo-main { flex: 1; min-width: 0; }
+
+.gantt-todo-title { font-size: 13px; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.gantt-todo-meta { font-size: 12px; color: var(--muted); white-space: nowrap; }
+
+.gantt-todo-unscheduled { color: var(--accent); }
 
 /* 矩阵：sticky 表头/首列 + 三态格 + 备注 hover 气泡 */
 .matrix-scroll { overflow: auto; max-height: 72vh; }
