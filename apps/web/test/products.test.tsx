@@ -15,6 +15,7 @@ const product: ProductDto = {
   isPackage: false,
   status: "on_sale",
   priceCents: 12345,
+  defaultTasks: null,
   createdAt: 1000,
   updatedAt: 2000,
   createdBy: null,

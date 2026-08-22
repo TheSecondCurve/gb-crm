@@ -69,6 +69,75 @@ export interface ProductDto {
   status: string;
   /** K13：integer 分；null = 未定价。UI 展示/编辑元 */
   priceCents: number | null;
+  /** K43：多行文本，每行一个默认交付动作（新建交付项时预填模板） */
+  defaultTasks: string | null;
+  createdAt: number;
+  updatedAt: number;
+  createdBy: UserRefDto | null;
+  updatedBy: UserRefDto | null;
+}
+
+/** deals 客户 ref（K42：带 city 供「客户城市」只读列） */
+export interface DealCustomerRefDto {
+  id: number;
+  nickname: string;
+  city: string | null;
+}
+
+export interface DealProductRefDto {
+  id: number;
+  name: string;
+}
+
+export interface DealDto {
+  id: number;
+  customerId: number;
+  productId: number | null;
+  ownerId: number | null;
+  stage: string;
+  orderNo: string | null;
+  paymentRemark: string | null;
+  /** epoch ms UTC；null = 未填。UI 展示/编辑 YYYY-MM-DD */
+  deliveryDate: number | null;
+  customer: DealCustomerRefDto | null;
+  product: DealProductRefDto | null;
+  owner: UserRefDto | null;
+  createdAt: number;
+  updatedAt: number;
+  createdBy: UserRefDto | null;
+  updatedBy: UserRefDto | null;
+}
+
+/** 交付项关联的成交 ref（K43：含客户昵称供列表展示） */
+export interface DealRefDto {
+  id: number;
+  orderNo: string | null;
+  customer: { id: number; nickname: string } | null;
+}
+
+/** 动作打勾清单项（K43） */
+export interface DeliveryTaskDto {
+  id: number;
+  content: string;
+  done: boolean;
+  doneAt: number | null;
+  doneBy: UserRefDto | null;
+  updatedAt: number;
+}
+
+export interface DeliverableDto {
+  id: number;
+  dealId: number;
+  productId: number | null;
+  status: string;
+  planDeliverDate: number | null;
+  actualDeliverDate: number | null;
+  expiryDate: number | null;
+  description: string | null;
+  deliveryUrl: string | null;
+  deal: DealRefDto | null;
+  product: { id: number; name: string } | null;
+  tasks: DeliveryTaskDto[];
   createdAt: number;
   updatedAt: number;
   createdBy: UserRefDto | null;

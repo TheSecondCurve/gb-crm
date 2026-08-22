@@ -5,6 +5,7 @@ const ADMIN = { username: "admin", password: "admin-e2e-password" };
 const ASSISTANT = { username: "assistant", password: "assistant-e2e-pass" };
 const SEED_NICKNAME = "e2e种子客户";
 const RENAMED = "e2e改名客户";
+const DEAL_ORDER_NO = "E2E-ORD-001";
 
 async function login(page: import("@playwright/test").Page, username: string, password: string) {
   await page.goto("/login");
@@ -50,4 +51,23 @@ test("assistant 登录看不到「团队成员」菜单", async ({ page }) => {
   await login(page, ASSISTANT.username, ASSISTANT.password);
   await expect(page.getByRole("link", { name: "客户信息" })).toBeVisible();
   await expect(page.getByRole("link", { name: "团队成员" })).toHaveCount(0);
+});
+
+test("admin：成交记录页可见种子成交（订单号 + 阶段徽章，K42）", async ({ page }) => {
+  await login(page, ADMIN.username, ADMIN.password);
+  await page.getByRole("link", { name: "成交记录" }).click();
+  await expect(page).toHaveURL(/\/deals/);
+
+  const orderCell = page.locator('[data-cell$=":orderNo"]').first();
+  await expect(orderCell).toContainText(DEAL_ORDER_NO);
+  await expect(page.locator('[data-cell$=":stage"]').first()).toContainText("已付款");
+});
+
+test("admin：交付管理页可见种子交付项（成交 + 动作进度 1/2，K43）", async ({ page }) => {
+  await login(page, ADMIN.username, ADMIN.password);
+  await page.getByRole("link", { name: "交付管理" }).click();
+  await expect(page).toHaveURL(/\/deliverables/);
+
+  await expect(page.locator('[data-cell$=":deal"]').first()).toContainText(DEAL_ORDER_NO);
+  await expect(page.locator('[data-cell$=":taskProgress"]').first()).toContainText("1/2");
 });

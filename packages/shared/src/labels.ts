@@ -4,6 +4,8 @@ import type {
   ChannelStatus,
   ChannelType,
   CustomerType,
+  DealStage,
+  DeliverableStatus,
   EmploymentStatus,
   JobTitle,
   Platform,
@@ -110,4 +112,18 @@ export const socialPlatformLabels: Record<SocialPlatform, string> = {
   weibo: "微博",
   douyin: "抖音",
   other: "其他",
+};
+
+export const dealStageLabels: Record<DealStage, string> = {
+  gift: "赠送",
+  paid: "已付款",
+  refunded: "退款",
+  closed: "已关闭",
+};
+
+export const deliverableStatusLabels: Record<DeliverableStatus, string> = {
+  pending: "未交付",
+  delivering: "交付中",
+  delivered: "已交付",
+  cancelled: "已取消",
 };

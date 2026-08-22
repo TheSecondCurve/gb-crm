@@ -7,3 +7,5 @@ export * from "./schemas/user.js";
 export * from "./schemas/channel.js";
 export * from "./schemas/product.js";
 export * from "./schemas/customer.js";
+export * from "./schemas/deal.js";
+export * from "./schemas/deliverable.js";

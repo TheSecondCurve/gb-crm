@@ -7,6 +7,7 @@ const nullableText = z.string().nullable();
 
 // 字段与 0000_init.sql products 表列对应（camelCase）。
 // K13：priceCents 为 integer 分，NULL = 未定价；非整数 422。
+// K43：defaultTasks 多行文本（每行一个默认交付动作，新建交付项时预填模板）。
 export const productWriteSchema = z.object({
   name: z.string().min(1),
   notes: nullableText.optional(),
@@ -17,6 +18,7 @@ export const productWriteSchema = z.object({
   isPackage: z.boolean().default(false),
   status: productStatusSchema.default("on_sale"),
   priceCents: z.number().int().nullable().optional(),
+  defaultTasks: nullableText.optional(),
 });
 export type ProductWrite = z.infer<typeof productWriteSchema>;
 

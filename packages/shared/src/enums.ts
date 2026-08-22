@@ -93,3 +93,16 @@ export const socialPlatformSchema = z.enum([
   "other",
 ]);
 export type SocialPlatform = z.infer<typeof socialPlatformSchema>;
+
+/** 成交阶段（K42，对照飞书成交表「阶段」下拉，默认 gift 赠送） */
+export const dealStageSchema = z.enum(["gift", "paid", "refunded", "closed"]);
+export type DealStage = z.infer<typeof dealStageSchema>;
+
+/** 交付项状态（K43，对照飞书「用户权益明细表」状态下拉） */
+export const deliverableStatusSchema = z.enum([
+  "pending",
+  "delivering",
+  "delivered",
+  "cancelled",
+]);
+export type DeliverableStatus = z.infer<typeof deliverableStatusSchema>;
