@@ -48,7 +48,7 @@ v1 **不抽** `packages/ui`。视觉 token 在 `apps/web/src/styles/tokens.css`�
 
 ### Web
 
-- 路由：`/login` `/my/customers` `/my/deals` `/customers` `/channels` `/products` `/deals` `/users`（默认进客户）
+- 路由：`/login` `/my/customers` `/my/deals` `/customers` `/channels` `/products` `/deals` `/deliveries` `/deliveries/:id` `/deliveries/:id/circle` `/deliveries/:id/gantt` `/deliveries/:id/matrix` `/delivery-types` `/users`（默认进客户）
 - 表格：`components/DataGrid/`（双击编辑 + 行内 PATCH 队列）
 - 列定义：`src/columns/`；列表页：`src/pages/` + `useResourceList.ts`
 - 开发：Vite `:5173`，`server.proxy."/api"` → `:3001`
@@ -153,7 +153,7 @@ Workspace 依赖写法：`"@gb-crm/shared": "*"`（npm 不支持 `workspace:*`�
 4. **产品目录 `/products`**：类型/状态/是否套餐/价格（分）。
 5. **客户信息 `/customers`**：分页、模糊搜索、来源渠道、归属人（单值 `owner_id`，K39）、社交账号独立表（`customer_social_accounts`，K41，列表页/导出不展示）；预留可空唯一 `wechat_openid`（不接小程序）。导出 Excel：`GET /api/v1/customers/export.xlsx`（exceljs 服务端生成，复用列表同一 WHERE，跟随 q/类型筛选，不分页）。
 6. **成交记录 `/deals`**（K42）：客户（单值 FK 必填）、意向产品、负责人（单值 FK 可空）、阶段（赠送/已付款/退款/已关闭）、订单号、交付日期、支付信息备注；客户城市只读列。assistant 只读。
-7. **交付管理 `/deliveries` + 交付类型 `/delivery-types`**（K44）：交付单（类型 + 起止日期（epoch ms，日历输入）+ 客户集合（**可不选**，空交付单）+ 备注，与成交弱关联；客户可手动多选或按意向产品从成交 merge，`/deals` 按 `productId` 过滤）；交付项（项目维度 / 客户维度——客户维度按客户分组分别打勾 + 备注）；交付类型配置表（名称 + 类型 kind 咨询/活动/圈子/其他 + 状态 status 有效/失效 + 说明/默认动作模板，创建交付项时预填）。打勾记完成人/时间，行级 OCC。assistant 只读。
+7. **交付管理 `/deliveries` + 交付类型 `/delivery-types`**（K44）：交付单（类型 + 起止日期（epoch ms，日历输入）+ 客户集合（**可不选**，空交付单）+ 备注，与成交弱关联；客户可手动多选或按意向产品从成交 merge，`/deals` 按 `productId` 过滤）；交付项（项目维度 / 客户维度——客户维度按客户分组分别打勾 + 备注）；交付类型配置表（名称 + 类型 kind 咨询/活动/圈子/其他 + 状态 status 有效/失效 + 说明/默认动作模板，创建交付项时预填）。打勾记完成人/时间，行级 OCC。assistant 只读。圈子类（`kind=circle`）交付有专项工作台页 `/deliveries/:id/circle`（列表/详情页按 kind 提供入口）：圈子基本信息（类型/起止日期/人数/周期状态 badge）+ 客户全量表（`GET /api/v1/deliveries/:id/customers`，含导出 Excel `/customers/export.xlsx`，添加/移除客户走 delivery PATCH `customerIds`）+ 交付项快速维护（新增/动作/修改/删除，复用 `components/ItemFormModal` `ItemEditModal` `ItemModal`）+ 甘特图与时序 todo（复用 `components/DeliveryGantt`，`DeliveryGanttPage` 为薄壳）。`DeliveryDto.deliveryType` 携带 `kind`。
 8. **我的运营**（一级菜单）：`/my/customers` 我的客户（归属人 = 当前用户）、`/my/deals` 我的成交（负责人 = 当前用户）。复用对应列表页的列定义/搜索/筛选/行内编辑/导出，固定 `ownerId` 等值过滤，不加下拉控件；不提供「新增」（新建行不会归属当前用户）。
 8. 每张业务表有 `created_at` / `updated_at` / `created_by` / `updated_by`。
 9. **Agent 令牌**：已有用户本机签发 PAT，skill 走单一 SQL 端点 `/api/v1/agent/sql`（K35）。

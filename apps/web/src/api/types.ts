@@ -131,7 +131,8 @@ export interface DeliveryTypeDto {
 export interface DeliveryDto {
   id: number;
   deliveryTypeId: number;
-  deliveryType: { id: number; name: string } | null;
+  /** kind 供圈子工作台入口判断 */
+  deliveryType: { id: number; name: string; kind: string } | null;
   customers: { id: number; nickname: string }[];
   /** epoch ms（本地时区当天零点），可空 */
   startsAt: number | null;
