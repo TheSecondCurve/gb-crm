@@ -205,15 +205,27 @@ export function DeliveryGanttPage() {
   const scheduled = projectItems.filter((i) => i.startsAt != null && i.endsAt != null);
   const unscheduled = projectItems.filter((i) => i.startsAt == null || i.endsAt == null);
 
-  // 时间范围：已排期交付项 ∪ 交付单起止；两端取 min/max（按天）
+  // 时间范围：已排期交付项 ∪ 交付单起止；两端取 min/max（按天）。
+  // 全部缺失时兜底为「当前月」；缺一端时 = 对端 ± 30 天，保证任何情况都有时间刻度。
   const range = useMemo(() => {
-    const starts = scheduled.map((i) => i.startsAt as number);
-    const ends = scheduled.map((i) => i.endsAt as number);
+    const starts: number[] = [];
+    const ends: number[] = [];
     if (delivery?.startsAt) starts.push(delivery.startsAt);
     if (delivery?.endsAt) ends.push(delivery.endsAt);
-    if (starts.length === 0 || ends.length === 0) return null;
-    const start = Math.min(...starts);
-    const end = Math.max(...ends);
+    for (const i of scheduled) {
+      if (i.startsAt != null) starts.push(i.startsAt);
+      if (i.endsAt != null) ends.push(i.endsAt);
+    }
+    let start: number;
+    let end: number;
+    if (starts.length === 0 && ends.length === 0) {
+      const now = new Date();
+      start = new Date(now.getFullYear(), now.getMonth(), 1).getTime();
+      end = new Date(now.getFullYear(), now.getMonth() + 1, 0).getTime();
+    } else {
+      start = starts.length > 0 ? Math.min(...starts) : Math.max(...ends) - 30 * DAY_MS;
+      end = ends.length > 0 ? Math.max(...ends) : Math.min(...starts) + 30 * DAY_MS;
+    }
     if (end < start) return null;
     return { start, end, days: Math.round((end - start) / DAY_MS) + 1 };
   }, [scheduled, delivery]);
@@ -309,9 +321,10 @@ export function DeliveryGanttPage() {
 
       <div className="card">
         <div className="card-body-flush">
-          {projectItems.length === 0 ? (
-            <div className="task-empty">暂无项目维度交付项</div>
-          ) : (
+          {projectItems.length === 0 && (
+            <div className="task-empty">暂无项目维度交付项（时间轴按交付周期展示）</div>
+          )}
+          {range && (
             <div className="gantt-scroll">
               <div className="gantt-head" style={{ minWidth: 280 + trackWidth }}>
                 <div className="gantt-head-label">项目交付项</div>

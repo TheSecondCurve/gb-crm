@@ -6,7 +6,7 @@ import { useNavigate, useParams } from "react-router-dom";
 import { api, ApiError } from "../api/client";
 import type { DeliverableDto, DeliveryDto } from "../api/types";
 import { useAuth } from "../auth/AuthProvider";
-import { badge, optionsOf, type BadgeTone } from "../columns/common";
+import { badge, dateToEpochMs, epochMsToDate, optionsOf, type BadgeTone } from "../columns/common";
 import { customerOptionsLoader } from "../columns/relation";
 import { ConfirmDialog } from "../components/ConfirmDialog";
 import { DeliveryFormModal } from "../components/DeliveryFormModal";
@@ -246,6 +246,15 @@ export function DeliveryDetailPage() {
                 deliveryUrl: (e.currentTarget.elements.namedItem("deliveryUrl") as HTMLInputElement).value.trim() || null,
                 updatedAt: editingItem.updatedAt,
               };
+              // 项目维度交付项：起止日期（K44 甘特排期；客户维度不显示）
+              if (editingItem.dimension === "project") {
+                body.startsAt = dateToEpochMs(
+                  (e.currentTarget.elements.namedItem("startsAt") as HTMLInputElement).value,
+                );
+                body.endsAt = dateToEpochMs(
+                  (e.currentTarget.elements.namedItem("endsAt") as HTMLInputElement).value,
+                );
+              }
               void updateItem(body);
             }}
           >
@@ -253,6 +262,18 @@ export function DeliveryDetailPage() {
               标题
               <input name="content" defaultValue={editingItem.content} />
             </label>
+            {editingItem.dimension === "project" && (
+              <>
+                <label className="field">
+                  开始日期
+                  <input type="date" name="startsAt" autoComplete="off" defaultValue={epochMsToDate(editingItem.startsAt)} />
+                </label>
+                <label className="field">
+                  结束日期
+                  <input type="date" name="endsAt" autoComplete="off" defaultValue={epochMsToDate(editingItem.endsAt)} />
+                </label>
+              </>
+            )}
             <label className="field field-span">
               交付说明
               <textarea name="description" rows={2} defaultValue={editingItem.description ?? ""} />
@@ -307,7 +328,7 @@ interface ItemFormModalProps {
   onSubmit: (body: Record<string, unknown>) => Promise<void>;
 }
 
-/** 新增交付项：标题 + 维度单选；客户维度时选择覆盖客户（默认全选） */
+/** 新增交付项：标题 + 维度单选；项目维度可填起止日期；客户维度时选择覆盖客户（默认全选） */
 function ItemFormModal({ title, dimensionOptions, customers, busy, onClose, onSubmit }: ItemFormModalProps) {
   const showToast = useToast();
   const [dimension, setDimension] = useState("project");
@@ -315,6 +336,8 @@ function ItemFormModal({ title, dimensionOptions, customers, busy, onClose, onSu
   const [search, setSearch] = useState("");
   const [options, setOptions] = useState(customers);
   const [content, setContent] = useState("");
+  const [startsAt, setStartsAt] = useState("");
+  const [endsAt, setEndsAt] = useState("");
   const [description, setDescription] = useState("");
   const [deliveryUrl, setDeliveryUrl] = useState("");
 
@@ -343,6 +366,9 @@ function ItemFormModal({ title, dimensionOptions, customers, busy, onClose, onSu
                   ? undefined
                   : selected
                 : undefined,
+            // 项目维度交付项：起止日期（K44 甘特排期；客户维度不显示）
+            startsAt: dimension === "project" ? dateToEpochMs(startsAt) : undefined,
+            endsAt: dimension === "project" ? dateToEpochMs(endsAt) : undefined,
             description: description.trim() || null,
             deliveryUrl: deliveryUrl.trim() || null,
           });
@@ -362,6 +388,18 @@ function ItemFormModal({ title, dimensionOptions, customers, busy, onClose, onSu
             ))}
           </select>
         </label>
+        {dimension === "project" && (
+          <>
+            <label className="field">
+              开始日期
+              <input type="date" autoComplete="off" value={startsAt} onChange={(e) => setStartsAt(e.target.value)} />
+            </label>
+            <label className="field">
+              结束日期
+              <input type="date" autoComplete="off" value={endsAt} onChange={(e) => setEndsAt(e.target.value)} />
+            </label>
+          </>
+        )}
         {dimension === "customer" && (
           <div className="field field-span">
             覆盖客户（{selected.length}/{customers.length}）

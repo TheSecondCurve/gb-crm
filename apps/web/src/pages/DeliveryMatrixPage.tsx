@@ -19,14 +19,16 @@ interface MatrixCellProps {
   task: DeliveryTaskDto | undefined;
   /** 客户昵称（无障碍 label：`客户 · 交付项`） */
   customerName: string;
+  customerId: number;
   canUpdate: boolean;
   onToggle: (item: DeliverableDto, task: DeliveryTaskDto) => void;
   onRemark: (item: DeliverableDto, task: DeliveryTaskDto, remark: string | null) => void;
-  onEmptyClick: () => void;
+  /** 无任务记录格：创建该客户的任务并标记完成 */
+  onCreateAndDone: (item: DeliverableDto, customerId: number) => void;
 }
 
 /** 单元格：单击打勾（延迟 250ms 区分双击）/ 双击编辑备注 / 备注 hover 气泡 */
-function MatrixCell({ item, task, customerName, canUpdate, onToggle, onRemark, onEmptyClick }: MatrixCellProps) {
+function MatrixCell({ item, task, customerName, customerId, canUpdate, onToggle, onRemark, onCreateAndDone }: MatrixCellProps) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(task?.remark ?? "");
   const clickTimer = useRef<number | null>(null);
@@ -36,12 +38,12 @@ function MatrixCell({ item, task, customerName, canUpdate, onToggle, onRemark, o
   }, [task?.remark, task?.id]);
 
   if (!task) {
-    // 无记录（如后加入交付单的客户）= 未完成，不做写入
+    // 无记录（如后加入交付单的客户）= 未完成；点击 = 创建任务并直接标记完成
     return (
       <td
         className="matrix-cell matrix-cell-empty"
         aria-label={`${customerName} · ${item.content}`}
-        onClick={canUpdate ? onEmptyClick : undefined}
+        onClick={canUpdate ? () => onCreateAndDone(item, customerId) : undefined}
       >
         <span className="matrix-state">未完成</span>
       </td>
@@ -151,6 +153,24 @@ export function DeliveryMatrixPage() {
   const saveRemark = (item: DeliverableDto, task: DeliveryTaskDto, remark: string | null) =>
     void patchTask(item, task, { remark });
 
+  /** 无记录格：POST 创建该客户任务（内容=交付项标题），再 PATCH 标记完成（一步到位） */
+  const createAndDone = async (item: DeliverableDto, customerId: number) => {
+    try {
+      const res = await api.post<{ data: DeliveryTaskDto }>(
+        `/deliveries/${deliveryId}/items/${item.id}/tasks`,
+        { content: item.content, customerId },
+      );
+      const task = res!.data;
+      await api.patch(`/deliveries/${deliveryId}/items/${item.id}/tasks/${task.id}`, {
+        done: true,
+        updatedAt: task.updatedAt,
+      });
+      await refetch();
+    } catch (err) {
+      showToast(err instanceof ApiError ? err.message : "操作失败，请稍后重试");
+    }
+  };
+
   const taskOf = (item: DeliverableDto, customerId: number): DeliveryTaskDto | undefined =>
     item.tasks.find((t) => t.customer?.id === customerId);
 
@@ -204,10 +224,11 @@ export function DeliveryMatrixPage() {
                             item={item}
                             task={taskOf(item, c.id)}
                             customerName={c.nickname}
+                            customerId={c.id}
                             canUpdate={canUpdate}
                             onToggle={toggleTask}
                             onRemark={saveRemark}
-                            onEmptyClick={() => showToast("该客户暂无此动作记录（未完成）")}
+                            onCreateAndDone={(it, customerId) => void createAndDone(it, customerId)}
                           />
                         ))}
                         <td className="matrix-row-sum">{doneCount}/{customerItems.length}</td>

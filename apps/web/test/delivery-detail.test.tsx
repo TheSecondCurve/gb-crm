@@ -3,6 +3,7 @@ import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 
 import { adminMe, assistantMe, mockFetch, renderApp, type Me } from "./helpers";
 import type { DeliverableDto, DeliveryDto } from "../src/api/types";
+import { dateToEpochMs } from "../src/columns/common";
 
 const delivery: DeliveryDto = {
   id: 1,
@@ -130,6 +131,57 @@ describe("交付单详情页", () => {
       expect(body.content).toBe("开课提醒");
       expect(body.dimension).toBe("customer");
       expect(body.customerIds).toBeUndefined(); // 默认全选 = 省略
+    });
+  });
+
+  it("新增交付项（项目维度）：可填起止日期 → POST 带 startsAt/endsAt", async () => {
+    const calls = mockDetailApi(adminMe);
+    renderApp("/deliveries/1");
+    await screen.findByText("拉群");
+
+    fireEvent.click(screen.getByRole("button", { name: "新增交付项" }));
+    const dialog = screen.getByRole("dialog", { name: "新增交付项" });
+    fireEvent.change(within(dialog).getByLabelText("交付项标题"), { target: { value: "开营仪式" } });
+    // 默认维度 project → 起止日期字段可见
+    fireEvent.change(within(dialog).getByLabelText("开始日期"), { target: { value: "2026-08-10" } });
+    fireEvent.change(within(dialog).getByLabelText("结束日期"), { target: { value: "2026-08-12" } });
+    fireEvent.click(within(dialog).getByRole("button", { name: "创建" }));
+
+    await waitFor(() => {
+      const post = calls.find((c) => c.method === "POST" && c.url === "/api/v1/deliveries/1/items");
+      expect(post).toBeTruthy();
+      const body = JSON.parse(String(post?.body)) as Record<string, unknown>;
+      expect(body.dimension).toBe("project");
+      expect(body.startsAt).toBe(dateToEpochMs("2026-08-10"));
+      expect(body.endsAt).toBe(dateToEpochMs("2026-08-12"));
+    });
+  });
+
+  it("修改交付项（项目维度）：可编辑起止日期 → PATCH 带 startsAt 与 updatedAt", async () => {
+    const pItem: DeliverableDto = {
+      ...item,
+      id: 41,
+      content: "开营仪式",
+      dimension: "project",
+      startsAt: null,
+      endsAt: null,
+      tasks: item.tasks.map((t) => ({ ...t, customer: null })),
+    };
+    const calls = mockDetailApi(adminMe, [pItem]);
+    renderApp("/deliveries/1");
+    await screen.findByText("开营仪式");
+
+    fireEvent.click(screen.getByRole("button", { name: "修改" }));
+    const dialog = screen.getByRole("dialog", { name: /修改交付项/ });
+    fireEvent.change(within(dialog).getByLabelText("开始日期"), { target: { value: "2026-09-01" } });
+    fireEvent.click(within(dialog).getByRole("button", { name: "保存" }));
+
+    await waitFor(() => {
+      const patch = calls.find((c) => c.method === "PATCH" && c.url === "/api/v1/deliveries/1/items/41");
+      expect(patch).toBeTruthy();
+      const body = JSON.parse(String(patch?.body)) as Record<string, unknown>;
+      expect(body.startsAt).toBe(dateToEpochMs("2026-09-01"));
+      expect(body.updatedAt).toBe(2000);
     });
   });
 

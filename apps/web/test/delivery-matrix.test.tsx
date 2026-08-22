@@ -1,29 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { MemoryRouter } from "react-router-dom";
+import { fireEvent, screen, waitFor } from "@testing-library/react";
 
 import { adminMe, assistantMe, mockFetch, renderApp, type Me } from "./helpers";
-import App from "../src/App";
-import { AuthProvider } from "../src/auth/AuthProvider";
-import { ToastProvider } from "../src/components/Toast";
 import type { DeliverableDto, DeliveryDto, DeliveryTaskDto } from "../src/api/types";
-
-/** renderApp + ToastProvider（toast 断言专用；生产入口 main.tsx 同样包裹） */
-function renderMatrixApp(path: string) {
-  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  return render(
-    <QueryClientProvider client={queryClient}>
-      <MemoryRouter initialEntries={[path]}>
-        <AuthProvider>
-          <ToastProvider>
-            <App />
-          </ToastProvider>
-        </AuthProvider>
-      </MemoryRouter>
-    </QueryClientProvider>
-  );
-}
 
 const delivery: DeliveryDto = {
   id: 1,
@@ -100,6 +79,24 @@ function mockMatrixApi(me: Me, items: DeliverableDto[] = [pullGroup, shipGroup])
     if (url === "/api/v1/deliveries/1") return { status: 200, body: { data: delivery } };
     if (url.startsWith("/api/v1/deliveries/1/items")) {
       if (method === "GET") return { status: 200, body: { data: items } };
+      if (method === "POST" && url.endsWith("/tasks")) {
+        const body = JSON.parse(String(init?.body)) as { content: string; customerId: number };
+        return {
+          status: 201,
+          body: {
+            data: {
+              id: 99,
+              customer: { id: body.customerId, nickname: "王五" },
+              content: body.content,
+              done: false,
+              doneAt: null,
+              doneBy: null,
+              remark: null,
+              updatedAt: 1600,
+            },
+          },
+        };
+      }
       if (method === "PATCH") return { status: 200, body: { data: {} } };
     }
   });
@@ -167,14 +164,22 @@ describe("交付状态矩阵页（客户维度）", () => {
     });
   });
 
-  it("无记录格（后加客户）点击 → 仅提示，不发 PATCH", async () => {
+  it("无记录格（后加客户）点击 → 创建任务并标记完成（POST + PATCH done）", async () => {
     const calls = mockMatrixApi(adminMe);
-    renderMatrixApp("/deliveries/1/matrix");
+    renderApp("/deliveries/1/matrix");
     await screen.findByText("拉群");
 
     fireEvent.click(screen.getByLabelText("王五 · 拉群"));
-    expect(await screen.findByText("该客户暂无此动作记录（未完成）")).toBeTruthy();
-    expect(calls.every((c) => c.method !== "PATCH")).toBe(true);
+    await waitFor(() => {
+      const post = calls.find((c) => c.method === "POST" && c.url === "/api/v1/deliveries/1/items/31/tasks");
+      expect(post).toBeTruthy();
+      expect(JSON.parse(String(post?.body))).toEqual({ content: "拉群", customerId: 103 });
+    });
+    await waitFor(() => {
+      const patch = calls.find((c) => c.method === "PATCH" && c.url === "/api/v1/deliveries/1/items/31/tasks/99");
+      expect(patch).toBeTruthy();
+      expect(JSON.parse(String(patch?.body))).toEqual({ done: true, updatedAt: 1600 });
+    });
   });
 
   it("assistant 只读：点击格不发 PATCH", async () => {
