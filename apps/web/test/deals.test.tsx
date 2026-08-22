@@ -15,6 +15,8 @@ const deal: DealDto = {
   orderNo: "ORD-001",
   paymentRemark: null,
   deliveryDate: deliveryMs(2026, 8, 22),
+  amountCents: 39800,
+  afterTaxRatio: 0.9306,
   customer: { id: 101, nickname: "张三", city: "上海" },
   product: { id: 201, name: "咨询产品" },
   owner: { id: 1, nickname: "老王" },
