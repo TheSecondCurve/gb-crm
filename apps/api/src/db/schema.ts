@@ -167,8 +167,6 @@ export const products = sqliteTable(
     isPackage: integer("is_package").notNull().default(0),
     status: text("status").notNull().default("on_sale"),
     priceCents: integer("price_cents"),
-    // K43：多行文本，每行一个默认交付动作；新建交付项时预填模板
-    defaultTasks: text("default_tasks"),
     createdAt: integer("created_at").notNull(),
     updatedAt: integer("updated_at").notNull(),
     createdBy: integer("created_by").references(() => users.id, { onDelete: "set null" }),
@@ -287,19 +285,67 @@ export const deals = sqliteTable(
   ],
 );
 
-// K43 交付项：挂成交（一个成交可拆多条）；状态流转；日期 epoch ms。
+// K44 交付类型配置表：分类 + 默认动作模板（多行文本，创建交付项时预填）。
+export const deliveryTypes = sqliteTable(
+  "delivery_types",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    name: text("name").notNull(),
+    description: text("description"),
+    defaultTasks: text("default_tasks"),
+    createdAt: integer("created_at").notNull(),
+    updatedAt: integer("updated_at").notNull(),
+    createdBy: integer("created_by").references(() => users.id, { onDelete: "set null" }),
+    updatedBy: integer("updated_by").references(() => users.id, { onDelete: "set null" }),
+    deletedAt: integer("deleted_at"),
+  },
+);
+
+// K44 交付单（精简：类型 + 客户集合 + 备注；与成交弱关联）
+export const deliveries = sqliteTable(
+  "deliveries",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    deliveryTypeId: integer("delivery_type_id")
+      .notNull()
+      .references(() => deliveryTypes.id),
+    remark: text("remark"),
+    createdAt: integer("created_at").notNull(),
+    updatedAt: integer("updated_at").notNull(),
+    createdBy: integer("created_by").references(() => users.id, { onDelete: "set null" }),
+    updatedBy: integer("updated_by").references(() => users.id, { onDelete: "set null" }),
+    deletedAt: integer("deleted_at"),
+  },
+  (t) => [index("deliveries_type_idx").on(t.deliveryTypeId)],
+);
+
+// K44 交付 × 客户 M2M（子表硬删）
+export const deliveryCustomers = sqliteTable(
+  "delivery_customers",
+  {
+    deliveryId: integer("delivery_id")
+      .notNull()
+      .references(() => deliveries.id, { onDelete: "cascade" }),
+    customerId: integer("customer_id")
+      .notNull()
+      .references(() => customers.id, { onDelete: "cascade" }),
+  },
+  (t) => [
+    primaryKey({ columns: [t.deliveryId, t.customerId] }),
+    index("delivery_customers_customer_idx").on(t.customerId),
+  ],
+);
+
+// K44 交付项：挂交付单；双维度（项目/客户）；无独立状态，打勾进度即状态。
 export const deliverables = sqliteTable(
   "deliverables",
   {
     id: integer("id").primaryKey({ autoIncrement: true }),
-    dealId: integer("deal_id")
+    deliveryId: integer("delivery_id")
       .notNull()
-      .references(() => deals.id),
-    productId: integer("product_id").references(() => products.id, { onDelete: "set null" }),
-    status: text("status").notNull().default("pending"),
-    planDeliverDate: integer("plan_deliver_date"),
-    actualDeliverDate: integer("actual_deliver_date"),
-    expiryDate: integer("expiry_date"),
+      .references(() => deliveries.id, { onDelete: "cascade" }),
+    content: text("content").notNull(),
+    dimension: text("dimension").notNull().default("project"),
     description: text("description"),
     deliveryUrl: text("delivery_url"),
     createdAt: integer("created_at").notNull(),
@@ -309,18 +355,13 @@ export const deliverables = sqliteTable(
     deletedAt: integer("deleted_at"),
   },
   (t) => [
-    check(
-      "deliverables_status_check",
-      sql`"status" IN ('pending','delivering','delivered','cancelled')`,
-    ),
-    index("deliverables_deal_id_idx").on(t.dealId),
-    index("deliverables_product_id_idx").on(t.productId),
-    index("deliverables_status_idx").on(t.status),
+    check("deliverables_dimension_check", sql`"dimension" IN ('project','customer')`),
+    index("deliverables_delivery_idx").on(t.deliveryId),
   ],
 );
 
-// K43 动作打勾清单：交付项子表，硬删（无 deleted_at，同 customer_social_accounts）；
-// done 翻转时服务端写 done_at / done_by。
+// K44 动作清单：客户维度任务按 customer_id 展开（每客户分别打勾/备注）；NULL = 项目维度；
+// 子表硬删；done 翻转时服务端写 done_at / done_by。
 export const deliveryTasks = sqliteTable(
   "delivery_tasks",
   {
@@ -328,10 +369,12 @@ export const deliveryTasks = sqliteTable(
     deliverableId: integer("deliverable_id")
       .notNull()
       .references(() => deliverables.id, { onDelete: "cascade" }),
+    customerId: integer("customer_id").references(() => customers.id, { onDelete: "set null" }),
     content: text("content").notNull(),
     done: integer("done").notNull().default(0),
     doneAt: integer("done_at"),
     doneBy: integer("done_by").references(() => users.id, { onDelete: "set null" }),
+    remark: text("remark"),
     createdAt: integer("created_at").notNull(),
     updatedAt: integer("updated_at").notNull(),
     createdBy: integer("created_by").references(() => users.id, { onDelete: "set null" }),
@@ -339,6 +382,7 @@ export const deliveryTasks = sqliteTable(
   },
   (t) => [
     check("delivery_tasks_done_check", sql`"done" IN (0, 1)`),
-    index("delivery_tasks_deliverable_id_idx").on(t.deliverableId),
+    index("delivery_tasks_deliverable_idx").on(t.deliverableId),
+    index("delivery_tasks_customer_idx").on(t.customerId),
   ],
 );

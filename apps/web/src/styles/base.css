@@ -265,3 +265,45 @@ select:focus, textarea:focus { outline: 1px solid var(--ink); }
 .task-add input { flex: 1; }
 
 .task-empty { padding: 16px 0; text-align: center; color: var(--muted); font-size: 13px; }
+
+/* ---- K44：交付单详情页 / 交付项 / ItemModal ---- */
+
+.detail-row { display: flex; gap: 12px; padding: 6px 0; align-items: baseline; }
+
+.detail-label { flex-shrink: 0; width: 88px; color: var(--text-3); font-size: 13px; }
+
+.detail-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+
+.chip { padding: 2px 10px; border: 1px solid var(--hairline); border-radius: 999px; font-size: 12px; background: rgb(255, 255, 255); }
+
+.card-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 16px; border-bottom: 1px solid var(--hairline); }
+
+.card-head h2 { font-size: 15px; margin: 0; }
+
+.item-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 16px; border-bottom: 1px solid var(--hairline); }
+
+.item-row:last-child { border-bottom: none; }
+
+.item-main { min-width: 0; }
+
+.item-title { display: flex; align-items: center; gap: 8px; font-weight: 500; }
+
+.badge-wrap { display: inline-flex; }
+
+.item-meta { font-size: 12px; color: var(--muted); margin-top: 2px; }
+
+.task-groups { display: flex; flex-direction: column; gap: 12px; }
+
+.task-group { border: 1px solid var(--hairline); border-radius: 8px; padding: 10px 12px; }
+
+.task-group-title { font-weight: 500; margin-bottom: 8px; }
+
+.task-empty-info { font-size: 12px; color: var(--muted); margin-bottom: 10px; }
+
+.task-check { flex: 1; min-width: 0; }
+
+.task-remark { flex: 1; min-width: 120px; padding: 2px 8px; font-size: 13px; }
+
+.delivery-picker-block { border: 1px solid var(--hairline); border-radius: 6px; padding: 10px; display: flex; flex-direction: column; gap: 6px; }
+
+.delivery-picker-title { font-size: 12px; color: var(--text-3); }

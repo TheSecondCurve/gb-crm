@@ -69,8 +69,6 @@ export interface ProductDto {
   status: string;
   /** K13：integer 分；null = 未定价。UI 展示/编辑元 */
   priceCents: number | null;
-  /** K43：多行文本，每行一个默认交付动作（新建交付项时预填模板） */
-  defaultTasks: string | null;
   createdAt: number;
   updatedAt: number;
   createdBy: UserRefDto | null;
@@ -108,35 +106,52 @@ export interface DealDto {
   updatedBy: UserRefDto | null;
 }
 
-/** 交付项关联的成交 ref（K43：含客户昵称供列表展示） */
-export interface DealRefDto {
+/** 交付类型配置（K44） */
+export interface DeliveryTypeDto {
   id: number;
-  orderNo: string | null;
-  customer: { id: number; nickname: string } | null;
+  name: string;
+  description: string | null;
+  /** 多行文本，每行一个默认动作；创建交付项时预填模板 */
+  defaultTasks: string | null;
+  createdAt: number;
+  updatedAt: number;
+  createdBy: UserRefDto | null;
+  updatedBy: UserRefDto | null;
 }
 
-/** 动作打勾清单项（K43） */
+/** 交付单（K44：类型 + 客户集合 + 备注） */
+export interface DeliveryDto {
+  id: number;
+  deliveryTypeId: number;
+  deliveryType: { id: number; name: string } | null;
+  customers: { id: number; nickname: string }[];
+  remark: string | null;
+  createdAt: number;
+  updatedAt: number;
+  createdBy: UserRefDto | null;
+  updatedBy: UserRefDto | null;
+}
+
+/** 动作打勾清单项（K44：客户维度任务携带 customer） */
 export interface DeliveryTaskDto {
   id: number;
+  customer: { id: number; nickname: string } | null;
   content: string;
   done: boolean;
   doneAt: number | null;
   doneBy: UserRefDto | null;
+  remark: string | null;
   updatedAt: number;
 }
 
+/** 交付项（K44：项目维度 / 客户维度；无独立状态，打勾进度即状态） */
 export interface DeliverableDto {
   id: number;
-  dealId: number;
-  productId: number | null;
-  status: string;
-  planDeliverDate: number | null;
-  actualDeliverDate: number | null;
-  expiryDate: number | null;
+  deliveryId: number;
+  content: string;
+  dimension: string;
   description: string | null;
   deliveryUrl: string | null;
-  deal: DealRefDto | null;
-  product: { id: number; name: string } | null;
   tasks: DeliveryTaskDto[];
   createdAt: number;
   updatedAt: number;

@@ -14,8 +14,8 @@ import {
   customerTypeSchema,
   dealStageLabels,
   dealStageSchema,
-  deliverableStatusLabels,
-  deliverableStatusSchema,
+  deliverableDimensionLabels,
+  deliverableDimensionSchema,
   employmentStatusLabels,
   employmentStatusSchema,
   jobTitleLabels,
@@ -47,7 +47,7 @@ const ALL: [name: string, schema: z.ZodEnum<[string, ...string[]]>, labels: Reco
     ["customerType", customerTypeSchema, customerTypeLabels],
     ["socialPlatform", socialPlatformSchema, socialPlatformLabels],
     ["dealStage", dealStageSchema, dealStageLabels],
-    ["deliverableStatus", deliverableStatusSchema, deliverableStatusLabels],
+    ["deliverableDimension", deliverableDimensionSchema, deliverableDimensionLabels],
   ];
 
 describe("枚举与 labels 完整性（Appendix A.5 全量）", () => {
