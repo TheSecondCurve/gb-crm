@@ -17,6 +17,26 @@ interface DeliveryFormModalProps {
   onSubmit: (body: Record<string, unknown>) => Promise<void>;
 }
 
+/** 分页拉全某产品全部成交客户（按客户去重）；pageSize 上限 100，翻页直到 total 取完 */
+async function fetchProductDealCustomers(productId: number): Promise<RelationOption[]> {
+  const seen = new Map<number, RelationOption>();
+  const pageSize = 100;
+  let page = 1;
+  for (;;) {
+    const res = await api.get<{
+      data: { customer: { id: number; nickname: string } | null }[];
+      meta: { total: number };
+    }>(`/deals${buildQuery({ pageSize, page, productId })}`);
+    for (const d of res?.data ?? []) {
+      if (d.customer) seen.set(d.customer.id, { id: d.customer.id, label: d.customer.nickname });
+    }
+    const total = res?.meta?.total ?? 0;
+    if (page * pageSize >= total) break;
+    page += 1;
+  }
+  return [...seen.values()];
+}
+
 /**
  * 交付单弹窗：类型（下拉）+ 起止日期（日历输入）+ 客户集合（两种来源合并：手动搜索多选 /
  * 按意向产品从成交 merge）+ 备注。客户可不选（空交付单）。
@@ -35,10 +55,10 @@ export function DeliveryFormModal({ title, delivery, busy, onClose, onSubmit }: 
   // 手动搜索客户
   const [manualSearch, setManualSearch] = useState("");
   const [manualOptions, setManualOptions] = useState<RelationOption[]>([]);
-  // 按意向产品 merge（来自成交的客户）
+  // 按意向产品 merge（来自成交的客户）：可多选产品，候选客户合并去重
   const [mergeProductSearch, setMergeProductSearch] = useState("");
   const [mergeProductOptions, setMergeProductOptions] = useState<RelationOption[]>([]);
-  const [mergeProduct, setMergeProduct] = useState<RelationOption | null>(null);
+  const [mergeProducts, setMergeProducts] = useState<RelationOption[]>([]);
   const [mergeCandidates, setMergeCandidates] = useState<RelationOption[]>([]);
   const [mergeLoading, setMergeLoading] = useState(false);
 
@@ -59,30 +79,33 @@ export function DeliveryFormModal({ title, delivery, busy, onClose, onSubmit }: 
     return () => clearTimeout(timer);
   }, [manualSearch]);
 
-  // 按意向产品加载成交客户（去重）
+  // 按意向产品加载成交客户：每个已选产品分页拉全，结果合并去重（不设 100 条上限）
   useEffect(() => {
-    if (!mergeProduct) {
+    if (mergeProducts.length === 0) {
       setMergeCandidates([]);
       return;
     }
     setMergeLoading(true);
+    let cancelled = false;
     void (async () => {
       try {
-        const res = await api.get<{ data: { customer: { id: number; nickname: string } | null }[] }>(
-          `/deals${buildQuery({ pageSize: 100, productId: mergeProduct.id })}`,
-        );
+        const results = await Promise.all(mergeProducts.map((p) => fetchProductDealCustomers(p.id)));
+        if (cancelled) return;
         const seen = new Map<number, RelationOption>();
-        for (const d of res?.data ?? []) {
-          if (d.customer) seen.set(d.customer.id, { id: d.customer.id, label: d.customer.nickname });
+        for (const list of results) {
+          for (const o of list) seen.set(o.id, o);
         }
         setMergeCandidates([...seen.values()]);
       } catch (err) {
-        showToast(err instanceof ApiError ? err.message : "加载成交客户失败");
+        if (!cancelled) showToast(err instanceof ApiError ? err.message : "加载成交客户失败");
       } finally {
-        setMergeLoading(false);
+        if (!cancelled) setMergeLoading(false);
       }
     })();
-  }, [mergeProduct, showToast]);
+    return () => {
+      cancelled = true;
+    };
+  }, [mergeProducts, showToast]);
 
   // 意向产品搜索（300ms 防抖）
   useEffect(() => {
@@ -95,6 +118,23 @@ export function DeliveryFormModal({ title, delivery, busy, onClose, onSubmit }: 
   const toggle = (list: number[], id: number): number[] =>
     list.includes(id) ? list.filter((v) => v !== id) : [...list, id];
 
+  const toggleMergeProduct = (o: RelationOption) => {
+    setMergeProducts((prev) => (prev.some((p) => p.id === o.id) ? prev.filter((p) => p.id !== o.id) : [...prev, o]));
+    productLabelCache.set(o.id, o.label);
+  };
+
+  /** 一键把全部已选意向产品的成交客户合并进关联客户（不受候选列表条数限制） */
+  const mergeAllCustomers = () => {
+    if (mergeCandidates.length === 0) return;
+    setSelected((prev) => {
+      const next = new Set(prev);
+      for (const o of mergeCandidates) next.add(o.id);
+      return [...next];
+    });
+    for (const o of mergeCandidates) customerLabelCache.set(o.id, o.label);
+    showToast(`已合并 ${mergeCandidates.length} 位客户`);
+  };
+
   const handleSubmit = (e: FormEvent) => {
     e.preventDefault();
     if (!typeId) {
@@ -102,6 +142,8 @@ export function DeliveryFormModal({ title, delivery, busy, onClose, onSubmit }: 
       return;
     }
     void onSubmit({
+      // PATCH 行级 OCC：修改模式必须带当前 updatedAt（新建模式缺席）
+      ...(delivery ? { updatedAt: delivery.updatedAt } : {}),
       deliveryTypeId: Number(typeId),
       customerIds: selected,
       startsAt: dateToEpochMs(startsAt),
@@ -182,58 +224,63 @@ export function DeliveryFormModal({ title, delivery, busy, onClose, onSubmit }: 
                 value={mergeProductSearch}
                 onChange={(e) => setMergeProductSearch(e.target.value)}
               />
-              {!mergeProduct && mergeProductOptions.length > 0 && (
+              {mergeProductOptions.length > 0 && (
                 <div className="form-checks">
                   {mergeProductOptions.map((o) => (
                     <label className="inline-field" key={o.id}>
                       <input
-                        type="radio"
-                        name="merge-product"
-                        onChange={() => {
-                          setMergeProduct(o);
-                          productLabelCache.set(o.id, o.label);
-                        }}
+                        type="checkbox"
+                        checked={mergeProducts.some((p) => p.id === o.id)}
+                        onChange={() => toggleMergeProduct(o)}
                       />
                       {o.label}
                     </label>
                   ))}
                 </div>
               )}
-              {mergeProduct && (
+              {mergeProducts.length > 0 && (
                 <div className="delivery-picker-selected">
-                  已选产品：<b>{mergeProduct.label}</b>
+                  已选产品：<b>{mergeProducts.map((p) => p.label).join("、")}</b>
                   <button
                     type="button"
                     className="btn-link"
                     onClick={() => {
-                      setMergeProduct(null);
+                      setMergeProducts([]);
                       setMergeProductSearch("");
                     }}
                   >
-                    更换
+                    清除
                   </button>
                 </div>
               )}
               {mergeLoading && <div className="task-empty">加载中…</div>}
-              {!mergeLoading && mergeProduct && mergeCandidates.length > 0 && (
-                <div className="form-checks">
-                  {mergeCandidates.map((o) => (
-                    <label className="inline-field" key={o.id}>
-                      <input
-                        type="checkbox"
-                        checked={selected.includes(o.id)}
-                        onChange={() => {
-                          setSelected((prev) => toggle(prev, o.id));
-                          customerLabelCache.set(o.id, o.label);
-                        }}
-                      />
-                      {o.label}
-                    </label>
-                  ))}
-                </div>
+              {!mergeLoading && mergeProducts.length > 0 && mergeCandidates.length > 0 && (
+                <>
+                  <div className="delivery-picker-toolbar">
+                    <span className="delivery-picker-title">候选客户（{mergeCandidates.length} 人）</span>
+                    <button type="button" className="btn-link" onClick={mergeAllCustomers}>
+                      合并全部成交
+                    </button>
+                  </div>
+                  <div className="form-checks">
+                    {mergeCandidates.map((o) => (
+                      <label className="inline-field" key={o.id}>
+                        <input
+                          type="checkbox"
+                          checked={selected.includes(o.id)}
+                          onChange={() => {
+                            setSelected((prev) => toggle(prev, o.id));
+                            customerLabelCache.set(o.id, o.label);
+                          }}
+                        />
+                        {o.label}
+                      </label>
+                    ))}
+                  </div>
+                </>
               )}
-              {!mergeLoading && mergeProduct && mergeCandidates.length === 0 && (
-                <div className="task-empty">该产品暂无成交客户</div>
+              {!mergeLoading && mergeProducts.length > 0 && mergeCandidates.length === 0 && (
+                <div className="task-empty">所选产品暂无成交客户</div>
               )}
             </div>
           </div>
