@@ -1,6 +1,6 @@
 // /api/v1/customers 路由（§3：routes 只做 Zod、requireCan、HTTP 映射，不写 SQL）。
-// K31：POST 用 customers.create（assistant 403）；PATCH body 含 ownerIds 或
-// upsellOwnerIds 键时追加 customers.updateOwners 门槛（assistant 403，值即使是 [] 键存在即拦），
+// K31：POST 用 customers.create（assistant 403）；PATCH body 含 ownerIds 键时追加
+// customers.updateOwners 门槛（assistant 403，值即使是 [] 键存在即拦），
 // 对齐 channels 的密钥键预检模式，策略唯一来源仍是 shared.can()。
 import {
   can,
@@ -33,8 +33,8 @@ export interface CustomersRoutesOptions {
 
 const idParamSchema = z.object({ id: z.coerce.number().int().positive() });
 
-/** PATCH 含归属人/升单人键 → 还需 customers.updateOwners（K31：assistant ✗） */
-const OWNER_KEYS = ["ownerIds", "upsellOwnerIds"] as const;
+/** PATCH 含归属人键 → 还需 customers.updateOwners（K31：assistant ✗） */
+const OWNER_KEYS = ["ownerIds"] as const;
 const requireUpdateOwnersWhenOwnerKeys: preHandlerHookHandler = async (req) => {
   const body = (req.body ?? {}) as Record<string, unknown>;
   if (OWNER_KEYS.some((key) => key in body)) {

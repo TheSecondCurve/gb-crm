@@ -99,8 +99,7 @@ Workspace 依赖写法：`"@gb-crm/shared": "*"`（npm 不支持 `workspace:*`�
 - 时间戳：**epoch 毫秒 UTC**。Cookie `maxAge` 例外（秒）。
 - 金额：`priceCents` 整数贯穿 DB 与 JSON；UI 展示元。禁止 `yuan * 100` 不 round 就写入。
 - PATCH 内核：JSON **键存在** → SET（`null` 清空可空列）；**键缺席** → 不动。关系数组同理：缺席不动，`[]` 清空。行级 OCC 用 `updatedAt`；客户端每行一条队列、串行、每次带上一次 200 的 `updatedAt`。
-- 删除 = 软删 `deleted_at`。v1 **无**回收站、**无**硬删。软删时 **不剥** join 行。GET 展开只 INNER **未删除** 的用户/渠道/父客户。
-- `parent_id`：拒绝自指、环、深度 > 2。UI 只有一列父客户，无树视图。
+- 删除 = 软删 `deleted_at`。v1 **无**回收站、**无**硬删。软删时 **不剥** join 行。GET 展开只 INNER **未删除** 的用户/渠道。
 - SQLite PRAGMA（WAL / busy_timeout=5000 / foreign_keys=ON）只在 `db/client.ts` 每条连接上执行，**不写进 migration**。库文件创建后 `chmod 600`。备份只用 `.backup`，禁止 `cp` 热库。
 - handler 是同步 SQLite，会堵住事件循环。v1 不上 worker pool / Redis / Postgres。
 
@@ -150,11 +149,11 @@ Workspace 依赖写法：`"@gb-crm/shared": "*"`（npm 不支持 `workspace:*`�
 2. **团队成员 `/users`**：账户、昵称、真实姓名、电话、微信、岗位、系统角色、雇佣状态、账户状态。仅 admin 可写。
 3. **渠道资产 `/channels`**：内容/对客渠道账号；关联负责人（M2M）；助手看不到登录资产。
 4. **产品目录 `/products`**：类型/状态/是否套餐/价格（分）。
-5. **客户信息 `/customers`**：分页、模糊搜索、标签、渠道、归属人/升单人、可选父客户；预留可空唯一 `wechat_openid`（不接小程序）。导出 Excel：`GET /api/v1/customers/export.xlsx`（exceljs 服务端生成，复用列表同一 WHERE，跟随 q/类型筛选，不分页）。
+5. **客户信息 `/customers`**：分页、模糊搜索、标签、来源渠道、归属人；预留可空唯一 `wechat_openid`（不接小程序）。导出 Excel：`GET /api/v1/customers/export.xlsx`（exceljs 服务端生成，复用列表同一 WHERE，跟随 q/类型筛选，不分页）。
 6. 每张业务表有 `created_at` / `updated_at` / `created_by` / `updated_by`。
 7. **Agent 令牌**：已有用户本机签发 PAT，skill 走单一 SQL 端点 `/api/v1/agent/sql`（K35）。
 
-`feishu_record_id` 等列仍在 schema 里（历史列）。**v1 不做飞书 / CSV 导入**，不要加回 `import-feishu` 或 `FEISHU_*` 环境变量。主数据在管理端维护。
+飞书字段已全部移除（四张主表均无任何 `feishu_*` 列）。**v1 不做飞书 / CSV 导入**，不要加回 `import-feishu` 或 `FEISHU_*` 环境变量。主数据在管理端维护。
 
 ## 明确不要做
 

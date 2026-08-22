@@ -10,7 +10,6 @@ import type { ProductRow } from "./repo.js";
 
 export interface ProductDto {
   id: number;
-  feishuRecordId: string | null;
   name: string;
   notes: string | null;
   sopUrl: string | null;
@@ -21,7 +20,6 @@ export interface ProductDto {
   status: string;
   /** K13：integer 分；null = 未定价 */
   priceCents: number | null;
-  feishuCreatedDate: number | null;
   createdAt: number;
   updatedAt: number;
   createdBy: UserRef | null;
@@ -32,7 +30,6 @@ function toDto(row: ProductRow, refs: Map<number, UserRef>): ProductDto {
   const ref = (id: number | null): UserRef | null => (id === null ? null : (refs.get(id) ?? null));
   return {
     id: row.id,
-    feishuRecordId: row.feishuRecordId,
     name: row.name,
     notes: row.notes,
     sopUrl: row.sopUrl,
@@ -42,7 +39,6 @@ function toDto(row: ProductRow, refs: Map<number, UserRef>): ProductDto {
     isPackage: row.isPackage === 1,
     status: row.status,
     priceCents: row.priceCents,
-    feishuCreatedDate: row.feishuCreatedDate,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
     createdBy: ref(row.createdBy),

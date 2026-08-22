@@ -7,7 +7,6 @@ import type { UserDto } from "../src/api/types";
 function makeUser(partial: Partial<UserDto>): UserDto {
   return {
     id: 1,
-    feishuRecordId: null,
     username: "admin",
     nickname: "管理员",
     realName: null,
@@ -19,7 +18,6 @@ function makeUser(partial: Partial<UserDto>): UserDto {
     accountStatus: "enabled",
     duties: null,
     notes: null,
-    feishuUserId: null,
     createdAt: 1000,
     updatedAt: 2000,
     createdBy: null,

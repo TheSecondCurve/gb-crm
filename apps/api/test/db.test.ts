@@ -29,11 +29,9 @@ describe("migration", () => {
       "api_tokens",
       "channel_owners",
       "channels",
-      "customer_community_channels",
       "customer_owners",
       "customer_source_channels",
       "customer_tags",
-      "customer_upsell_owners",
       "customers",
       "products",
       "sessions",
@@ -137,26 +135,20 @@ describe("drizzle schema mapping", () => {
 });
 
 describe("partial unique indexes", () => {
-  const insertUser = (username: string | null, feishuRecordId: string | null) =>
+  const insertUser = (username: string | null) =>
     tmp.sqlite
       .prepare(
-        "INSERT INTO users (nickname, username, feishu_record_id, created_at, updated_at) VALUES (?, ?, ?, 1, 1)",
+        "INSERT INTO users (nickname, username, created_at, updated_at) VALUES (?, ?, 1, 1)",
       )
-      .run("u", username, feishuRecordId);
+      .run("u", username);
 
   it("username: live unique is released after soft delete (reuse allowed)", () => {
-    insertUser("alice", null);
+    insertUser("alice");
     // live 期间冲突
-    expect(() => insertUser("alice", null)).toThrowError(/UNIQUE/i);
+    expect(() => insertUser("alice")).toThrowError(/UNIQUE/i);
     // 软删后释放
     tmp.sqlite.prepare("UPDATE users SET deleted_at = 2 WHERE username = 'alice'").run();
-    expect(() => insertUser("alice", null)).not.toThrow();
-  });
-
-  it("feishu_record_id: still occupied after soft delete", () => {
-    insertUser(null, "rec_1");
-    tmp.sqlite.prepare("UPDATE users SET deleted_at = 2 WHERE feishu_record_id = 'rec_1'").run();
-    expect(() => insertUser(null, "rec_1")).toThrowError(/UNIQUE/i);
+    expect(() => insertUser("alice")).not.toThrow();
   });
 
   it("wechat_openid: live unique released after soft delete", () => {

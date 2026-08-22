@@ -1,8 +1,7 @@
 // customers 表 Drizzle 查询（§3：repo 层，路由/服务不写 SQL）。
-// list 排除软删；COUNT 与列表同一 WHERE（§9）。五张 join 表的批量读与整表替换也在本层。
+// list 排除软删；COUNT 与列表同一 WHERE（§9）。三张 join 表的批量读与整表替换也在本层。
 // 过滤：tag → join customer_tags；ownerId → join customer_owners；
-// channelId → 来源渠道（customer_source_channels）或所在社群（customer_community_channels）
-// 任一包含该渠道即命中（EXISTS 任一 join 表）。
+// channelId → 来源渠道（customer_source_channels）包含该渠道即命中。
 import { and, asc, count, desc, eq, inArray, isNull, ne, sql, type SQL } from "drizzle-orm";
 
 import type { CustomerListQuery } from "@gb-crm/shared";
@@ -10,12 +9,10 @@ import type { CustomerListQuery } from "@gb-crm/shared";
 import type { Db } from "../../db/client.js";
 import {
   channels,
-  customerCommunityChannels,
   customerOwners,
   customers,
   customerSourceChannels,
   customerTags,
-  customerUpsellOwners,
   users,
 } from "../../db/schema.js";
 import { fuzzyWhere } from "../../lib/fuzzy.js";
@@ -59,12 +56,9 @@ function listWhere(query: CustomerListQuery): SQL | undefined {
     );
   }
   if (query.channelId !== undefined) {
-    // 来源渠道或所在社群任一包含该渠道即命中
     conditions.push(
       sql`${customers.id} IN (
         SELECT customer_id FROM customer_source_channels WHERE channel_id = ${query.channelId}
-        UNION
-        SELECT customer_id FROM customer_community_channels WHERE channel_id = ${query.channelId}
       )`,
     );
   }
@@ -168,17 +162,7 @@ export function findLiveByWechatOpenid(
     .get();
 }
 
-/** 是否有 live 子客户（parent_id 深度校验用：已有下属的客户不能再被指为子） */
-export function hasLiveChildren(db: Db, id: number): boolean {
-  const row = db
-    .select({ value: count() })
-    .from(customers)
-    .where(and(eq(customers.parentId, id), isNull(customers.deletedAt)))
-    .get();
-  return (row?.value ?? 0) > 0;
-}
-
-/** 返回 ids 中仍然 live 的用户 id 集合（ownerIds/upsellOwnerIds 校验：软删/不存在 → 422） */
+/** 返回 ids 中仍然 live 的用户 id 集合（ownerIds 校验：软删/不存在 → 422） */
 export function findLiveUserIds(db: Db, ids: readonly number[]): Set<number> {
   if (ids.length === 0) return new Set();
   const rows = db
@@ -189,7 +173,7 @@ export function findLiveUserIds(db: Db, ids: readonly number[]): Set<number> {
   return new Set(rows.map((r) => r.id));
 }
 
-/** 返回 ids 中仍然 live 的渠道 id 集合（sourceChannelIds/communityChannelIds 校验用） */
+/** 返回 ids 中仍然 live 的渠道 id 集合（sourceChannelIds 校验用） */
 export function findLiveChannelIds(db: Db, ids: readonly number[]): Set<number> {
   if (ids.length === 0) return new Set();
   const rows = db
@@ -200,7 +184,7 @@ export function findLiveChannelIds(db: Db, ids: readonly number[]): Set<number> 
   return new Set(rows.map((r) => r.id));
 }
 
-// ---- 五张 join 表：按页批量读（避免 N+1）与整表替换 ----
+// ---- 三张 join 表：按页批量读（避免 N+1）与整表替换 ----
 
 export function listCustomerTagRows(db: Db, customerIds: readonly number[]) {
   if (customerIds.length === 0) return [];
@@ -220,30 +204,12 @@ export function listCustomerOwnerRows(db: Db, customerIds: readonly number[]) {
     .all();
 }
 
-export function listCustomerUpsellOwnerRows(db: Db, customerIds: readonly number[]) {
-  if (customerIds.length === 0) return [];
-  return db
-    .select()
-    .from(customerUpsellOwners)
-    .where(inArray(customerUpsellOwners.customerId, [...customerIds]))
-    .all();
-}
-
 export function listCustomerSourceChannelRows(db: Db, customerIds: readonly number[]) {
   if (customerIds.length === 0) return [];
   return db
     .select()
     .from(customerSourceChannels)
     .where(inArray(customerSourceChannels.customerId, [...customerIds]))
-    .all();
-}
-
-export function listCustomerCommunityChannelRows(db: Db, customerIds: readonly number[]) {
-  if (customerIds.length === 0) return [];
-  return db
-    .select()
-    .from(customerCommunityChannels)
-    .where(inArray(customerCommunityChannels.customerId, [...customerIds]))
     .all();
 }
 
@@ -267,20 +233,6 @@ export function replaceCustomerOwners(db: Db, customerId: number, userIds: reado
     .run();
 }
 
-/** 整表替换升单人 */
-export function replaceCustomerUpsellOwners(
-  db: Db,
-  customerId: number,
-  userIds: readonly number[],
-): void {
-  db.delete(customerUpsellOwners).where(eq(customerUpsellOwners.customerId, customerId)).run();
-  const unique = [...new Set(userIds)];
-  if (unique.length === 0) return;
-  db.insert(customerUpsellOwners)
-    .values(unique.map((userId) => ({ customerId, userId })))
-    .run();
-}
-
 /** 整表替换来源渠道 */
 export function replaceCustomerSourceChannels(
   db: Db,
@@ -291,22 +243,6 @@ export function replaceCustomerSourceChannels(
   const unique = [...new Set(channelIds)];
   if (unique.length === 0) return;
   db.insert(customerSourceChannels)
-    .values(unique.map((channelId) => ({ customerId, channelId })))
-    .run();
-}
-
-/** 整表替换所在社群 */
-export function replaceCustomerCommunityChannels(
-  db: Db,
-  customerId: number,
-  channelIds: readonly number[],
-): void {
-  db.delete(customerCommunityChannels)
-    .where(eq(customerCommunityChannels.customerId, customerId))
-    .run();
-  const unique = [...new Set(channelIds)];
-  if (unique.length === 0) return;
-  db.insert(customerCommunityChannels)
     .values(unique.map((channelId) => ({ customerId, channelId })))
     .run();
 }

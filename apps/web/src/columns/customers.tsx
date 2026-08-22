@@ -1,17 +1,14 @@
 // customers 列定义（docs/design.md Appendix B customers：冻结 nickname，assistant 的
-// owners/upsellOwners 只读 = K31 updateOwners deny）。labels 全部来自 @gb-crm/shared。
+// owners 只读 = K31 updateOwners deny）。labels 全部来自 @gb-crm/shared。
 import { can, customerTypeLabels, tagLabels, type SystemRole } from "@gb-crm/shared";
 
 import type { ChannelRefDto, CustomerDto, UserRefDto } from "../api/types";
 import type { GridColumn } from "../components/DataGrid/DataGrid";
 import { enumBadge, formatDateTime, optionsOf, refName, tagBadges } from "./common";
 import {
-  applyRef,
   applyRefs,
   channelLabelCache,
   channelOptionsLoader,
-  customerLabelCache,
-  customerOptionsLoader,
   idsOf,
   userLabelCache,
   userOptionsLoader,
@@ -77,27 +74,6 @@ export function customerColumns(role: SystemRole | null): GridColumn<CustomerDto
     },
     { key: "notes", label: "备注", editor: "textarea", editable: canUpdate },
     {
-      key: "profileUrl",
-      label: "档案页",
-      editor: "text",
-      editable: canUpdate,
-    },
-    {
-      key: "parent",
-      label: "父记录",
-      editor: "relation-one",
-      editable: canUpdate,
-      patchKey: "parentId",
-      relationLoader: customerOptionsLoader,
-      getValue: (row) => row.parentId,
-      render: (row) => row.parent?.nickname ?? "",
-      applyOptimistic: (row, id) => ({
-        ...row,
-        parentId: typeof id === "number" ? id : null,
-        parent: applyRef(id, customerLabelCache, (pid, nickname) => ({ id: pid, nickname })),
-      }),
-    },
-    {
       key: "wechatOpenid",
       label: "OpenID",
       editor: "text",
@@ -159,36 +135,7 @@ export function customerColumns(role: SystemRole | null): GridColumn<CustomerDto
         sourceChannels: applyRefs(row.sourceChannels, ids, channelLabelCache, makeChannelRef),
       }),
     },
-    {
-      key: "communityChannels",
-      label: "所在社群",
-      editor: "relation",
-      editable: canUpdate,
-      patchKey: "communityChannelIds",
-      relationLoader: channelOptionsLoader,
-      getValue: (row) => idsOf(row.communityChannels),
-      render: (row) => row.communityChannels.map((c) => c.name).join("、"),
-      applyOptimistic: (row, ids) => ({
-        ...row,
-        communityChannels: applyRefs(row.communityChannels, ids, channelLabelCache, makeChannelRef),
-      }),
-    },
-    {
-      key: "upsellOwners",
-      label: "升单人",
-      editor: "relation",
-      editable: canUpdateOwners, // K31：assistant 只读
-      patchKey: "upsellOwnerIds",
-      relationLoader: userOptionsLoader,
-      getValue: (row) => idsOf(row.upsellOwners),
-      render: (row) => row.upsellOwners.map((o) => o.nickname).join("、"),
-      applyOptimistic: (row, ids) => ({
-        ...row,
-        upsellOwners: applyRefs(row.upsellOwners, ids, userLabelCache, makeUserRef),
-      }),
-    },
     { key: "id", label: "ID", editable: false },
-    { key: "feishuRecordId", label: "飞书记录", editable: false },
     {
       key: "createdAt",
       label: "创建时间",
