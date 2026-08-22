@@ -1,7 +1,7 @@
 import { useCallback, useMemo, useState } from "react";
 import { can, customerTypeLabels } from "@gb-crm/shared";
 
-import { api, ApiError } from "../api/client";
+import { api, ApiError, buildQuery } from "../api/client";
 import type { CustomerDto } from "../api/types";
 import { useAuth } from "../auth/AuthProvider";
 import { customerColumns } from "../columns/customers";
@@ -32,6 +32,15 @@ export function CustomersPage() {
     const res = await api.patch<{ data: CustomerDto }>(`/customers/${id}`, body);
     return res!.data;
   }, []);
+
+  // 导出 Excel：跟随当前搜索/类型筛选，同源 attachment 下载（不离开当前页）
+  const exportXlsx = () => {
+    const href = `/api/v1/customers/export.xlsx${buildQuery({ q: list.q, customerType: list.filter })}`;
+    const a = document.createElement("a");
+    a.href = href;
+    a.download = "";
+    a.click();
+  };
 
   // 新增：先弹字段表单，确认后才 POST（不再直接插空行）
   const createCustomer = async (body: Record<string, unknown>) => {
@@ -101,6 +110,9 @@ export function CustomersPage() {
               </option>
             ))}
           </select>
+          <button type="button" onClick={exportXlsx}>
+            导出 Excel
+          </button>
           {canCreate && (
             <button type="button" className="btn-primary" onClick={() => setCreating(true)}>
               新增

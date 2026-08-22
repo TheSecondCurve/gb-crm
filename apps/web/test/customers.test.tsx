@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 
 import { adminMe, assistantMe, mockFetch, renderApp, type Me } from "./helpers";
@@ -237,6 +237,38 @@ describe("客户信息页", () => {
         ).length,
       ).toBeGreaterThanOrEqual(2),
     );
+  });
+
+  it("导出 Excel：按钮触发同源下载，href 跟随当前 q 与类型筛选", async () => {
+    const calls = mockCustomersApi(adminMe);
+    const hrefs: string[] = [];
+    const spy = vi
+      .spyOn(HTMLAnchorElement.prototype, "click")
+      .mockImplementation(function (this: HTMLAnchorElement) {
+        hrefs.push(this.href);
+      });
+    try {
+      renderApp("/customers");
+      await screen.findByText("张三");
+
+      // 无筛选：纯导出 URL
+      fireEvent.click(screen.getByRole("button", { name: "导出 Excel" }));
+      expect(hrefs.at(-1)).toContain("/api/v1/customers/export.xlsx");
+
+      // 搜索 + 类型筛选后再导出：带上 q 与 customerType
+      fireEvent.change(screen.getByLabelText("搜索"), { target: { value: "张" } });
+      fireEvent.change(screen.getByLabelText("类型筛选"), { target: { value: "company" } });
+      // 搜索 300ms debounce：等 q 真正进入列表 query 再点导出
+      await waitFor(() =>
+        expect(calls.some((c) => decodeURIComponent(c.url).includes("q=张"))).toBe(true),
+      );
+      fireEvent.click(screen.getByRole("button", { name: "导出 Excel" }));
+      const href = decodeURIComponent(hrefs.at(-1) ?? "");
+      expect(href).toContain("q=张");
+      expect(href).toContain("customerType=company");
+    } finally {
+      spy.mockRestore();
+    }
   });
 
   it("删除：行尾按钮 → ConfirmDialog → DELETE → 列表刷新", async () => {

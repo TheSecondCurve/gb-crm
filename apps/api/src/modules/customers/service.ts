@@ -25,6 +25,7 @@ import {
   getCustomerByIdAny,
   hasLiveChildren,
   insertCustomer,
+  listAllCustomers,
   listCustomers,
   occUpdateCustomer,
   replaceCustomerCommunityChannels,
@@ -159,6 +160,11 @@ export function getCustomerResult(db: Db, id: number): CustomerDto {
   const row = getCustomerByIdAny(db, id);
   if (!row || row.deletedAt !== null) throw notFound("客户不存在");
   return assembleCustomer(db, row);
+}
+
+/** 导出：与列表同一 WHERE（含筛选），不分页取全部 live 行并展开 */
+export function exportCustomers(db: Db, query: CustomerListQuery): CustomerDto[] {
+  return assembleCustomers(db, listAllCustomers(db, query));
 }
 
 export function createCustomer(db: Db, body: CustomerWrite, ctx: AuditContext): CustomerDto {
