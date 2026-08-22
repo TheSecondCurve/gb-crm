@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-import { dealStageSchema } from "../enums.js";
+import { dealStageSchema, productTypeSchema } from "../enums.js";
 import { epochMsSchema, pageQuerySchema } from "./common.js";
 
 const nullableText = z.string().nullable();
@@ -30,6 +30,8 @@ export const dealSortSchema = z.enum(["updatedAt", "createdAt", "deliveryDate"])
 export const dealListQuerySchema = pageQuerySchema.extend({
   sort: dealSortSchema.optional(),
   stage: dealStageSchema.optional(),
+  // K44：按产品类型过滤成交（前端「按产品类型 merge 客户」依赖）
+  productType: productTypeSchema.optional(),
   customerId: z.coerce.number().int().positive().optional(),
   productId: z.coerce.number().int().positive().optional(),
   ownerId: z.coerce.number().int().positive().optional(),

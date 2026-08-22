@@ -13,6 +13,7 @@ export const channelLabelCache = new Map<number, string>();
 export const customerLabelCache = new Map<number, string>();
 export const productLabelCache = new Map<number, string>();
 export const dealLabelCache = new Map<number, string>();
+export const deliveryTypeLabelCache = new Map<number, string>();
 
 /** GET {path}?pageSize=100&q=… → RelationOption[]，并填充 label 缓存 */
 export function createRelationLoader(
@@ -62,6 +63,13 @@ export const dealOptionsLoader: RelationLoader = createRelationLoader(
     return `${orderNo}${orderNo && nickname ? " · " : ""}${nickname}`.trim() || `#${String(item.id)}`;
   },
   dealLabelCache,
+);
+
+/** 交付类型选项（K44） */
+export const deliveryTypeOptionsLoader: RelationLoader = createRelationLoader(
+  "/delivery-types",
+  (item) => String(item.name ?? item.id),
+  deliveryTypeLabelCache,
 );
 
 /** relation 编辑初值：refs → number[] */

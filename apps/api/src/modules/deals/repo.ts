@@ -1,7 +1,7 @@
 // deals 表 Drizzle 查询（§3：repo 层，路由/服务不写 SQL）。
 // list 排除软删；COUNT 与列表同一 WHERE（§9）。K42：customer/product/owner 单值 FK，
 // 过滤按等值匹配；校验用 findLive*Ids（FK 存在且未软删）。
-import { and, asc, count, desc, eq, inArray, isNull, type SQL } from "drizzle-orm";
+import { and, asc, count, desc, eq, inArray, isNull, sql, type SQL } from "drizzle-orm";
 
 import type { DealListQuery } from "@gb-crm/shared";
 
@@ -27,6 +27,14 @@ function listWhere(query: DealListQuery): SQL | undefined {
   const fuzzy = fuzzyWhere(query.q ?? "", SEARCH_COLUMNS);
   if (fuzzy) conditions.push(fuzzy);
   if (query.stage !== undefined) conditions.push(eq(deals.stage, query.stage));
+  // K44：按意向产品类型过滤成交（前端「按产品类型 merge 客户」依赖）
+  if (query.productType !== undefined) {
+    conditions.push(
+      sql`EXISTS (
+        SELECT 1 FROM products p WHERE p.id = deals.product_id AND p.product_type = ${query.productType}
+      )`,
+    );
+  }
   if (query.customerId !== undefined) conditions.push(eq(deals.customerId, query.customerId));
   if (query.productId !== undefined) conditions.push(eq(deals.productId, query.productId));
   if (query.ownerId !== undefined) conditions.push(eq(deals.ownerId, query.ownerId));

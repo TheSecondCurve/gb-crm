@@ -63,11 +63,18 @@ test("admin：成交记录页可见种子成交（订单号 + 阶段徽章，K42
   await expect(page.locator('[data-cell$=":stage"]').first()).toContainText("已付款");
 });
 
-test("admin：交付管理页可见种子交付项（成交 + 动作进度 1/2，K43）", async ({ page }) => {
+test("admin：交付管理页可见种子交付单，详情页可见客户维度交付项（K44）", async ({ page }) => {
   await login(page, ADMIN.username, ADMIN.password);
   await page.getByRole("link", { name: "交付管理" }).click();
-  await expect(page).toHaveURL(/\/deliverables/);
+  await expect(page).toHaveURL(/\/deliveries/);
 
-  await expect(page.locator('[data-cell$=":deal"]').first()).toContainText(DEAL_ORDER_NO);
-  await expect(page.locator('[data-cell$=":taskProgress"]').first()).toContainText("1/2");
+  // 列表：类型名 + 客户数
+  await expect(page.locator('[data-cell$=":deliveryType"]').first()).toContainText("e2e圈子交付");
+  await expect(page.locator('[data-cell$=":customerCount"]').first()).toContainText("2 人");
+
+  // 详情：客户维度交付项 + 动作进度（4 任务中 1 条已打勾）
+  await page.getByRole("button", { name: "详情" }).first().click();
+  await expect(page).toHaveURL(/\/deliveries\/\d+/);
+  await expect(page.getByText("e2e拉群")).toBeVisible();
+  await expect(page.getByText("1/4", { exact: true })).toBeVisible();
 });

@@ -26,7 +26,7 @@ const EXPECTED: Record<SystemRole, Partial<Record<Resource, readonly Action[]>>>
     products: ["list", "read", "create", "update", "delete"],
     customers: ["list", "read", "create", "update", "delete", "updateOwners"],
     deals: ["list", "read", "create", "update", "delete"],
-    deliverables: ["list", "read", "create", "update", "delete"],
+    deliveries: ["list", "read", "create", "update", "delete"],
     auth: ["setPassword"],
   },
   operator: {
@@ -43,7 +43,7 @@ const EXPECTED: Record<SystemRole, Partial<Record<Resource, readonly Action[]>>>
     products: ["list", "read", "create", "update", "delete"],
     customers: ["list", "read", "create", "update", "delete", "updateOwners"],
     deals: ["list", "read", "create", "update", "delete"],
-    deliverables: ["list", "read", "create", "update", "delete"],
+    deliveries: ["list", "read", "create", "update", "delete"],
     auth: ["setPassword"],
   },
   assistant: {
@@ -51,7 +51,7 @@ const EXPECTED: Record<SystemRole, Partial<Record<Resource, readonly Action[]>>>
     channels: ["list", "read", "update"],
     products: ["list", "read"],
     deals: ["list", "read"],
-    deliverables: ["list", "read"],
+    deliveries: ["list", "read"],
     auth: ["setPassword"],
   },
 };
@@ -135,13 +135,13 @@ describe("§6 必测场景", () => {
     }
   });
 
-  it("assistant deliverables 只读（K43），任务子端点写权限落在 deliverables.update", () => {
-    expect(can("assistant", "deliverables", "list")).toBe(true);
-    expect(can("assistant", "deliverables", "read")).toBe(true);
+  it("assistant deliveries 只读（K44），类型/交付单/交付项/任务共用", () => {
+    expect(can("assistant", "deliveries", "list")).toBe(true);
+    expect(can("assistant", "deliveries", "read")).toBe(true);
     for (const action of ["create", "update", "delete"] as const) {
-      expect(can("assistant", "deliverables", action)).toBe(false);
-      expect(can("admin", "deliverables", action)).toBe(true);
-      expect(can("operator", "deliverables", action)).toBe(true);
+      expect(can("assistant", "deliveries", action)).toBe(false);
+      expect(can("admin", "deliveries", action)).toBe(true);
+      expect(can("operator", "deliveries", action)).toBe(true);
     }
   });
 });
