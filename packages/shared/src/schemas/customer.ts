@@ -16,6 +16,8 @@ export const customerWriteSchema = z.object({
   wechat: nullableText.optional(),
   country: nullableText.optional(),
   city: nullableText.optional(),
+  // K48：行业（画像与 AI 打标输入）
+  industry: nullableText.optional(),
   originStory: nullableText.optional(),
   notes: nullableText.optional(),
   customerType: customerTypeSchema.default("customer"),
@@ -29,6 +31,8 @@ export const customerWriteSchema = z.object({
     .array(z.object({ platform: socialPlatformSchema, account: z.string().min(1) }))
     .optional(),
   sourceChannelIds: idArraySchema.optional(),
+  // 标签（K45）：缺席=不动；[]=清空；[ids]=事务内整表替换
+  tagIds: idArraySchema.optional(),
 });
 export type CustomerWrite = z.infer<typeof customerWriteSchema>;
 
@@ -45,5 +49,7 @@ export const customerListQuerySchema = pageQuerySchema.extend({
   customerType: customerTypeSchema.optional(),
   ownerId: z.coerce.number().int().positive().optional(),
   channelId: z.coerce.number().int().positive().optional(),
+  // K45：按标签筛选（单值等值，UI 一个下拉）
+  tagId: z.coerce.number().int().positive().optional(),
 });
 export type CustomerListQuery = z.infer<typeof customerListQuerySchema>;

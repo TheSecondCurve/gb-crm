@@ -1,8 +1,10 @@
 import { useCallback, useMemo, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { can, customerTypeLabels } from "@gb-crm/shared";
+import { useNavigate } from "react-router-dom";
 
 import { api, ApiError, buildQuery } from "../api/client";
-import type { CustomerDto } from "../api/types";
+import type { CustomerDto, TagDto } from "../api/types";
 import { useAuth } from "../auth/AuthProvider";
 import { customerColumns } from "../columns/customers";
 import { optionsOf } from "../columns/common";
@@ -17,7 +19,8 @@ export function CustomersPage() {
   const { me } = useAuth();
   const role = me?.systemRole ?? null;
   const showToast = useToast();
-  const list = useResourceList<CustomerDto>("customers", "customerType");
+  const navigate = useNavigate();
+  const list = useResourceList<CustomerDto>("customers", "customerType", undefined, "tagId");
   const columns = useMemo(() => customerColumns(role), [role]);
   const [creating, setCreating] = useState(false);
   const [editing, setEditing] = useState<CustomerDto | null>(null);
@@ -27,6 +30,13 @@ export function CustomersPage() {
   const canCreate = can(role, "customers", "create");
   const canUpdate = can(role, "customers", "update");
   const canDelete = can(role, "customers", "delete");
+
+  // K45：标签筛选下拉选项（词表；空=全部）
+  const { data: tagOptions = [] } = useQuery({
+    queryKey: ["tags", "options"],
+    queryFn: async () =>
+      (await api.get<{ data: TagDto[] }>("/tags?pageSize=100"))?.data ?? [],
+  });
 
   const patchRow = useCallback(async (id: number, body: Record<string, unknown>) => {
     const res = await api.patch<{ data: CustomerDto }>(`/customers/${id}`, body);
@@ -110,6 +120,18 @@ export function CustomersPage() {
               </option>
             ))}
           </select>
+          <select
+            aria-label="标签筛选"
+            value={list.secondFilter}
+            onChange={(e) => list.changeSecondFilter(e.target.value)}
+          >
+            <option value="">全部标签</option>
+            {tagOptions.map((t) => (
+              <option key={t.id} value={t.id}>
+                {t.name}
+              </option>
+            ))}
+          </select>
           <button type="button" onClick={exportXlsx}>
             导出 Excel
           </button>
@@ -134,6 +156,9 @@ export function CustomersPage() {
               canUpdate || canDelete
                 ? (row) => (
                     <span className="row-actions">
+                      <button type="button" onClick={() => navigate(`/customers/${row.id}`)}>
+                        总览
+                      </button>
                       {canUpdate && (
                         <button type="button" onClick={() => setEditing(row)}>
                           修改

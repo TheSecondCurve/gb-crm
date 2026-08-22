@@ -15,6 +15,8 @@ import { customersRoutes } from "./modules/customers/routes.js";
 import { dealsRoutes } from "./modules/deals/routes.js";
 import { deliveriesRoutes } from "./modules/deliveries/routes.js";
 import { productsRoutes } from "./modules/products/routes.js";
+import { systemRoutes } from "./modules/system/routes.js";
+import { tagsRoutes } from "./modules/tags/routes.js";
 import { usersRoutes, type UsersRoutesOptions } from "./modules/users/routes.js";
 import { registerCookie } from "./plugins/cookie.js";
 import { registerErrorHandler } from "./plugins/error-handler.js";
@@ -32,12 +34,15 @@ export interface BuildAppOptions extends FastifyServerOptions {
   gcProbability?: number;
   /** 密码 hash 函数注入（users 模块；测试可用降参数 argon2 提速） */
   hashFn?: UsersRoutesOptions["hashFn"];
+  /** K46：LLM 客户端 fetch 注入（AI 打标测试 mock）；默认全局 fetch */
+  llmFetch?: typeof fetch;
   /** 生产静态资源目录覆盖（默认 env.WEB_DIST ?? 仓库布局推导）；仅 NODE_ENV=production 生效 */
   webDist?: string;
 }
 
 export function buildApp(options: BuildAppOptions): FastifyInstance {
-  const { env, db, now, rateLimitMax, gcProbability, hashFn, webDist, ...serverOptions } = options;
+  const { env, db, now, rateLimitMax, gcProbability, hashFn, llmFetch, webDist, ...serverOptions } =
+    options;
   const clock = now ?? (() => Date.now());
 
   const app = fastify({
@@ -68,9 +73,11 @@ export function buildApp(options: BuildAppOptions): FastifyInstance {
     usersRoutes(instance, { db, now: clock, hashFn });
     channelsRoutes(instance, { db, now: clock });
     productsRoutes(instance, { db, now: clock });
-    customersRoutes(instance, { db, now: clock });
+    customersRoutes(instance, { db, now: clock, llmFetch });
     dealsRoutes(instance, { db, now: clock });
     deliveriesRoutes(instance, { db, now: clock });
+    tagsRoutes(instance, { db, now: clock });
+    systemRoutes(instance, { db, now: clock });
     agentRoutes(instance, { db });
     done();
   });

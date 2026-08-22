@@ -13,12 +13,14 @@ const customer: CustomerDto = {
   wechat: null,
   country: null,
   city: "上海",
+  industry: null,
   originStory: null,
   notes: null,
   customerType: "customer",
   wechatOpenid: null,
   lastFollowedAt: null,
   socialAccounts: [],
+  tags: [],
   owner: { id: 1, nickname: "老王" },
   sourceChannels: [],
   createdAt: 1000,
@@ -59,6 +61,19 @@ function mockCustomersApi(me: Me, rows: CustomerDto[] = [customer]) {
           data: [
             { id: 1, name: "公众号A" },
             { id: 2, name: "社群B" },
+          ],
+          meta: { page: 1, pageSize: 100, total: 2 },
+        },
+      };
+    }
+    // K45：标签筛选下拉选项
+    if (url.startsWith("/api/v1/tags")) {
+      return {
+        status: 200,
+        body: {
+          data: [
+            { id: 1, name: "创业者", scope: "identity", sort: 1, enabled: true },
+            { id: 2, name: "已成交", scope: "stage", sort: 1, enabled: true },
           ],
           meta: { page: 1, pageSize: 100, total: 2 },
         },
@@ -118,6 +133,30 @@ describe("客户信息页", () => {
     fireEvent.change(screen.getByLabelText("类型筛选"), { target: { value: "partner" } });
     await waitFor(() =>
       expect(calls.some((c) => c.url.includes("customerType=partner"))).toBe(true),
+    );
+  });
+
+  it("标签筛选下拉触发 tagId query（K45）", async () => {
+    const calls = mockCustomersApi(adminMe);
+    renderApp("/customers");
+    await screen.findByText("张三");
+
+    fireEvent.change(screen.getByLabelText("标签筛选"), { target: { value: "1" } });
+    await waitFor(() =>
+      expect(calls.some((c) => c.url.includes("tagId=1"))).toBe(true),
+    );
+  });
+
+  it("行操作「总览」按钮跳转 /customers/:id（触发 overview 请求）", async () => {
+    const calls = mockCustomersApi(adminMe);
+    renderApp("/customers");
+    await screen.findByText("张三");
+
+    fireEvent.click(screen.getByRole("button", { name: "总览" }));
+    await waitFor(() =>
+      expect(
+        calls.some((c) => c.method === "GET" && c.url.includes("/customers/1/overview")),
+      ).toBe(true),
     );
   });
 

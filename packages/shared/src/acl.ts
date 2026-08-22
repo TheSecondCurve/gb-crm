@@ -11,6 +11,8 @@ export const resourceSchema = z.enum([
   "customers",
   "deals",
   "deliveries",
+  "tags",
+  "system",
   "auth",
 ]);
 export type Resource = z.infer<typeof resourceSchema>;
@@ -52,6 +54,10 @@ const ALL_CUSTOMER_ACTIONS: readonly Action[] = [
 const ALL_DEAL_ACTIONS: readonly Action[] = ["list", "read", "create", "update", "delete"];
 // K44：交付相关（类型/交付单/交付项/任务）统一归 deliveries 一个 resource
 const ALL_DELIVERY_ACTIONS: readonly Action[] = ["list", "read", "create", "update", "delete"];
+// K45：标签词表——admin 可维护，operator/assistant 只读（读词表用于筛选与总览页）
+const ALL_TAG_ACTIONS: readonly Action[] = ["list", "read", "create", "update", "delete"];
+// K46：系统配置（LLM 打标）——仅 admin
+const SYSTEM_ACTIONS: readonly Action[] = ["read", "update"];
 
 const MATRIX: Record<SystemRole, Readonly<Partial<Record<Resource, readonly Action[]>>>> = {
   admin: {
@@ -61,6 +67,8 @@ const MATRIX: Record<SystemRole, Readonly<Partial<Record<Resource, readonly Acti
     customers: ALL_CUSTOMER_ACTIONS,
     deals: ALL_DEAL_ACTIONS,
     deliveries: ALL_DELIVERY_ACTIONS,
+    tags: ALL_TAG_ACTIONS,
+    system: SYSTEM_ACTIONS,
     auth: ["setPassword"],
   },
   operator: {
@@ -71,6 +79,7 @@ const MATRIX: Record<SystemRole, Readonly<Partial<Record<Resource, readonly Acti
     customers: ALL_CUSTOMER_ACTIONS,
     deals: ALL_DEAL_ACTIONS,
     deliveries: ALL_DELIVERY_ACTIONS,
+    tags: ["list", "read"],
     auth: ["setPassword"],
   },
   assistant: {
@@ -82,6 +91,7 @@ const MATRIX: Record<SystemRole, Readonly<Partial<Record<Resource, readonly Acti
     products: ["list", "read"],
     deals: ["list", "read"],
     deliveries: ["list", "read"],
+    tags: ["list", "read"],
     auth: ["setPassword"],
   },
 };

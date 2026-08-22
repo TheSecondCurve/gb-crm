@@ -12,6 +12,8 @@ import {
   customerSocialAccounts,
   customers,
   customerSourceChannels,
+  customerTags,
+  tags,
   users,
 } from "../../db/schema.js";
 import { fuzzyWhere } from "../../lib/fuzzy.js";
@@ -51,6 +53,14 @@ function listWhere(query: CustomerListQuery): SQL | undefined {
     conditions.push(
       sql`${customers.id} IN (
         SELECT customer_id FROM customer_source_channels WHERE channel_id = ${query.channelId}
+      )`,
+    );
+  }
+  // K45：按标签等值过滤（customer_tags 含该标签即命中）
+  if (query.tagId !== undefined) {
+    conditions.push(
+      sql`${customers.id} IN (
+        SELECT customer_id FROM customer_tags WHERE tag_id = ${query.tagId}
       )`,
     );
   }
@@ -136,6 +146,15 @@ export function softDeleteCustomer(
     .run().changes;
 }
 
+/** 无 OCC 触碰 updated_at/updated_by（K46 AI 打标后刷新 OCC 凭证；无并发写场景） */
+export function touchCustomer(
+  db: Db,
+  id: number,
+  set: { updatedAt: number; updatedBy: number | null },
+): void {
+  db.update(customers).set(set).where(eq(customers.id, id)).run();
+}
+
 /** live 行中 wechat_openid 已被占用则返回该行（excludeId 用于 PATCH 排除自己；K24/可空唯一） */
 export function findLiveByWechatOpenid(
   db: Db,
@@ -196,6 +215,26 @@ export function listCustomerSourceChannelRows(db: Db, customerIds: readonly numb
     .all();
 }
 
+/** 客户标签 join 行（K45：只 join live 标签，软删标签不展开；按 sort,name 稳定排序） */
+export function listCustomerTagRows(
+  db: Db,
+  customerIds: readonly number[],
+): { customerId: number; tagId: number; name: string; scope: string }[] {
+  if (customerIds.length === 0) return [];
+  return db
+    .select({
+      customerId: customerTags.customerId,
+      tagId: customerTags.tagId,
+      name: tags.name,
+      scope: tags.scope,
+    })
+    .from(customerTags)
+    .innerJoin(tags, eq(customerTags.tagId, tags.id))
+    .where(and(inArray(customerTags.customerId, [...customerIds]), isNull(tags.deletedAt)))
+    .orderBy(asc(tags.sort), asc(tags.name))
+    .all();
+}
+
 /** 整表替换客户社交账号（K41 值数组；调用方负责事务与审计值注入；platform 枚举由 Zod 挡） */
 export function replaceCustomerSocialAccounts(
   db: Db,
@@ -228,5 +267,20 @@ export function replaceCustomerSourceChannels(
   if (unique.length === 0) return;
   db.insert(customerSourceChannels)
     .values(unique.map((channelId) => ({ customerId, channelId })))
+    .run();
+}
+
+/** 整表替换客户标签（K45；调用方负责事务与审计值注入；tag_id 引用 live 校验在 service） */
+export function replaceCustomerTags(
+  db: Db,
+  customerId: number,
+  tagIds: readonly number[],
+  audit: { createdAt: number; createdBy: number | null },
+): void {
+  db.delete(customerTags).where(eq(customerTags.customerId, customerId)).run();
+  const unique = [...new Set(tagIds)];
+  if (unique.length === 0) return;
+  db.insert(customerTags)
+    .values(unique.map((tagId) => ({ customerId, tagId, ...audit })))
     .run();
 }

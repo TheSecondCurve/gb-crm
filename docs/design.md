@@ -147,11 +147,15 @@ Phase 2 表（本设计不建表、不导入）：活动交付 12、内容资产
 | K37 | users / channels / products 删除 飞书记录（`feishu_record_id` 列 + 各表 partial unique 索引） | 2026-08-22 产品决策。`0003_drop_feishu_record_ids.sql` 迁移删除 |
 | K38 | 清理最后三个飞书历史列：users.feishu_user_id / products.feishu_created_date / customers.feishu_created_date | 2026-08-22 产品决策。`0004_drop_feishu_remnants.sql` 迁移删除 |
 | K39 | 客户归属人 **M2M → 单值**：删 `customer_owners` join 表，`customers.owner_id` 可空 FK 单值。缺席=不动、`null`=清空、新值=覆盖。多归属人存量迁移保留最小 `user_id`。**渠道 `channel_owners` 保持 M2M**。K31 不变：PATCH 含 `ownerId` 键仍需 `customers.updateOwners`（assistant ✗） | 2026-08-22 产品决策撤销 K15 的客户归属人 M2M。`0005_single_customer_owner.sql` 迁移 |
-| K40 | **删除客户标签**：`customer_tags` 表、`tagCodes` 字段、API `tag` 过滤、UI 标签徽章列、导出 Excel 标签列全部移除 | 2026-08-22 产品决策：客户画像未来单独做。`0006_drop_customer_tags.sql` 迁移 |
+| K40 | **删除客户标签**：`customer_tags` 表、`tagCodes` 字段、API `tag` 过滤、UI 标签徽章列、导出 Excel 标签列全部移除 | 2026-08-22 产品决策：客户画像未来单独做。`0006_drop_customer_tags.sql` 迁移。**K45 已以词表形态回归（tags + customer_tags M2M，scope 枚举）** |
 | K41 | **客户社交媒体信息表** `customer_social_accounts`（`customer × platform × account` 三元组 + 审计列）。platform 枚举沿用原 customers 表 6 类（wechat_channels/xiaoyuzhou/xiaohongshu/weibo/douyin/other），**同平台允许多账号**（不设唯一约束）。customers 表 6 个账号字段迁移进新表后删除。列表页/导出 **不展示**（仅数据层 + API，UI 等画像/详情页） | 2026-08-22 产品决策。`0007_customer_social_accounts.sql` 迁移 |
 | K42 | **成交表 v1 化**：`deals` 表（对照飞书「团队核心数据库 → 成交表」176 条）。字段裁剪：客户 / 意向产品 / 负责人均为 **单值 FK**（`customer_id` 创建必填；`product_id` / `owner_id` 可空，缺席不动 / null 清空）；`stage` 枚举 gift/paid/refunded/closed（默认 gift 赠送）+ `order_no` / `payment_remark` / `delivery_date`（epoch ms）。**不做**：成交人、财务类（税后系数 / 提现基数 / 奖金系数 / 金额 / 成交人比例 / 各类奖金 / 奖金核算记录）、是否进群 / 是否发货、线索标题 formula、Excel 导出。客户 ref 展开带 `city`（「客户城市」只读列）。**assistant 只读**（list/read），admin/operator 全 CRUD。列表过滤：stage（UI）+ customerId/productId/ownerId（API） | 2026-08-22 产品决策（参考飞书成交表现字段，逐项裁剪）。`0008_deals.sql` 迁移。侧栏新增「运营流程 → 成交记录」 |
 | K43 | **交付项 + 动作打勾清单**：`deliverables`（交付项，对照飞书「用户权益明细表」526 条）+ `delivery_tasks`（动作清单子表，硬删）。交付项挂成交（`deal_id` NOT NULL，一个成交可拆多条，客户从成交继承）；`status` 枚举 pending/delivering/delivered/cancelled + 计划/实际交付日期、有效期、交付说明、交付物链接。**动作模板**：`products.default_tasks` 多行文本（每行一个默认动作），**新建交付项时服务端复制为初始清单**，之后完全独立（模板不实时同步、允许单独增删改）。打勾子端点：POST/PATCH/DELETE `/deliverables/:id/tasks`，PATCH `done` 翻转时服务端记 `done_at`/`done_by`（任务行级 OCC）。**assistant 只读**。列表过滤：status（UI）+ dealId/productId/customerId、q 搜客户昵称（API） | 2026-08-22 产品决策。`0009_deliverables.sql` 迁移。侧栏新增「运营流程 → 交付管理」。**K44 已重构本模型：交付项改挂交付单（弱关联成交），status/日期/产品模板移除** |
 | K44 | **交付重构（弱关联交付单 + 交付类型配置表 + 客户维度打勾）**：`delivery_types`（配置表：name/kind（咨询/活动/圈子/其他）/status（有效/失效）/description/`default_tasks` 模板）+ `deliveries`（精简字段：类型 + 客户集合 M2M `delivery_customers` + 起止日期（epoch ms 可空，日历输入）+ 备注，**不挂成交**，**客户可不选（空交付单）**）+ 重建 `deliverables`（挂 `delivery_id`，`dimension` project/customer，无独立状态——打勾进度即状态）+ `delivery_tasks`（**`customer_id` 可空：NULL=项目维度单组；非 NULL=每客户一组，分别打勾/备注**）。**客户来源**：创建交付单时手动多选（单选/部分/全选）∪「按意向产品从成交 merge」（deals 列表加 `productId` 过滤，前端取成交客户去重合并）。**模板预填**：新建交付项按交付类型 default_tasks 为每个目标客户生成任务（客户维度省略 customerIds = 全部客户）。**产品 `default_tasks` 移除**（模板统一归交付类型）。权限统一为 `deliveries` resource（类型/交付单/交付项/任务共用，assistant 只读）。**不做**：交付单状态/负责人、交付项状态与日期、活动交付记录 | 2026-08-22 产品决策（用户拍板：客户维度=交付项×客户展开；交付单精简字段；类型带默认动作）。`0010_deliverables_v2.sql` 迁移（旧 K43 表无数据直接重建）。侧栏「运营流程 → 交付管理 / 交付类型」。**2026-08-22 追加**：交付单补 `starts_at`/`ends_at`（`0012_delivery_dates.sql`）；交付类型补 `kind`/`status`（`0013_delivery_type_kind_status.sql`）；客户来源改按**意向产品**（productId）过滤。**2026-08-22 再追加**：交付项补 `starts_at`/`ends_at`（`0014_deliverable_dates.sql`，可空，甘特排期用）；新增两个前端透视页——项目维度**甘特图** `/deliveries/:id/gantt`（天粒度时间轴条块 + 行内改起止日期/新增/删除，两端齐全才入时间轴，缺一端列「未排期」区）与客户维度**状态矩阵** `/deliveries/:id/matrix`（行=交付客户，列=客户维度交付项，格=该客户该交付项任务：未完成/完成/备注 hover 气泡；单击打勾、双击内联备注，均走 task PATCH OCC；**无任务记录=未完成，不建记录**——后加入交付单的客户自动出现且全未完成）。矩阵/甘特复用 `GET /deliveries/:id` 与 `/items`，零新增查询端点 |
+| K45 | **标签词表 + 客户标签**：`tags`（可维护词表：name（live-unique，软删释放）+ scope（identity/stage/interest/other 枚举）+ sort + enabled + 审计列，软删）与 `customer_tags` M2M（K24 关系数组语义：`tagIds` 缺席不动、[] 清空、[ids] 事务内整表替换；软删标签 join 行保留、不展开，K9 类比）。迁移预置 13 个核心标签（身份：创业者/职场人/自由职业者/企业主；阶段：线索/已联系/咨询中/已成交/沉睡；兴趣：商学院/知识付费/商业咨询/圈子社群）。客户列表 `GET /customers?tagId=` 等值过滤 + UI 一个标签下拉（useResourceList 扩展 secondaryFilterKey，仅客户页用）；列表新增只读「标签」徽章列。权限：`tags` resource——admin 全量，operator/assistant 只读。**不做**：导出含标签、多标签 AND 筛选、标签自定义颜色（按 scope 固定配色） | 2026-08-22 产品决策（K40 删标签时的「画像单独做」落地；词表化替代固定枚举）。`0015_customer_tags_ai.sql` 迁移。侧栏「系统 → 系统设置」页管理词表 |
+| K46 | **AI 打标**：`ai_config` 单行配置表（OpenAI 兼容接口：provider/base_url/api_key/model；apiKey 明文存库——库文件 chmod 600 + 内网，at-rest 依赖 OS 权限；API 只回 `apiKeySet`+`apiKeyMasked`，永不全量返回）。`POST /api/v1/customers/:id/tags/generate`（`customers.update` 权限）：读客户基本信息 + enabled 词表 → prompt → `${baseUrl}/chat/completions`（`lib/llm.ts`，零新依赖、原生 fetch、30s 超时、温度 0、不强制 response_format 保兼容、宽松 JSON 解析）→ 名称→tag id 映射（未知/重复丢弃）→ **与原标签取并集合并写入**（不覆盖手动标签）+ touch `updated_at`（刷新 OCC 凭证）。**一键直接保存、无人工确认步骤**（用户拍板）。失败（未配置 422 / 网络/超时/不可解析 502 `LLM_ERROR`）。fetch 可注入（`buildApp({ llmFetch })`，测试 mock）。**不做**：定时/批量自动打标、队列异步任务 | 2026-08-22 产品决策。`0015_customer_tags_ai.sql` 迁移。设置页 LLM 配置表单 |
+| K47 | **客户总览页 + 端点**：`GET /api/v1/customers/:id/overview`（`customers.read`）→ `{ customer(含 tags), stats: { dealCount, paidTotalCents(仅 stage=paid 合计), lastDealAt(MAX(COALESCE(delivery_date, created_at))) }, deals(该客户 live 成交，最新在前，上限 100，复用 deals assemble), circles(交付单中 kind=circle 且未软删、未结束（ends_at 为空或 >= now）、客户在其中，复用 deliveries assemble) }`。前端 `/customers/:id`：基本信息卡 + AI 打标卡（生成按钮 + 手动 chips 添加/移除，走 PATCH tagIds OCC）+ 统计卡 + 消费记录表 + 当前交付圈子卡（入口 `/deliveries/:id/circle`）。客户列表行操作新增「总览」 | 2026-08-22 产品决策。K41 社交账号的「等画像/详情页」落地 |
+| K48 | **customers.industry**：客户表新增 `industry`（行业）一列（可空文本，PATCH 标量内核）；同时作为 AI 打标输入。**不做**：公司/职位/预算等更多画像列（保持「稍微扩展」） | 2026-08-22 产品决策。`0015_customer_tags_ai.sql` 迁移 |
 
 ---
 
@@ -490,7 +494,7 @@ Skill 包：仓库 `skills/gb-crm/`（`SKILL.md` + `scripts/gb-crm.py`）备用�
 
 ```ts
 export type SystemRole = "admin" | "operator" | "assistant";
-export type Resource = "users" | "channels" | "products" | "customers" | "deals" | "deliveries" | "auth";
+export type Resource = "users" | "channels" | "products" | "customers" | "deals" | "deliveries" | "tags" | "system" | "auth";
 export type Action =
   | "list" | "read" | "create" | "update" | "delete"
   | "updateRole" | "setPassword" | "updateOwners"
@@ -517,6 +521,9 @@ export function can(role: SystemRole | null, resource: Resource, action: Action)
 | deliveries create/update/delete | ✓ | ✓ | ✗ | K44：assistant 只读 |
 | users list/read | ✓ | ✓ | ✗ | 永不返回 `passwordHash` |
 | users create/update/delete/updateRole/setPassword | ✓ | ✗ | ✗ | |
+| tags list/read | ✓ | ✓ | ✓ | K45 标签词表（筛选/总览页读词表） |
+| tags create/update/delete | ✓ | ✗ | ✗ | K45：词表仅 admin 可维护 |
+| system read/update | ✓ | ✗ | ✗ | K46：LLM 打标配置，仅 admin |
 | auth 改自己密码 | ✓ | ✓ | ✓ | `PATCH /auth/password` |
 
 路由：`preHandler: requireCan('customers', 'update')`。PATCH customers 若 body **含** `ownerId`，再加 `requireCan('customers','updateOwners')`。PATCH channels 若含密钥键，再加 `updateChannelSecrets`。测试必须锁住矩阵每一格，至少包括：
@@ -888,7 +895,7 @@ export const customerListQuerySchema = pageQuerySchema.extend({
 
 ## Data Model Changes
 
-全新库。Drizzle schema 放 `apps/api/src/db/schema.ts`；SQL migration 放 `apps/api/drizzle/`（`0000_init.sql` 主数据，`0001_api_tokens.sql` 为 K35 PAT，`0002_drop_customer_fields.sql` 为 K36 客户字段删除，`0003_drop_feishu_record_ids.sql` 为 K37 三表飞书 id 删除，`0004_drop_feishu_remnants.sql` 为 K38 飞书历史列清理，`0005_single_customer_owner.sql` 为 K39 客户归属人单值，`0006_drop_customer_tags.sql` 为 K40 删客户标签，`0007_customer_social_accounts.sql` 为 K41 客户社交媒体信息表）。
+全新库。Drizzle schema 放 `apps/api/src/db/schema.ts`；SQL migration 放 `apps/api/drizzle/`（`0000_init.sql` 主数据，`0001_api_tokens.sql` 为 K35 PAT，`0002_drop_customer_fields.sql` 为 K36 客户字段删除，`0003_drop_feishu_record_ids.sql` 为 K37 三表飞书 id 删除，`0004_drop_feishu_remnants.sql` 为 K38 飞书历史列清理，`0005_single_customer_owner.sql` 为 K39 客户归属人单值，`0006_drop_customer_tags.sql` 为 K40 删客户标签，`0007_customer_social_accounts.sql` 为 K41 客户社交媒体信息表，`0011_deal_amount.sql` 为 K42 成交金额字段，`0012/0013/0014` 为 K44 交付日期/类型分类/交付项排期，`0015_customer_tags_ai.sql` 为 K45–K48 标签词表 + 客户标签 + ai_config + customers.industry）。
 
 ### ER
 

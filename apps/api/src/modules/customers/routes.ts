@@ -20,6 +20,8 @@ import {
   createCustomer,
   deleteCustomer,
   exportCustomers,
+  generateCustomerTags,
+  getCustomerOverviewResult,
   getCustomerResult,
   listCustomersResult,
   patchCustomer,
@@ -29,6 +31,8 @@ export interface CustomersRoutesOptions {
   db: Db;
   /** 时钟注入（epoch 毫秒） */
   now: () => number;
+  /** K46：LLM 客户端 fetch 注入（测试 mock）；默认全局 fetch */
+  llmFetch?: typeof fetch;
 }
 
 const idParamSchema = z.object({ id: z.coerce.number().int().positive() });
@@ -43,7 +47,7 @@ const requireUpdateOwnersWhenOwnerKeys: preHandlerHookHandler = async (req) => {
 };
 
 export function customersRoutes(app: FastifyInstance, opts: CustomersRoutesOptions): void {
-  const { db, now } = opts;
+  const { db, now, llmFetch } = opts;
   const auditCtx = (req: { user: { id: number } | null }) => ({
     now: now(),
     userId: req.user!.id, // requireCan 已保证非空
@@ -92,6 +96,26 @@ export function customersRoutes(app: FastifyInstance, opts: CustomersRoutesOptio
     const { id } = idParamSchema.parse(req.params);
     return { data: getCustomerResult(db, id) };
   });
+
+  // K47 客户总览（基本信息 + 统计 + 消费记录 + 当前有效圈子）
+  app.get(
+    "/api/v1/customers/:id/overview",
+    { preHandler: requireCan("customers", "read") },
+    async (req) => {
+      const { id } = idParamSchema.parse(req.params);
+      return { data: getCustomerOverviewResult(db, id, now()) };
+    },
+  );
+
+  // K46 AI 一键打标：读客户信息 → LLM 生成 → 并集合并直接保存（customers.update 权限）
+  app.post(
+    "/api/v1/customers/:id/tags/generate",
+    { preHandler: requireCan("customers", "update") },
+    async (req) => {
+      const { id } = idParamSchema.parse(req.params);
+      return { data: await generateCustomerTags(db, id, auditCtx(req), { fetchFn: llmFetch }) };
+    },
+  );
 
   app.patch(
     "/api/v1/customers/:id",

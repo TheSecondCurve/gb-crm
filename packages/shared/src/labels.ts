@@ -15,6 +15,7 @@ import type {
   ProductType,
   SocialPlatform,
   SystemRole,
+  TagScope,
 } from "./enums.js";
 
 // code → 中文 label，全量对应 docs/design.md Appendix A.5（K11：禁止节选）。
@@ -138,4 +139,11 @@ export const deliveryTypeKindLabels: Record<DeliveryTypeKind, string> = {
 export const deliveryTypeStatusLabels: Record<DeliveryTypeStatus, string> = {
   active: "有效",
   inactive: "失效",
+};
+
+export const tagScopeLabels: Record<TagScope, string> = {
+  identity: "身份",
+  stage: "阶段",
+  interest: "兴趣",
+  other: "其它",
 };

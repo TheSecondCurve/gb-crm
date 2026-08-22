@@ -272,6 +272,30 @@ export function listDeliveryCustomerRowsById(db: Db, deliveryId: number): Custom
     .map((r) => r.customer);
 }
 
+/** K47 客户当前有效的圈子交付：kind=circle 且未软删、未结束（ends_at 为空或 >= now）、客户在其中 */
+export function listActiveCircleRowsByCustomer(
+  db: Db,
+  customerId: number,
+  now: number,
+): DeliveryRow[] {
+  return db
+    .select({ delivery: deliveries })
+    .from(deliveries)
+    .innerJoin(deliveryTypes, eq(deliveryTypes.id, deliveries.deliveryTypeId))
+    .innerJoin(deliveryCustomers, eq(deliveryCustomers.deliveryId, deliveries.id))
+    .where(
+      and(
+        eq(deliveryTypes.kind, "circle"),
+        isNull(deliveries.deletedAt),
+        eq(deliveryCustomers.customerId, customerId),
+        sql`(${deliveries.endsAt} IS NULL OR ${deliveries.endsAt} >= ${now})`,
+      ),
+    )
+    .orderBy(asc(deliveries.startsAt), asc(deliveries.id))
+    .all()
+    .map((r) => r.delivery);
+}
+
 // ---- deliverables（交付项）----
 
 export function listDeliverablesByDeliveryIds(db: Db, deliveryIds: readonly number[]) {

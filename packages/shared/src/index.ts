@@ -9,3 +9,5 @@ export * from "./schemas/product.js";
 export * from "./schemas/customer.js";
 export * from "./schemas/deal.js";
 export * from "./schemas/delivery.js";
+export * from "./schemas/tag.js";
+export * from "./schemas/system.js";

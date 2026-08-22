@@ -6,10 +6,13 @@ import { and, inArray, isNull } from "drizzle-orm";
 
 import type { Db } from "../../db/client.js";
 import { channels, users } from "../../db/schema.js";
+import type { DealDto } from "../deals/assemble.js";
+import type { DeliveryDto } from "../deliveries/assemble.js";
 import type { UserRef } from "../users/assemble.js";
 import {
   listCustomerSocialAccountRows,
   listCustomerSourceChannelRows,
+  listCustomerTagRows,
   type CustomerRow,
 } from "./repo.js";
 
@@ -23,6 +26,13 @@ export interface SocialAccountRef {
   account: string;
 }
 
+/** K45 客户标签 ref（scope 供前端按分类上色） */
+export interface TagRef {
+  id: number;
+  name: string;
+  scope: string;
+}
+
 export interface CustomerDto {
   id: number;
   nickname: string;
@@ -32,12 +42,14 @@ export interface CustomerDto {
   wechat: string | null;
   country: string | null;
   city: string | null;
+  industry: string | null;
   originStory: string | null;
   notes: string | null;
   customerType: string;
   wechatOpenid: string | null;
   lastFollowedAt: number | null;
   socialAccounts: SocialAccountRef[];
+  tags: TagRef[];
   owner: UserRef | null;
   sourceChannels: ChannelRef[];
   createdAt: number;
@@ -49,9 +61,10 @@ export interface CustomerDto {
 export function assembleCustomers(db: Db, rows: readonly CustomerRow[]): CustomerDto[] {
   const customerIds = rows.map((r) => r.id);
 
-  // 第 2 步：社交账号 / 来源渠道子表各一次批量查
+  // 第 2 步：社交账号 / 来源渠道 / 标签 子表各一次批量查
   const socialRows = listCustomerSocialAccountRows(db, customerIds);
   const sourceRows = listCustomerSourceChannelRows(db, customerIds);
+  const tagRows = listCustomerTagRows(db, customerIds);
 
   // 第 3 步：live 用户（owner/createdBy/updatedBy 展开，软删不展开 → null）
   const userIds = new Set<number>();
@@ -90,6 +103,14 @@ export function assembleCustomers(db: Db, rows: readonly CustomerRow[]): Custome
     socialByCustomer.set(s.customerId, list);
   }
 
+  // 标签按 sort,name 已排序（repo），直接按 customerId 分组
+  const tagsByCustomer = new Map<number, TagRef[]>();
+  for (const t of tagRows) {
+    const list = tagsByCustomer.get(t.customerId) ?? [];
+    list.push({ id: t.tagId, name: t.name, scope: t.scope });
+    tagsByCustomer.set(t.customerId, list);
+  }
+
   // join 行保留但目标已软删 → 不展开（幽灵归属人不能冒充活人，K9）
   const channelsByCustomer = (rows: readonly { customerId: number; channelId: number }[]) => {
     const map = new Map<number, ChannelRef[]>();
@@ -116,12 +137,14 @@ export function assembleCustomers(db: Db, rows: readonly CustomerRow[]): Custome
     wechat: row.wechat,
     country: row.country,
     city: row.city,
+    industry: row.industry,
     originStory: row.originStory,
     notes: row.notes,
     customerType: row.customerType,
     wechatOpenid: row.wechatOpenid,
     lastFollowedAt: row.lastFollowedAt,
     socialAccounts: socialByCustomer.get(row.id) ?? [],
+    tags: tagsByCustomer.get(row.id) ?? [],
     owner: userRef(row.ownerId),
     sourceChannels: sourceByCustomer.get(row.id) ?? [],
     createdAt: row.createdAt,
@@ -133,4 +156,18 @@ export function assembleCustomers(db: Db, rows: readonly CustomerRow[]): Custome
 
 export function assembleCustomer(db: Db, row: CustomerRow): CustomerDto {
   return assembleCustomers(db, [row])[0]!;
+}
+
+// K47 客户总览 DTO（customer + 统计 + 消费记录 + 当前有效圈子）
+export interface CustomerStatsDto {
+  dealCount: number;
+  paidTotalCents: number;
+  lastDealAt: number | null;
+}
+
+export interface CustomerOverviewDto {
+  customer: CustomerDto;
+  stats: CustomerStatsDto;
+  deals: DealDto[];
+  circles: DeliveryDto[];
 }

@@ -35,6 +35,7 @@ export const errorCodeSchema = z.enum([
   "VALIDATION",
   "CONFLICT",
   "RATE_LIMITED",
+  "LLM_ERROR",
 ]);
 export type ErrorCode = z.infer<typeof errorCodeSchema>;
 
