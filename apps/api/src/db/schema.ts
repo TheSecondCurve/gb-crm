@@ -66,6 +66,10 @@ export const sessions = sqliteTable(
     userId: integer("user_id")
       .notNull()
       .references(() => users.id, { onDelete: "cascade" }),
+    // K49：扮演用户。NULL = 正常会话；扮演中 user_id 指向被扮演者、此列记录原身份（admin）。
+    impersonatedBy: integer("impersonated_by").references(() => users.id, {
+      onDelete: "set null",
+    }),
     createdAt: integer("created_at").notNull(),
     expiresAt: integer("expires_at").notNull(),
     lastTouchedAt: integer("last_touched_at").notNull(),

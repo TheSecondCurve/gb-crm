@@ -22,6 +22,7 @@ export function createSession(
   const row: Session = {
     id: randomBytes(32).toString("hex"),
     userId: input.userId,
+    impersonatedBy: null,
     createdAt: input.now,
     expiresAt: input.now + SESSION_IDLE_TTL_MS,
     lastTouchedAt: input.now,
@@ -43,6 +44,31 @@ export function deleteSessionById(db: Db, id: string): void {
 /** 禁用账户 / 改密 / reset：删该用户全部 session */
 export function deleteSessionsByUserId(db: Db, userId: number): void {
   db.delete(sessions).where(eq(sessions.userId, userId)).run();
+}
+
+/**
+ * K49：开始扮演 —— 当前 cookie session 的身份切到目标用户，
+ * impersonated_by 记录原身份（admin），退出时恢复。单层不可嵌套（调用方校验）。
+ */
+export function switchSessionUser(
+  db: Db,
+  sessionId: string,
+  userId: number,
+  impersonatedBy: number,
+  now: number,
+): void {
+  db.update(sessions)
+    .set({ userId, impersonatedBy, lastTouchedAt: now })
+    .where(eq(sessions.id, sessionId))
+    .run();
+}
+
+/** K49：退出扮演 —— user_id 恢复为 impersonated_by（原 admin），清空 impersonated_by。 */
+export function restoreSessionUser(db: Db, sessionId: string, now: number): void {
+  db.update(sessions)
+    .set({ userId: sessions.impersonatedBy, impersonatedBy: null, lastTouchedAt: now })
+    .where(eq(sessions.id, sessionId))
+    .run();
 }
 
 /** GC：删过期（idle 到期）或超绝对上限的 session；login 时必做，其它请求 1% 概率做（K29） */

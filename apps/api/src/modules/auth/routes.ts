@@ -2,13 +2,14 @@
 // 注意：session-auth 的 onRequest 钩子在路由注册前挂到 root scope，
 // login / POST tokens / health 免登录；GET /agent/login.sh 不在 /api/v1 下，钩子不拦。
 import { changePasswordSchema, loginSchema, mintTokenSchema } from "@gb-crm/shared";
-import type { FastifyInstance } from "fastify";
+import type { FastifyInstance, preHandlerHookHandler } from "fastify";
 import { z } from "zod";
 
 import type { AppEnv } from "../../env.js";
 import type { Db } from "../../db/client.js";
 import { clearSessionCookie, setSessionCookie } from "../../plugins/cookie.js";
-import { ApiError } from "../../plugins/error-handler.js";
+import { ApiError, forbidden } from "../../plugins/error-handler.js";
+import { requireCan } from "../../plugins/rbac.js";
 import {
   createSession,
   deleteSessionById,
@@ -16,10 +17,24 @@ import {
   SESSION_IDLE_TTL_MS,
 } from "./session-repo.js";
 import { publicBaseUrl, renderLoginScript } from "./login-script.js";
-import { changeOwnPassword, LOGIN_FAIL_MESSAGE, verifyLogin } from "./service.js";
+import {
+  changeOwnPassword,
+  getSessionImpersonator,
+  listImpersonationTargets,
+  LOGIN_FAIL_MESSAGE,
+  startImpersonation,
+  stopImpersonation,
+  verifyLogin,
+} from "./service.js";
 import { listOwnTokens, mintToken, revokeOwnToken } from "./token-service.js";
 
 const tokenIdParamSchema = z.object({ id: z.coerce.number().int().positive() });
+const impersonateIdParamSchema = z.object({ id: z.coerce.number().int().positive() });
+
+// K49：扮演端点仅 cookie session 可用；Bearer PAT 一律 403（PAT 不承载扮演状态）。
+const cookieOnly: preHandlerHookHandler = async (req) => {
+  if (req.tokenScope !== null) throw forbidden("仅登录会话可切换身份");
+};
 
 export interface AuthRoutesOptions {
   db: Db;
@@ -69,15 +84,55 @@ export function authRoutes(app: FastifyInstance, opts: AuthRoutesOptions): void 
 
   app.get("/api/v1/auth/me", async (req) => {
     const user = req.user!;
+    // K49：cookie 会话携带扮演发起人信息；Bearer 无会话 → null
+    const impersonatedBy =
+      req.sessionId !== null ? getSessionImpersonator(db, req.sessionId) : null;
     return {
       data: {
         id: user.id,
         username: user.username,
         nickname: user.nickname,
         systemRole: user.systemRole,
+        impersonatedBy,
       },
     };
   });
+
+  // ── K49：admin「扮演用户（act as user）」──
+  // targets / start 需 auth.impersonate（仅 admin）+ cookie-only；
+  // stop 例外：不查角色，以「当前会话正处于扮演中」为唯一准入——否则扮成 operator/assistant
+  // 后（有效角色变弱）将无法自行退出；扮演只能由 admin 发起，故无提权面。
+  app.get(
+    "/api/v1/auth/impersonate/targets",
+    { preHandler: [requireCan("auth", "impersonate"), cookieOnly] },
+    async (req) => {
+      return { data: listImpersonationTargets(db, req.user!.id) };
+    },
+  );
+
+  app.post(
+    "/api/v1/auth/impersonate/:id",
+    { preHandler: [requireCan("auth", "impersonate"), cookieOnly] },
+    async (req, reply) => {
+      const { id } = impersonateIdParamSchema.parse(req.params);
+      startImpersonation(db, {
+        sessionId: req.sessionId!,
+        adminId: req.user!.id,
+        targetId: id,
+        now: now(),
+      });
+      return reply.code(204).send();
+    },
+  );
+
+  app.post(
+    "/api/v1/auth/impersonate/stop",
+    { preHandler: cookieOnly },
+    async (req, reply) => {
+      stopImpersonation(db, { sessionId: req.sessionId!, now: now() });
+      return reply.code(204).send();
+    },
+  );
 
   app.post(
     "/api/v1/auth/tokens",

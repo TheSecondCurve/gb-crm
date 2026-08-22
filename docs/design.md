@@ -156,6 +156,7 @@ Phase 2 表（本设计不建表、不导入）：活动交付 12、内容资产
 | K46 | **AI 打标**：`ai_config` 单行配置表（OpenAI 兼容接口：provider/base_url/api_key/model；apiKey 明文存库——库文件 chmod 600 + 内网，at-rest 依赖 OS 权限；API 只回 `apiKeySet`+`apiKeyMasked`，永不全量返回）。`POST /api/v1/customers/:id/tags/generate`（`customers.update` 权限）：读客户基本信息 + enabled 词表 → prompt → `${baseUrl}/chat/completions`（`lib/llm.ts`，零新依赖、原生 fetch、30s 超时、温度 0、不强制 response_format 保兼容、宽松 JSON 解析）→ 名称→tag id 映射（未知/重复丢弃）→ **与原标签取并集合并写入**（不覆盖手动标签）+ touch `updated_at`（刷新 OCC 凭证）。**一键直接保存、无人工确认步骤**（用户拍板）。失败（未配置 422 / 网络/超时/不可解析 502 `LLM_ERROR`）。fetch 可注入（`buildApp({ llmFetch })`，测试 mock）。**不做**：定时/批量自动打标、队列异步任务 | 2026-08-22 产品决策。`0015_customer_tags_ai.sql` 迁移。设置页 LLM 配置表单 |
 | K47 | **客户总览页 + 端点**：`GET /api/v1/customers/:id/overview`（`customers.read`）→ `{ customer(含 tags), stats: { dealCount, paidTotalCents(仅 stage=paid 合计), lastDealAt(MAX(COALESCE(delivery_date, created_at))) }, deals(该客户 live 成交，最新在前，上限 100，复用 deals assemble), circles(交付单中 kind=circle 且未软删、未结束（ends_at 为空或 >= now）、客户在其中，复用 deliveries assemble) }`。前端 `/customers/:id`：基本信息卡 + AI 打标卡（生成按钮 + 手动 chips 添加/移除，走 PATCH tagIds OCC）+ 统计卡 + 消费记录表 + 当前交付圈子卡（入口 `/deliveries/:id/circle`）。客户列表行操作新增「总览」 | 2026-08-22 产品决策。K41 社交账号的「等画像/详情页」落地 |
 | K48 | **customers.industry**：客户表新增 `industry`（行业）一列（可空文本，PATCH 标量内核）；同时作为 AI 打标输入。**不做**：公司/职位/预算等更多画像列（保持「稍微扩展」） | 2026-08-22 产品决策。`0015_customer_tags_ai.sql` 迁移 |
+| K49 | **admin「扮演用户」（act as user）**：admin 把当前 cookie session 的身份切到任一可加载用户，用于测试「我的运营」等按人过滤的页面。机制：`sessions` 表加可空列 `impersonated_by`（原身份 admin）；扮演 = `UPDATE sessions SET user_id=目标, impersonated_by=admin`（cookie 不变），退出 = 恢复 `user_id=impersonated_by` 并清空。**单层不可嵌套**（已扮演再 start → 409，service 兜底；弱角色下被 requireCan 403 拦截同样安全）。目标闸门与 loadAuthUser 一致（未软删 / enabled / systemRole 非空 / username 非空），**禁止扮演自己**（409）。端点：`GET /auth/impersonate/targets`、`POST /auth/impersonate/:id`、`POST /auth/impersonate/stop`——均 **仅 cookie session**（Bearer PAT 403）；targets/start 挂 `auth.impersonate`（矩阵仅 admin），**stop 不查角色**（以「当前会话正处于扮演中」为唯一准入，否则扮成 operator/assistant 后无法自行退出）。`GET /auth/me` 增 `impersonatedBy: {id,nickname} | null`。审计留痕：`sessions.impersonated_by` 即「谁扮演了谁」，不引入事件表。前端：右上角用户菜单「切换身份（扮演用户）」弹窗选目标；扮演中显示「扮演中：昵称（角色）」徽标 + 退出扮演按钮，侧栏/权限按被扮演者实时生效 | 2026-08-22 产品决策（测试「我的运营」等按人过滤功能）。`0016_session_impersonation.sql` 迁移 |
 
 ---
 
@@ -498,7 +499,8 @@ export type Resource = "users" | "channels" | "products" | "customers" | "deals"
 export type Action =
   | "list" | "read" | "create" | "update" | "delete"
   | "updateRole" | "setPassword" | "updateOwners"
-  | "readChannelSecrets" | "updateChannelSecrets";
+  | "readChannelSecrets" | "updateChannelSecrets"
+  | "impersonate"; // K49 admin 扮演用户
 
 /** 穷举矩阵；缺席 = deny。role===null → false */
 export function can(role: SystemRole | null, resource: Resource, action: Action): boolean;
@@ -525,6 +527,7 @@ export function can(role: SystemRole | null, resource: Resource, action: Action)
 | tags create/update/delete | ✓ | ✗ | ✗ | K45：词表仅 admin 可维护 |
 | system read/update | ✓ | ✗ | ✗ | K46：LLM 打标配置，仅 admin |
 | auth 改自己密码 | ✓ | ✓ | ✓ | `PATCH /auth/password` |
+| auth impersonate | ✓ | ✗ | ✗ | K49：扮演用户。stop 例外——不查角色，以会话处于扮演中为唯一准入（否则弱角色无法自行退出） |
 
 路由：`preHandler: requireCan('customers', 'update')`。PATCH customers 若 body **含** `ownerId`，再加 `requireCan('customers','updateOwners')`。PATCH channels 若含密钥键，再加 `updateChannelSecrets`。测试必须锁住矩阵每一格，至少包括：
 
@@ -895,7 +898,7 @@ export const customerListQuerySchema = pageQuerySchema.extend({
 
 ## Data Model Changes
 
-全新库。Drizzle schema 放 `apps/api/src/db/schema.ts`；SQL migration 放 `apps/api/drizzle/`（`0000_init.sql` 主数据，`0001_api_tokens.sql` 为 K35 PAT，`0002_drop_customer_fields.sql` 为 K36 客户字段删除，`0003_drop_feishu_record_ids.sql` 为 K37 三表飞书 id 删除，`0004_drop_feishu_remnants.sql` 为 K38 飞书历史列清理，`0005_single_customer_owner.sql` 为 K39 客户归属人单值，`0006_drop_customer_tags.sql` 为 K40 删客户标签，`0007_customer_social_accounts.sql` 为 K41 客户社交媒体信息表，`0011_deal_amount.sql` 为 K42 成交金额字段，`0012/0013/0014` 为 K44 交付日期/类型分类/交付项排期，`0015_customer_tags_ai.sql` 为 K45–K48 标签词表 + 客户标签 + ai_config + customers.industry）。
+全新库。Drizzle schema 放 `apps/api/src/db/schema.ts`；SQL migration 放 `apps/api/drizzle/`（`0000_init.sql` 主数据，`0001_api_tokens.sql` 为 K35 PAT，`0002_drop_customer_fields.sql` 为 K36 客户字段删除，`0003_drop_feishu_record_ids.sql` 为 K37 三表飞书 id 删除，`0004_drop_feishu_remnants.sql` 为 K38 飞书历史列清理，`0005_single_customer_owner.sql` 为 K39 客户归属人单值，`0006_drop_customer_tags.sql` 为 K40 删客户标签，`0007_customer_social_accounts.sql` 为 K41 客户社交媒体信息表，`0011_deal_amount.sql` 为 K42 成交金额字段，`0012/0013/0014` 为 K44 交付日期/类型分类/交付项排期，`0015_customer_tags_ai.sql` 为 K45–K48 标签词表 + 客户标签 + ai_config + customers.industry，`0016_session_impersonation.sql` 为 K49 admin 扮演用户）。
 
 ### ER
 
