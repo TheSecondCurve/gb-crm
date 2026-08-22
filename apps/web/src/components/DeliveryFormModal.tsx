@@ -1,10 +1,9 @@
-import { useEffect, useMemo, useState, type FormEvent } from "react";
-import { productTypeLabels } from "@gb-crm/shared";
+import { useEffect, useState, type FormEvent } from "react";
 
 import { api, ApiError, buildQuery } from "../api/client";
 import type { DeliveryDto, DeliveryTypeDto } from "../api/types";
-import { optionsOf } from "../columns/common";
-import { customerLabelCache, customerOptionsLoader } from "../columns/relation";
+import { dateToEpochMs, epochMsToDate } from "../columns/common";
+import { customerLabelCache, customerOptionsLoader, productLabelCache, productOptionsLoader } from "../columns/relation";
 import type { RelationOption } from "./DataGrid/DataGrid";
 import { Modal } from "./Modal";
 import { useToast } from "./Toast";
@@ -19,8 +18,8 @@ interface DeliveryFormModalProps {
 }
 
 /**
- * 交付单弹窗：类型（下拉）+ 客户集合（两种来源合并：手动搜索多选 / 按产品类型从成交 merge）
- * + 备注。客户选择支持单选 / 部分多选（K44）。
+ * 交付单弹窗：类型（下拉）+ 起止日期（日历输入）+ 客户集合（两种来源合并：手动搜索多选 /
+ * 按意向产品从成交 merge）+ 备注。客户可不选（空交付单）。
  */
 export function DeliveryFormModal({ title, delivery, busy, onClose, onSubmit }: DeliveryFormModalProps) {
   const showToast = useToast();
@@ -28,14 +27,18 @@ export function DeliveryFormModal({ title, delivery, busy, onClose, onSubmit }: 
 
   const [typeOptions, setTypeOptions] = useState<RelationOption[]>([]);
   const [typeId, setTypeId] = useState<string>(delivery ? String(delivery.deliveryTypeId) : "");
+  const [startsAt, setStartsAt] = useState(delivery ? epochMsToDate(delivery.startsAt) : "");
+  const [endsAt, setEndsAt] = useState(delivery ? epochMsToDate(delivery.endsAt) : "");
   const [selected, setSelected] = useState<number[]>(delivery ? delivery.customers.map((c) => c.id) : []);
   const [remark, setRemark] = useState(delivery?.remark ?? "");
 
   // 手动搜索客户
   const [manualSearch, setManualSearch] = useState("");
   const [manualOptions, setManualOptions] = useState<RelationOption[]>([]);
-  // 按产品类型 merge（来自成交的客户）
-  const [mergeType, setMergeType] = useState("");
+  // 按意向产品 merge（来自成交的客户）
+  const [mergeProductSearch, setMergeProductSearch] = useState("");
+  const [mergeProductOptions, setMergeProductOptions] = useState<RelationOption[]>([]);
+  const [mergeProduct, setMergeProduct] = useState<RelationOption | null>(null);
   const [mergeCandidates, setMergeCandidates] = useState<RelationOption[]>([]);
   const [mergeLoading, setMergeLoading] = useState(false);
 
@@ -56,9 +59,9 @@ export function DeliveryFormModal({ title, delivery, busy, onClose, onSubmit }: 
     return () => clearTimeout(timer);
   }, [manualSearch]);
 
-  // 按产品类型加载成交客户（去重）
+  // 按意向产品加载成交客户（去重）
   useEffect(() => {
-    if (!mergeType) {
+    if (!mergeProduct) {
       setMergeCandidates([]);
       return;
     }
@@ -66,7 +69,7 @@ export function DeliveryFormModal({ title, delivery, busy, onClose, onSubmit }: 
     void (async () => {
       try {
         const res = await api.get<{ data: { customer: { id: number; nickname: string } | null }[] }>(
-          `/deals${buildQuery({ pageSize: 100, productType: mergeType })}`,
+          `/deals${buildQuery({ pageSize: 100, productId: mergeProduct.id })}`,
         );
         const seen = new Map<number, RelationOption>();
         for (const d of res?.data ?? []) {
@@ -79,16 +82,18 @@ export function DeliveryFormModal({ title, delivery, busy, onClose, onSubmit }: 
         setMergeLoading(false);
       }
     })();
-  }, [mergeType, showToast]);
+  }, [mergeProduct, showToast]);
+
+  // 意向产品搜索（300ms 防抖）
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      void productOptionsLoader(mergeProductSearch).then(setMergeProductOptions);
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [mergeProductSearch]);
 
   const toggle = (list: number[], id: number): number[] =>
     list.includes(id) ? list.filter((v) => v !== id) : [...list, id];
-
-  const mergedOptions = useMemo(() => {
-    const map = new Map<number, RelationOption>();
-    for (const o of mergeCandidates) map.set(o.id, o);
-    return [...map.values()];
-  }, [mergeCandidates]);
 
   const handleSubmit = (e: FormEvent) => {
     e.preventDefault();
@@ -96,11 +101,13 @@ export function DeliveryFormModal({ title, delivery, busy, onClose, onSubmit }: 
       showToast("请选择交付类型");
       return;
     }
-    if (!editing && selected.length === 0) {
-      showToast("请至少选择一个客户");
-      return;
-    }
-    void onSubmit({ deliveryTypeId: Number(typeId), customerIds: selected, remark: remark.trim() || null });
+    void onSubmit({
+      deliveryTypeId: Number(typeId),
+      customerIds: selected,
+      startsAt: dateToEpochMs(startsAt),
+      endsAt: dateToEpochMs(endsAt),
+      remark: remark.trim() || null,
+    });
   };
 
   return (
@@ -120,6 +127,24 @@ export function DeliveryFormModal({ title, delivery, busy, onClose, onSubmit }: 
         <label className="field">
           交付备注
           <input autoComplete="off" value={remark} onChange={(e) => setRemark(e.target.value)} />
+        </label>
+        <label className="field">
+          开始日期
+          <input
+            type="date"
+            autoComplete="off"
+            value={startsAt}
+            onChange={(e) => setStartsAt(e.target.value)}
+          />
+        </label>
+        <label className="field">
+          结束日期
+          <input
+            type="date"
+            autoComplete="off"
+            value={endsAt}
+            onChange={(e) => setEndsAt(e.target.value)}
+          />
         </label>
 
         <div className="field field-span">
@@ -150,23 +175,49 @@ export function DeliveryFormModal({ title, delivery, busy, onClose, onSubmit }: 
               </div>
             </div>
             <div className="delivery-picker-block">
-              <div className="delivery-picker-title">② 按产品类型从成交合并</div>
-              <select
-                aria-label="按产品类型从成交合并"
-                value={mergeType}
-                onChange={(e) => setMergeType(e.target.value)}
-              >
-                <option value="">（选择产品类型）</option>
-                {optionsOf(productTypeLabels).map((o) => (
-                  <option key={o.value} value={o.value}>
-                    {o.label}
-                  </option>
-                ))}
-              </select>
-              {mergeLoading && <div className="task-empty">加载中…</div>}
-              {!mergeLoading && mergedOptions.length > 0 && (
+              <div className="delivery-picker-title">② 按意向产品从成交合并</div>
+              <input
+                placeholder="搜索意向产品…"
+                autoComplete="off"
+                value={mergeProductSearch}
+                onChange={(e) => setMergeProductSearch(e.target.value)}
+              />
+              {!mergeProduct && mergeProductOptions.length > 0 && (
                 <div className="form-checks">
-                  {mergedOptions.map((o) => (
+                  {mergeProductOptions.map((o) => (
+                    <label className="inline-field" key={o.id}>
+                      <input
+                        type="radio"
+                        name="merge-product"
+                        onChange={() => {
+                          setMergeProduct(o);
+                          productLabelCache.set(o.id, o.label);
+                        }}
+                      />
+                      {o.label}
+                    </label>
+                  ))}
+                </div>
+              )}
+              {mergeProduct && (
+                <div className="delivery-picker-selected">
+                  已选产品：<b>{mergeProduct.label}</b>
+                  <button
+                    type="button"
+                    className="btn-link"
+                    onClick={() => {
+                      setMergeProduct(null);
+                      setMergeProductSearch("");
+                    }}
+                  >
+                    更换
+                  </button>
+                </div>
+              )}
+              {mergeLoading && <div className="task-empty">加载中…</div>}
+              {!mergeLoading && mergeProduct && mergeCandidates.length > 0 && (
+                <div className="form-checks">
+                  {mergeCandidates.map((o) => (
                     <label className="inline-field" key={o.id}>
                       <input
                         type="checkbox"
@@ -181,8 +232,8 @@ export function DeliveryFormModal({ title, delivery, busy, onClose, onSubmit }: 
                   ))}
                 </div>
               )}
-              {!mergeLoading && mergeType && mergedOptions.length === 0 && (
-                <div className="task-empty">该产品类型暂无成交客户</div>
+              {!mergeLoading && mergeProduct && mergeCandidates.length === 0 && (
+                <div className="task-empty">该产品暂无成交客户</div>
               )}
             </div>
           </div>

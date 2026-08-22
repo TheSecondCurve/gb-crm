@@ -1,16 +1,19 @@
 import { z } from "zod";
 
-import { deliverableDimensionSchema } from "../enums.js";
+import { deliverableDimensionSchema, deliveryTypeKindSchema, deliveryTypeStatusSchema } from "../enums.js";
 import { epochMsSchema, pageQuerySchema } from "./common.js";
 
 const nullableText = z.string().nullable();
 const idArraySchema = z.array(z.number().int().positive());
 
 // ---- 交付类型配置表（K44）----
-// 字段与 0010_deliverables_v2.sql delivery_types 表列对应（camelCase）。
+// 字段与 migration delivery_types 表列对应（camelCase）。
+// kind：咨询/活动/圈子/其他类；status：有效/失效。
 // defaultTasks：多行文本，每行一个默认动作；创建交付项时按类型模板预填。
 export const deliveryTypeWriteSchema = z.object({
   name: z.string().min(1),
+  kind: deliveryTypeKindSchema.default("other"),
+  status: deliveryTypeStatusSchema.default("active"),
   description: nullableText.optional(),
   defaultTasks: nullableText.optional(),
 });
@@ -28,11 +31,13 @@ export const deliveryTypeListQuerySchema = pageQuerySchema.extend({
 });
 export type DeliveryTypeListQuery = z.infer<typeof deliveryTypeListQuerySchema>;
 
-// ---- 交付单（K44：精简 = 类型 + 客户集合 + 备注；与成交弱关联，客户来源可来自成交 merge）----
+// ---- 交付单（K44：精简 = 类型 + 客户集合 + 备注 + 起止日期；与成交弱关联，客户来源可来自成交 merge）----
 export const deliveryWriteSchema = z.object({
   deliveryTypeId: z.number().int().positive(),
-  // 客户集合：创建必填（至少一个）
-  customerIds: idArraySchema.min(1),
+  // 客户集合：创建可不选（空交付单）；起止日期 epoch ms 可空
+  customerIds: idArraySchema,
+  startsAt: epochMsSchema.nullable().optional(),
+  endsAt: epochMsSchema.nullable().optional(),
   remark: nullableText.optional(),
 });
 export type DeliveryWrite = z.infer<typeof deliveryWriteSchema>;
@@ -42,6 +47,8 @@ export const deliveryPatchSchema = z
   .object({
     deliveryTypeId: z.number().int().positive().optional(),
     customerIds: idArraySchema.optional(),
+    startsAt: epochMsSchema.nullable().optional(),
+    endsAt: epochMsSchema.nullable().optional(),
     remark: nullableText.optional(),
   })
   .extend({ updatedAt: epochMsSchema });

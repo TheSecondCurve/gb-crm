@@ -111,6 +111,23 @@ export function EditableCell<Row>({
     );
   }
 
+  if (editor === "date") {
+    return (
+      <input
+        autoFocus
+        type="date"
+        aria-label={column.label}
+        value={draft}
+        onChange={(e) => {
+          // 日历选择即提交（YYYY-MM-DD，patchRow 层转 epoch ms）
+          onCommitNow(e.target.value);
+          onExit();
+        }}
+        onKeyDown={handleKey}
+      />
+    );
+  }
+
   if (editor === "multi") {
     const values = readStringArray(initial);
     const toggle = (value: string) => {
