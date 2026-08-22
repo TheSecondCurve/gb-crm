@@ -11,12 +11,6 @@ const customer: CustomerDto = {
   title: null,
   phone: "13800000000",
   wechat: null,
-  otherSocial: null,
-  wechatChannelsAccount: null,
-  xiaoyuzhouAccount: null,
-  xiaohongshuAccount: null,
-  weiboAccount: null,
-  douyinAccount: null,
   country: null,
   city: "上海",
   originStory: null,
@@ -24,7 +18,7 @@ const customer: CustomerDto = {
   customerType: "customer",
   wechatOpenid: null,
   lastFollowedAt: null,
-  tagCodes: ["vip"],
+  socialAccounts: [],
   owner: { id: 1, nickname: "老王" },
   sourceChannels: [],
   createdAt: 1000,
@@ -91,16 +85,15 @@ function cell(rowId: number, colKey: string): HTMLElement {
 }
 
 describe("客户信息页", () => {
-  it("渲染列表：昵称/徽章/归属人展开", async () => {
+  it("渲染列表：昵称/手机号/归属人展开", async () => {
     mockCustomersApi(adminMe);
     renderApp("/customers");
     expect(await screen.findByText("张三")).toBeTruthy();
     expect(screen.getByText("13800000000")).toBeTruthy();
-    expect(screen.getByText("VIP")).toBeTruthy(); // 标签 badge
     expect(screen.getByText("老王")).toBeTruthy(); // 归属人展开
     const headers = [...document.querySelectorAll(".data-grid-table th")].map((th) => th.textContent);
     expect(headers).toEqual(
-      expect.arrayContaining(["昵称", "真实姓名", "手机号", "微信号", "类型", "标签", "城市", "归属人", "更新时间"]),
+      expect.arrayContaining(["昵称", "真实姓名", "手机号", "微信号", "类型", "城市", "归属人", "更新时间"]),
     );
   });
 

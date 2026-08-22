@@ -1,14 +1,14 @@
 // customers 业务规则（§3 service 层）：
 // - PATCH 内核用收口后的 lib/patch-kernel.ts（K24）：键存在才 SET；updatedAt 必带 OCC；
 //   changes===0 → 软删 404，否则 409 且 data 带当前完整行（含 expansions）；
-// - 关系数组（K24）：tagCodes/sourceChannelIds
-//   缺席=不动、[]=清空、[ids]=事务内整表替换并 bump updated_at；
-//   引用的渠道必须存在且未软删，否则 422；tagCodes 枚举由 Zod 挡 422；
+// - 关系数组（K24）：socialAccounts（K41 值数组）/sourceChannelIds
+//   缺席=不动、[]=清空、[values/ids]=事务内整表替换并 bump updated_at；
+//   引用的渠道必须存在且未软删，否则 422；socialAccounts.platform 枚举由 Zod 挡 422；
 // - 归属人单值（K39）：ownerId 是可空标量，缺席=不动、null=清空，非 null 必须引用 live 用户；
 // - wechatOpenid 可空唯一（live 行内）：冲突 → 409；软删后释放可复用（partial unique 兜底）；
 // - create：nickname 必填（shared schema 要求 min(1)）；「未命名客户」默认值由 web/导入侧决定，
 //   API 不代填；customerType 默认 customer（schema default）。
-// - 删除 = 软删，三张 join 行保留（K9/K33）。
+// - 删除 = 软删，join 行保留（K9/K33）。
 import type { CustomerListQuery, CustomerPatch, CustomerWrite } from "@gb-crm/shared";
 
 import type { Db } from "../../db/client.js";
@@ -25,8 +25,8 @@ import {
   listAllCustomers,
   listCustomers,
   occUpdateCustomer,
+  replaceCustomerSocialAccounts,
   replaceCustomerSourceChannels,
-  replaceCustomerTags,
   softDeleteCustomer,
 } from "./repo.js";
 
@@ -71,16 +71,19 @@ function assertRelations(db: Db, body: {
   }
 }
 
-/** 关系整表替换（仅处理出现的键；调用方保证在事务内） */
+/** 关系整表替换（仅处理出现的键；调用方保证在事务内，审计值由调用方注入） */
 function replaceRelations(
   db: Db,
   id: number,
   body: {
-    tagCodes?: string[];
+    socialAccounts?: { platform: string; account: string }[];
     sourceChannelIds?: number[];
   },
+  audit: { createdAt: number; updatedAt: number; createdBy: number | null; updatedBy: number | null },
 ): void {
-  if (body.tagCodes !== undefined) replaceCustomerTags(db, id, body.tagCodes);
+  if (body.socialAccounts !== undefined) {
+    replaceCustomerSocialAccounts(db, id, body.socialAccounts, audit);
+  }
   if (body.sourceChannelIds !== undefined) {
     replaceCustomerSourceChannels(db, id, body.sourceChannelIds);
   }
@@ -107,13 +110,13 @@ export function exportCustomers(db: Db, query: CustomerListQuery): CustomerDto[]
 
 export function createCustomer(db: Db, body: CustomerWrite, ctx: AuditContext): CustomerDto {
   return inTx(db, (tx) => {
-    const { tagCodes, sourceChannelIds, ...fields } = body;
+    const { socialAccounts, sourceChannelIds, ...fields } = body;
     assertRelations(tx, { sourceChannelIds });
     assertLiveOwner(tx, fields.ownerId, "ownerId");
     if (fields.wechatOpenid != null) assertWechatOpenidFree(tx, fields.wechatOpenid);
 
     const id = insertCustomer(tx, { ...fields, ...createAudit(ctx) });
-    replaceRelations(tx, id, { tagCodes, sourceChannelIds });
+    replaceRelations(tx, id, { socialAccounts, sourceChannelIds }, createAudit(ctx));
     return assembleCustomer(tx, getCustomerByIdAny(tx, id)!);
   });
 }
@@ -125,12 +128,6 @@ const PATCHABLE_KEYS = new Set([
   "title",
   "phone",
   "wechat",
-  "otherSocial",
-  "wechatChannelsAccount",
-  "xiaoyuzhouAccount",
-  "xiaohongshuAccount",
-  "weiboAccount",
-  "douyinAccount",
   "country",
   "city",
   "originStory",
@@ -166,7 +163,7 @@ export function patchCustomer(
     });
 
     // 关系键：缺席=不动；[]=清空；[ids]=整表替换（与标量同一事务，updated_at 已 bump）
-    replaceRelations(tx, id, patch);
+    replaceRelations(tx, id, patch, createAudit(ctx));
     return assembleCustomer(tx, getCustomerByIdAny(tx, id)!);
   });
 }

@@ -44,8 +44,8 @@ describe("list query：camelCase + 每资源独立 sort enum", () => {
       channelListQuerySchema.parse({ platform: "wechat", channelType: "private" }),
     ).toMatchObject({ platform: "wechat", channelType: "private" });
     expect(
-      customerListQuerySchema.parse({ ownerId: "3", channelId: "7", tag: "vip" }),
-    ).toMatchObject({ ownerId: 3, channelId: 7, tag: "vip" });
+      customerListQuerySchema.parse({ ownerId: "3", channelId: "7" }),
+    ).toMatchObject({ ownerId: 3, channelId: 7 });
     expect(productListQuerySchema.parse({ isPackage: "true" })).toMatchObject({
       isPackage: true,
     });
@@ -109,10 +109,28 @@ describe("patch schema（K24：键可缺席，不得绑默认值）", () => {
       customerPatchSchema.safeParse({ customerType: "vip", updatedAt: 1 }).success,
     ).toBe(false);
     expect(
-      customerPatchSchema.parse({ tagCodes: ["vip", "stage_0_1"], updatedAt: 1 }).tagCodes,
-    ).toEqual(["vip", "stage_0_1"]);
+      customerPatchSchema.parse({
+        socialAccounts: [
+          { platform: "xiaohongshu", account: "xhs-id" },
+          { platform: "weibo", account: "wb" },
+        ],
+        updatedAt: 1,
+      }).socialAccounts,
+    ).toEqual([
+      { platform: "xiaohongshu", account: "xhs-id" },
+      { platform: "weibo", account: "wb" },
+    ]);
     expect(
-      customerPatchSchema.safeParse({ tagCodes: ["nope"], updatedAt: 1 }).success,
+      customerPatchSchema.safeParse({
+        socialAccounts: [{ platform: "bilibili", account: "x" }],
+        updatedAt: 1,
+      }).success,
+    ).toBe(false);
+    expect(
+      customerPatchSchema.safeParse({
+        socialAccounts: [{ platform: "weibo", account: "" }],
+        updatedAt: 1,
+      }).success,
     ).toBe(false);
     expect(
       customerPatchSchema.safeParse({ ownerId: 1.5, updatedAt: 1 }).success,

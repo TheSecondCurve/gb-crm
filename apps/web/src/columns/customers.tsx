@@ -1,10 +1,10 @@
 // customers 列定义（docs/design.md Appendix B customers：冻结 nickname，assistant 的
 // owner 只读 = K31 updateOwners deny）。labels 全部来自 @gb-crm/shared。
-import { can, customerTypeLabels, tagLabels, type SystemRole } from "@gb-crm/shared";
+import { can, customerTypeLabels, type SystemRole } from "@gb-crm/shared";
 
 import type { ChannelRefDto, CustomerDto, UserRefDto } from "../api/types";
 import type { GridColumn } from "../components/DataGrid/DataGrid";
-import { enumBadge, formatDateTime, optionsOf, refName, tagBadges } from "./common";
+import { enumBadge, formatDateTime, optionsOf, refName } from "./common";
 import {
   applyRefs,
   channelLabelCache,
@@ -34,14 +34,6 @@ export function customerColumns(role: SystemRole | null): GridColumn<CustomerDto
       editable: canUpdate,
       options: optionsOf(customerTypeLabels),
       render: (row) => enumBadge(customerTypeLabels)(row.customerType),
-    },
-    {
-      key: "tagCodes",
-      label: "标签",
-      editor: "multi",
-      editable: canUpdate,
-      options: optionsOf(tagLabels),
-      render: (row) => tagBadges(row.tagCodes),
     },
     { key: "city", label: "城市", editor: "text", editable: canUpdate },
     {
@@ -90,42 +82,6 @@ export function customerColumns(role: SystemRole | null): GridColumn<CustomerDto
       label: "最近跟进",
       editable: false,
       render: (row) => formatDateTime(row.lastFollowedAt),
-    },
-    {
-      key: "wechatChannelsAccount",
-      label: "视频号账号",
-      editor: "text",
-      editable: canUpdate,
-    },
-    {
-      key: "xiaoyuzhouAccount",
-      label: "小宇宙账号",
-      editor: "text",
-      editable: canUpdate,
-    },
-    {
-      key: "xiaohongshuAccount",
-      label: "小红书账号",
-      editor: "text",
-      editable: canUpdate,
-    },
-    {
-      key: "weiboAccount",
-      label: "微博账号",
-      editor: "text",
-      editable: canUpdate,
-    },
-    {
-      key: "douyinAccount",
-      label: "抖音账号",
-      editor: "text",
-      editable: canUpdate,
-    },
-    {
-      key: "otherSocial",
-      label: "其他社交账号",
-      editor: "text",
-      editable: canUpdate,
     },
     {
       key: "sourceChannels",

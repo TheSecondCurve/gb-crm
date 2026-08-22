@@ -80,8 +80,7 @@ curl -fsSL http://<crm-host>/agent/login.sh | sh
 | --- | --- | --- |
 | id | INTEGER PK | |
 | nickname / real_name / title | TEXT | 昵称（必填）/ 姓名 / 头衔 |
-| phone / wechat / other_social | TEXT | |
-| wechat_channels_account / xiaoyuzhou_account / xiaohongshu_account / weibo_account / douyin_account | TEXT | 各平台账号 |
+| phone / wechat | TEXT | |
 | country / city | TEXT | |
 | origin_story / notes | TEXT | 来历 / 备注 |
 | customer_type | TEXT | 枚举见下，默认 `customer` |
@@ -90,12 +89,9 @@ curl -fsSL http://<crm-host>/agent/login.sh | sh
 | owner_id | INTEGER | 归属人，单值可空 FK → users.id（K39，非 join 表） |
 | created_at / updated_at / created_by / updated_by / deleted_at | | 同上 |
 
-关联（join 表，无主键以外的列，联合主键）：
+社交账号（K41）：`customer_social_accounts(customer_id, platform, account, …审计列)`，platform 枚举见下，同平台可多账号。归属人是 customers 表上的单值可空列（K39，不是 join 表）：`customers.owner_id` → users.id。
 
-- `customer_tags(customer_id, tag)`：标签，tag 枚举见下。
-- `customer_source_channels(customer_id, channel_id)`：来源渠道。
-
-归属人是 customers 表上的单值可空列（K39，不是 join 表）：`customers.owner_id` → users.id。
+来源渠道 join 表：`customer_source_channels(customer_id, channel_id)`。
 
 ### channels（渠道资产）
 
@@ -133,7 +129,7 @@ curl -fsSL http://<crm-host>/agent/login.sh | sh
 - employment_status：`employed` 在职 / `handing_over` 交接中 / `left` 已离职
 - account_status：`enabled` 有效 / `disabled` 失效
 - customer_type：`guest` 嘉宾 / `customer` 客户 / `company` 企业 / `invite` 邀请 / `partner` 合作伙伴
-- tag：`stage_0_1` 业务阶段 0-1 / `stage_1_10` 1-10 / `stage_10_100` 10-100 / `vip` VIP / `ip` IP / `side_hustle` 副业 / `guest` 嘉宾 / `partner` 合作伙伴
+- social_platform：`wechat_channels` 视频号 / `xiaoyuzhou` 小宇宙 / `xiaohongshu` 小红书 / `weibo` 微博 / `douyin` 抖音 / `other` 其他（K41，客户社交账号）
 - platform：`wechat` 微信 / `weibo` 微博 / `xiaohongshu` 小红书 / `douyin` 抖音 / `xiaoyuzhou` 小宇宙 / `other` 其他 / `bilibili` Bilibili / `xigua` 西瓜视频 / `wechat_channels` 微信视频号
 - channel_type：`private` 私域 / `public` 公域 / `private_assistant` 私域助手号 / `public_assistant` 公域助手号 / `fixed_wechat` 固定微信
 - account_type：`public_account` 公域账号 / `private_assistant` 私域助手号 / `fixed_wechat` 固定微信 / `wechat_group` 微信群 / `weibo_group` 微博群 / `xhs_group` 小红书群

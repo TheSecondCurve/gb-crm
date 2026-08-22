@@ -1,6 +1,6 @@
 // customers 表 Drizzle 查询（§3：repo 层，路由/服务不写 SQL）。
 // list 排除软删；COUNT 与列表同一 WHERE（§9）。join 表的批量读与整表替换也在本层。
-// 过滤：tag → join customer_tags；ownerId → customers.owner_id 等值；
+// 过滤：ownerId → customers.owner_id 等值；
 // channelId → 来源渠道（customer_source_channels）包含该渠道即命中。
 import { and, asc, count, desc, eq, inArray, isNull, ne, sql, type SQL } from "drizzle-orm";
 
@@ -9,9 +9,9 @@ import type { CustomerListQuery } from "@gb-crm/shared";
 import type { Db } from "../../db/client.js";
 import {
   channels,
+  customerSocialAccounts,
   customers,
   customerSourceChannels,
-  customerTags,
   users,
 } from "../../db/schema.js";
 import { fuzzyWhere } from "../../lib/fuzzy.js";
@@ -43,11 +43,6 @@ function listWhere(query: CustomerListQuery): SQL | undefined {
   if (fuzzy) conditions.push(fuzzy);
   if (query.customerType !== undefined) {
     conditions.push(eq(customers.customerType, query.customerType));
-  }
-  if (query.tag !== undefined) {
-    conditions.push(
-      sql`${customers.id} IN (SELECT customer_id FROM customer_tags WHERE tag = ${query.tag})`,
-    );
   }
   if (query.ownerId !== undefined) {
     conditions.push(eq(customers.ownerId, query.ownerId));
@@ -181,14 +176,14 @@ export function findLiveChannelIds(db: Db, ids: readonly number[]): Set<number> 
   return new Set(rows.map((r) => r.id));
 }
 
-// ---- join 表：按页批量读（避免 N+1）与整表替换 ----
+// ---- join / 子表：按页批量读（避免 N+1）与整表替换 ----
 
-export function listCustomerTagRows(db: Db, customerIds: readonly number[]) {
+export function listCustomerSocialAccountRows(db: Db, customerIds: readonly number[]) {
   if (customerIds.length === 0) return [];
   return db
     .select()
-    .from(customerTags)
-    .where(inArray(customerTags.customerId, [...customerIds]))
+    .from(customerSocialAccounts)
+    .where(inArray(customerSocialAccounts.customerId, [...customerIds]))
     .all();
 }
 
@@ -201,13 +196,24 @@ export function listCustomerSourceChannelRows(db: Db, customerIds: readonly numb
     .all();
 }
 
-/** 整表替换某客户标签（delete + insert，自动去重；调用方负责事务与枚举校验） */
-export function replaceCustomerTags(db: Db, customerId: number, tags: readonly string[]): void {
-  db.delete(customerTags).where(eq(customerTags.customerId, customerId)).run();
-  const unique = [...new Set(tags)];
-  if (unique.length === 0) return;
-  db.insert(customerTags)
-    .values(unique.map((tag) => ({ customerId, tag })))
+/** 整表替换客户社交账号（K41 值数组；调用方负责事务与审计值注入；platform 枚举由 Zod 挡） */
+export function replaceCustomerSocialAccounts(
+  db: Db,
+  customerId: number,
+  accounts: readonly { platform: string; account: string }[],
+  audit: { createdAt: number; updatedAt: number; createdBy: number | null; updatedBy: number | null },
+): void {
+  db.delete(customerSocialAccounts).where(eq(customerSocialAccounts.customerId, customerId)).run();
+  if (accounts.length === 0) return;
+  db.insert(customerSocialAccounts)
+    .values(
+      accounts.map((a) => ({
+        customerId,
+        platform: a.platform,
+        account: a.account,
+        ...audit,
+      })),
+    )
     .run();
 }
 

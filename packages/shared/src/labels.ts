@@ -9,8 +9,8 @@ import type {
   Platform,
   ProductStatus,
   ProductType,
+  SocialPlatform,
   SystemRole,
-  Tag,
 } from "./enums.js";
 
 // code → 中文 label，全量对应 docs/design.md Appendix A.5（K11：禁止节选）。
@@ -103,13 +103,11 @@ export const customerTypeLabels: Record<CustomerType, string> = {
   partner: "合作伙伴",
 };
 
-export const tagLabels: Record<Tag, string> = {
-  stage_0_1: "业务阶段 0-1",
-  stage_1_10: "1-10",
-  stage_10_100: "10-100",
-  vip: "VIP",
-  ip: "IP",
-  side_hustle: "副业",
-  guest: "嘉宾",
-  partner: "合作伙伴",
+export const socialPlatformLabels: Record<SocialPlatform, string> = {
+  wechat_channels: "视频号",
+  xiaoyuzhou: "小宇宙",
+  xiaohongshu: "小红书",
+  weibo: "微博",
+  douyin: "抖音",
+  other: "其他",
 };
