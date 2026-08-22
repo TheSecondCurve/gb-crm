@@ -133,3 +133,50 @@ export function findLiveUserIds(db: Db, ids: readonly number[]): Set<number> {
     .all();
   return new Set(rows.map((r) => r.id));
 }
+
+// ---- K47 客户总览统计 ----
+
+/** 该客户 live 成交，最新在前（deliveryDate DESC null 后置，并列 id DESC），上限 limit */
+export function listLiveDealsByCustomer(
+  db: Db,
+  customerId: number,
+  limit = 100,
+): DealRow[] {
+  return db
+    .select()
+    .from(deals)
+    .where(and(eq(deals.customerId, customerId), isNull(deals.deletedAt)))
+    .orderBy(desc(deals.deliveryDate), desc(deals.id))
+    .limit(limit)
+    .all();
+}
+
+export function countLiveDealsByCustomer(db: Db, customerId: number): number {
+  return (
+    db
+      .select({ value: count() })
+      .from(deals)
+      .where(and(eq(deals.customerId, customerId), isNull(deals.deletedAt)))
+      .get()?.value ?? 0
+  );
+}
+
+/** stage=paid 的 amountCents 合计（null 金额计 0）；无成交 0 */
+export function paidTotalCentsByCustomer(db: Db, customerId: number): number {
+  const row = db
+    .select({ value: sql<number>`COALESCE(SUM(${deals.amountCents}), 0)` })
+    .from(deals)
+    .where(and(eq(deals.customerId, customerId), eq(deals.stage, "paid"), isNull(deals.deletedAt)))
+    .get();
+  return Number(row?.value ?? 0);
+}
+
+/** 最近成交时间：MAX(COALESCE(delivery_date, created_at))；无成交 null */
+export function lastDealAtByCustomer(db: Db, customerId: number): number | null {
+  const row = db
+    .select({ value: sql<number>`MAX(COALESCE(${deals.deliveryDate}, ${deals.createdAt}))` })
+    .from(deals)
+    .where(and(eq(deals.customerId, customerId), isNull(deals.deletedAt)))
+    .get();
+  return row?.value === null || row?.value === undefined ? null : Number(row.value);
+}

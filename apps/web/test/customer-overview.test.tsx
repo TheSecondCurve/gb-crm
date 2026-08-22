@@ -1,0 +1,183 @@
+// 客户总览页（K45–K48）：区块渲染 / AI 打标 POST / 手动标签 PATCH / 标签移除。
+import { describe, expect, it } from "vitest";
+import { fireEvent, screen, waitFor } from "@testing-library/react";
+
+import { adminMe, assistantMe, mockFetch, renderApp } from "./helpers";
+import type { CustomerOverviewDto } from "../src/api/types";
+
+const tags = [
+  { id: 1, name: "创业者", scope: "identity", sort: 1, enabled: true },
+  { id: 2, name: "已成交", scope: "stage", sort: 1, enabled: true },
+  { id: 3, name: "商学院", scope: "interest", sort: 1, enabled: true },
+];
+
+function makeOverview(over: Partial<CustomerOverviewDto> = {}): CustomerOverviewDto {
+  return {
+    customer: {
+      id: 1,
+      nickname: "张三",
+      realName: null,
+      title: "CEO",
+      phone: "13800000000",
+      wechat: null,
+      country: null,
+      city: "上海",
+      industry: "餐饮",
+      originStory: "白手起家创业",
+      notes: null,
+      customerType: "customer",
+      wechatOpenid: null,
+      lastFollowedAt: null,
+      socialAccounts: [],
+      tags: [{ id: 1, name: "创业者", scope: "identity" }],
+      owner: { id: 1, nickname: "老王" },
+      sourceChannels: [],
+      createdAt: 1000,
+      updatedAt: 2000,
+      createdBy: null,
+      updatedBy: null,
+    },
+    stats: { dealCount: 2, paidTotalCents: 19900, lastDealAt: 1500 },
+    deals: [
+      {
+        id: 11,
+        customerId: 1,
+        productId: 3,
+        ownerId: null,
+        stage: "paid",
+        orderNo: "A001",
+        paymentRemark: null,
+        deliveryDate: 1600,
+        amountCents: 9900,
+        afterTaxRatio: null,
+        customer: { id: 1, nickname: "张三", city: "上海" },
+        product: { id: 3, name: "增长圈" },
+        owner: null,
+        createdAt: 1500,
+        updatedAt: 1600,
+        createdBy: null,
+        updatedBy: null,
+      },
+    ],
+    circles: [
+      {
+        id: 21,
+        deliveryTypeId: 5,
+        deliveryType: { id: 5, name: "私董圈子", kind: "circle" },
+        customers: [{ id: 1, nickname: "张三" }],
+        startsAt: 1700,
+        endsAt: null,
+        remark: null,
+        createdAt: 1600,
+        updatedAt: 1700,
+        createdBy: null,
+        updatedBy: null,
+      },
+    ],
+    ...over,
+  };
+}
+
+interface Call {
+  url: string;
+  method: string;
+  body?: string;
+}
+
+function mockOverviewApi(me: typeof adminMe, over: Partial<CustomerOverviewDto> = {}) {
+  const calls: Call[] = [];
+  mockFetch((url, init) => {
+    const method = init?.method ?? "GET";
+    calls.push({ url, method, body: init?.body });
+    if (url === "/api/v1/auth/me") return { status: 200, body: { data: me } };
+    if (url.startsWith("/api/v1/tags")) {
+      return {
+        status: 200,
+        body: { data: tags, meta: { page: 1, pageSize: 100, total: tags.length } },
+      };
+    }
+    if (url.includes("/customers/1/overview")) {
+      return { status: 200, body: { data: makeOverview(over) } };
+    }
+    if (url.startsWith("/api/v1/customers") && method === "PATCH") {
+      return { status: 200, body: { data: { ...makeOverview(over).customer, updatedAt: 2001 } } };
+    }
+    if (url.includes("/customers/1/tags/generate") && method === "POST") {
+      return { status: 200, body: { data: makeOverview(over).customer } };
+    }
+    throw new Error(`unexpected fetch: ${method} ${url}`);
+  });
+  return calls;
+}
+
+describe("客户总览页", () => {
+  it("渲染基本信息 / 统计 / 消费记录 / 当前圈子", async () => {
+    mockOverviewApi(adminMe);
+    renderApp("/customers/1");
+
+    expect(await screen.findByText("张三")).toBeTruthy();
+    expect(screen.getByText("行业：餐饮")).toBeTruthy();
+    expect(screen.getByText("创业者")).toBeTruthy(); // 标签徽章
+    expect(screen.getByText("成交笔数")).toBeTruthy();
+    expect(screen.getByText("199.00")).toBeTruthy(); // 累计实付 元
+    expect(screen.getByText("增长圈")).toBeTruthy(); // 消费记录产品
+    expect(screen.getByText("私董圈子")).toBeTruthy(); // 当前圈子
+  });
+
+  it("AI 生成标签：点击 POST /tags/generate", async () => {
+    const calls = mockOverviewApi(adminMe);
+    renderApp("/customers/1");
+    await screen.findByText("张三");
+
+    fireEvent.click(screen.getByRole("button", { name: "AI 生成标签" }));
+    await waitFor(() =>
+      expect(
+        calls.some((c) => c.method === "POST" && c.url.includes("/customers/1/tags/generate")),
+      ).toBe(true),
+    );
+  });
+
+  it("手动添加标签：点选可加标签后「保存」→ PATCH tagIds 并集", async () => {
+    const calls = mockOverviewApi(adminMe);
+    renderApp("/customers/1");
+    await screen.findByText("张三");
+
+    fireEvent.click(screen.getByRole("button", { name: "+ 已成交" }));
+    fireEvent.click(screen.getByRole("button", { name: "保存" }));
+
+    await waitFor(() => {
+      const patch = calls.find((c) => c.method === "PATCH" && c.url === "/api/v1/customers/1");
+      expect(patch).toBeTruthy();
+      // 现有标签 [创业者(id1)] ∪ 新选 [已成交(id2)]
+      expect(JSON.parse(String(patch?.body))).toEqual({ tagIds: [1, 2], updatedAt: 2000 });
+    });
+  });
+
+  it("移除标签：点 chip × → PATCH 去掉该标签", async () => {
+    const calls = mockOverviewApi(adminMe);
+    renderApp("/customers/1");
+    await screen.findByText("张三");
+
+    fireEvent.click(screen.getByRole("button", { name: "移除标签 创业者" }));
+    await waitFor(() => {
+      const patch = calls.find((c) => c.method === "PATCH" && c.url === "/api/v1/customers/1");
+      expect(patch).toBeTruthy();
+      expect(JSON.parse(String(patch?.body))).toEqual({ tagIds: [], updatedAt: 2000 });
+    });
+  });
+
+  it("assistant：无 AI 生成按钮、无移除/添加标签（customers.update 其实有，但页面按 canUpdate 显示——assistant 有 update）", async () => {
+    // assistant 有 customers.update，因此 AI/标签操作可见（与后端权限一致）
+    mockOverviewApi(assistantMe);
+    renderApp("/customers/1");
+    expect(await screen.findByText("张三")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "AI 生成标签" })).toBeTruthy();
+  });
+
+  it("空成交/空圈子显示占位文案", async () => {
+    mockOverviewApi(adminMe, { stats: { dealCount: 0, paidTotalCents: 0, lastDealAt: null }, deals: [], circles: [] });
+    renderApp("/customers/1");
+    expect(await screen.findByText("暂无成交记录")).toBeTruthy();
+    expect(screen.getByText("暂无当前有效的交付圈子")).toBeTruthy();
+  });
+});

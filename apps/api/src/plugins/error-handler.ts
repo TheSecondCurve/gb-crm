@@ -14,6 +14,7 @@ export type ErrorCode =
   | "CONFLICT"
   | "RATE_LIMITED"
   | "SQL_ERROR"
+  | "LLM_ERROR"
   | "INTERNAL";
 
 export class ApiError extends Error {
@@ -44,6 +45,9 @@ export const conflict = (message: string, data?: unknown): ApiError =>
 
 export const unprocessable = (message: string, details?: unknown): ApiError =>
   new ApiError(422, "VALIDATION", message, details);
+
+/** LLM 上游失败（K46：网络/超时/不可解析），502 网关语义，message 可直接 Toast */
+export const llmError = (message: string): ApiError => new ApiError(502, "LLM_ERROR", message);
 
 // Fastify 自带错误（限流 429、body 解析 400 等）→ 信封映射；400 统一归并到 422 VALIDATION。
 const STATUS_MAP: Record<number, { code: ErrorCode; message: string }> = {

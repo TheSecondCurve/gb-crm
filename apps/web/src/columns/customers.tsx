@@ -4,7 +4,14 @@ import { can, customerTypeLabels, type SystemRole } from "@gb-crm/shared";
 
 import type { ChannelRefDto, CustomerDto, UserRefDto } from "../api/types";
 import type { GridColumn } from "../components/DataGrid/DataGrid";
-import { enumBadge, formatDateTime, optionsOf, refName } from "./common";
+import {
+  badge,
+  enumBadge,
+  formatDateTime,
+  optionsOf,
+  refName,
+  type BadgeTone,
+} from "./common";
 import {
   applyRefs,
   channelLabelCache,
@@ -16,6 +23,14 @@ import {
 
 const makeUserRef = (id: number, nickname: string): UserRefDto => ({ id, nickname });
 const makeChannelRef = (id: number, name: string): ChannelRefDto => ({ id, name });
+
+/** K45 标签徽章按 scope 上色（身份/兴趣 accent，阶段 plain，其它 muted） */
+const TAG_SCOPE_TONES: Record<string, BadgeTone> = {
+  identity: "accent",
+  stage: "plain",
+  interest: "accent",
+  other: "muted",
+};
 
 /** Appendix B customers 列规格；editable 由 can(role, …) 算好 */
 export function customerColumns(role: SystemRole | null): GridColumn<CustomerDto>[] {
@@ -36,6 +51,17 @@ export function customerColumns(role: SystemRole | null): GridColumn<CustomerDto
       render: (row) => enumBadge(customerTypeLabels)(row.customerType),
     },
     { key: "city", label: "城市", editor: "text", editable: canUpdate },
+    { key: "industry", label: "行业", editor: "text", editable: canUpdate },
+    {
+      key: "tags",
+      label: "标签",
+      editable: false,
+      render: (row) => (
+        <span className="tag-list">
+          {row.tags.map((t) => badge(t.name, TAG_SCOPE_TONES[t.scope] ?? "muted"))}
+        </span>
+      ),
+    },
     {
       key: "owner",
       label: "归属人",

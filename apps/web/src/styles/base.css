@@ -103,6 +103,9 @@ button:disabled { color: var(--text-3); cursor: not-allowed; }
 
 .badge-muted { border-color: var(--hairline); color: var(--text-3); }
 
+/* K45：客户标签徽章列表（列表列 / 总览页 / 设置页共用） */
+.tag-list { display: inline-flex; flex-wrap: wrap; gap: 4px; align-items: center; }
+
 .page-head { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 20px; }
 
 .search-bar, .create-bar { display: flex; gap: 8px; }
@@ -442,3 +445,27 @@ select:focus, textarea:focus { outline: 1px solid var(--ink); }
 /* 客户紧凑表：昵称列固定，其余列白底 */
 .circle-customer-table td { background: #fff; }
 .circle-customer-table th.matrix-row-head { font-weight: 600; }
+
+/* ---- K45–K48：客户总览页 / 系统设置页 ---- */
+
+.detail-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 4px 16px; flex: 1; }
+
+.stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 16px; }
+
+.stat-item { display: flex; flex-direction: column; gap: 2px; }
+
+.stat-value { font-size: 20px; font-weight: 600; }
+
+.stat-label { font-size: 12px; color: var(--text-3); }
+
+.muted-text { color: var(--muted); font-size: 13px; }
+
+.link-button { padding: 0; border: none; background: none; color: var(--accent); font-size: 13px; cursor: pointer; margin-left: 8px; }
+
+.chip-remove { margin-left: 4px; border: none; background: none; color: var(--text-3); cursor: pointer; font-size: 13px; padding: 0 2px; }
+
+.chip-add { cursor: pointer; }
+
+.settings-section { display: flex; flex-direction: column; gap: 16px; }
+
+.settings-form { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px 16px; }

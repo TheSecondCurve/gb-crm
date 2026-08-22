@@ -195,6 +195,7 @@ export const customers = sqliteTable(
     wechat: text("wechat"),
     country: text("country"),
     city: text("city"),
+    industry: text("industry"),
     originStory: text("origin_story"),
     notes: text("notes"),
     customerType: text("customer_type").notNull().default("customer"),
@@ -255,6 +256,65 @@ export const customerSourceChannels = sqliteTable(
       .references(() => channels.id, { onDelete: "cascade" }),
   },
   (t) => [primaryKey({ columns: [t.customerId, t.channelId] })],
+);
+
+// K45 标签词表：可维护（设置页 CRUD），软删；AI 打标只能从词表选词。
+export const tags = sqliteTable(
+  "tags",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    name: text("name").notNull(),
+    scope: text("scope").notNull().default("other"),
+    sort: integer("sort").notNull().default(0),
+    enabled: integer("enabled").notNull().default(1),
+    createdAt: integer("created_at").notNull(),
+    updatedAt: integer("updated_at").notNull(),
+    createdBy: integer("created_by").references(() => users.id, { onDelete: "set null" }),
+    updatedBy: integer("updated_by").references(() => users.id, { onDelete: "set null" }),
+    deletedAt: integer("deleted_at"),
+  },
+  (t) => [
+    check("tags_scope_check", sql`"scope" IN ('identity','stage','interest','other')`),
+    check("tags_enabled_check", sql`"enabled" IN (0, 1)`),
+    // name：live unique，软删后释放可复用
+    uniqueIndex("tags_name_live_uq")
+      .on(t.name)
+      .where(sql`"deleted_at" IS NULL`),
+  ],
+);
+
+// K45 客户 ↔ 标签 M2M（K24 关系数组语义；软删标签后 join 行保留、不展开）
+export const customerTags = sqliteTable(
+  "customer_tags",
+  {
+    customerId: integer("customer_id")
+      .notNull()
+      .references(() => customers.id, { onDelete: "cascade" }),
+    tagId: integer("tag_id")
+      .notNull()
+      .references(() => tags.id, { onDelete: "cascade" }),
+    createdAt: integer("created_at").notNull(),
+    createdBy: integer("created_by").references(() => users.id, { onDelete: "set null" }),
+  },
+  (t) => [
+    primaryKey({ columns: [t.customerId, t.tagId] }),
+    index("customer_tags_tag_id_idx").on(t.tagId),
+  ],
+);
+
+// K46 LLM 打标配置单行表（OpenAI 兼容接口；apiKey 明文存库，响应只回 masked）
+export const aiConfig = sqliteTable(
+  "ai_config",
+  {
+    id: integer("id").primaryKey(),
+    provider: text("provider"),
+    baseUrl: text("base_url"),
+    apiKey: text("api_key"),
+    model: text("model"),
+    updatedAt: integer("updated_at"),
+    updatedBy: integer("updated_by").references(() => users.id, { onDelete: "set null" }),
+  },
+  (t) => [check("ai_config_id_check", sql`"id" = 1`)],
 );
 
 // K42 成交表：客户必填（创建）；意向产品/负责人单值可空；stage 枚举；delivery_date epoch ms。
