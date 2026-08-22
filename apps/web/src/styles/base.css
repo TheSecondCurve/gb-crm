@@ -229,3 +229,19 @@ select:focus, textarea:focus { outline: 1px solid var(--ink); }
 .cell-relation-option:hover { background: var(--bg); }
 
 .cell-relation-option.active { color: var(--accent); }
+
+/* ---- RecordFormModal：新增/修改全字段表单（多列近全屏弹窗） ---- */
+
+.modal-form { width: min(1120px, 94vw); max-height: 88vh; }
+
+/* 多列网格：短字段（text/select）自适应多列；textarea/multi/relation 占满整行 */
+.form-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); column-gap: 16px; }
+
+.form-grid .field-span { grid-column: 1 / -1; }
+
+.form-grid .modal-actions { margin-top: 4px; }
+
+/* multi / relation 的选项区：边框盒 + 内部滚动，避免长选项撑爆弹窗 */
+.form-picker { display: flex; flex-direction: column; gap: 6px; }
+
+.form-checks { display: flex; flex-wrap: wrap; gap: 6px 14px; max-height: 132px; overflow-y: auto; padding: 8px 10px; border: 1px solid var(--hairline); border-radius: 4px; }

@@ -16,6 +16,7 @@ import { optionsOf } from "../columns/common";
 import { DataGrid, Pagination } from "../components/DataGrid/DataGrid";
 import { ConfirmDialog } from "../components/ConfirmDialog";
 import { Modal } from "../components/Modal";
+import { RecordFormModal } from "../components/RecordFormModal";
 import { SearchBar } from "../components/SearchBar";
 import { useToast } from "../components/Toast";
 import { focusEditableCell, useResourceList } from "./useResourceList";
@@ -190,12 +191,14 @@ export function UsersPage() {
   const list = useResourceList<UserDto>("users", "accountStatus");
   const columns = useMemo(() => userColumns(role), [role]);
   const [creating, setCreating] = useState(false);
+  const [editing, setEditing] = useState<UserDto | null>(null);
   const [passwordTarget, setPasswordTarget] = useState<UserDto | null>(null);
   const [deleting, setDeleting] = useState<UserDto | null>(null);
   const [busy, setBusy] = useState(false);
 
   // users 全部写操作仅 admin
   const canCreate = can(role, "users", "create");
+  const canUpdate = can(role, "users", "update");
   const canDelete = can(role, "users", "delete");
   const canSetPassword = can(role, "users", "setPassword");
 
@@ -214,6 +217,27 @@ export function UsersPage() {
       if (res?.data) focusEditableCell(res.data.id, "nickname");
     } catch (err) {
       showToast(err instanceof ApiError ? err.message : "创建失败，请稍后重试");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  // 修改：全字段表单弹窗，PATCH 只带变更键（OCC 由弹窗附 updatedAt）；密码走「设置密码」
+  const updateUser = async (id: number, body: Record<string, unknown>) => {
+    setBusy(true);
+    try {
+      await patchRow(id, body);
+      setEditing(null);
+      await list.invalidate();
+      showToast("已保存");
+    } catch (err) {
+      showToast(
+        err instanceof ApiError && err.status === 409
+          ? "该行已被他人更新，请刷新后重试"
+          : err instanceof ApiError
+            ? err.message
+            : "保存失败，请稍后重试",
+      );
     } finally {
       setBusy(false);
     }
@@ -246,7 +270,7 @@ export function UsersPage() {
     }
   };
 
-  const hasActions = canSetPassword || canDelete;
+  const hasActions = canUpdate || canSetPassword || canDelete;
 
   return (
     <>
@@ -288,6 +312,11 @@ export function UsersPage() {
               hasActions
                 ? (row) => (
                     <span className="row-actions">
+                      {canUpdate && (
+                        <button type="button" onClick={() => setEditing(row)}>
+                          修改
+                        </button>
+                      )}
                       {canSetPassword && (
                         <button type="button" onClick={() => setPasswordTarget(row)}>
                           设置密码
@@ -315,6 +344,17 @@ export function UsersPage() {
       </div>
       {creating && (
         <CreateUserModal busy={busy} onClose={() => setCreating(false)} onSubmit={createUser} />
+      )}
+      {editing && (
+        <RecordFormModal
+          title={`修改成员：${editing.nickname}`}
+          columns={columns}
+          requiredKeys={["nickname"]}
+          row={editing}
+          busy={busy}
+          onClose={() => setEditing(null)}
+          onSubmit={(body) => updateUser(editing.id, body)}
+        />
       )}
       {passwordTarget && (
         <SetPasswordModal
