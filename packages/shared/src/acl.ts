@@ -28,11 +28,13 @@ export const actionSchema = z.enum([
   "updateOwners",
   "readChannelSecrets",
   "updateChannelSecrets",
+  "impersonate",
 ]);
 export type Action = z.infer<typeof actionSchema>;
 
 // 穷举矩阵（docs/design.md §6）；缺席 = deny。
 // auth.setPassword = 改自己密码（PATCH /auth/password）；users.setPassword = 管理员设他人密码。
+// auth.impersonate = 扮演用户（K49，仅 admin）：切换当前 cookie session 的身份，用于测试「我的运营」。
 const ALL_CHANNEL_ACTIONS: readonly Action[] = [
   "list",
   "read",
@@ -69,7 +71,8 @@ const MATRIX: Record<SystemRole, Readonly<Partial<Record<Resource, readonly Acti
     deliveries: ALL_DELIVERY_ACTIONS,
     tags: ALL_TAG_ACTIONS,
     system: SYSTEM_ACTIONS,
-    auth: ["setPassword"],
+    // K49：扮演用户（act as user）仅 admin
+    auth: ["setPassword", "impersonate"],
   },
   operator: {
     // users 全部写操作仅 admin（operator 只能 list/read）

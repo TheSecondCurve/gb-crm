@@ -29,7 +29,7 @@ const EXPECTED: Record<SystemRole, Partial<Record<Resource, readonly Action[]>>>
     deliveries: ["list", "read", "create", "update", "delete"],
     tags: ["list", "read", "create", "update", "delete"],
     system: ["read", "update"],
-    auth: ["setPassword"],
+    auth: ["setPassword", "impersonate"],
   },
   operator: {
     users: ["list", "read"],
@@ -167,6 +167,13 @@ describe("§6 必测场景", () => {
     for (const role of ["operator", "assistant", null] as const) {
       expect(can(role, "system", "read")).toBe(false);
       expect(can(role, "system", "update")).toBe(false);
+    }
+  });
+
+  it("impersonate 扮演用户：仅 admin（K49）", () => {
+    expect(can("admin", "auth", "impersonate")).toBe(true);
+    for (const role of ["operator", "assistant", null] as const) {
+      expect(can(role, "auth", "impersonate")).toBe(false);
     }
   });
 });

@@ -111,6 +111,7 @@ Workspace 依赖写法：`"@gb-crm/shared": "*"`（npm 不支持 `workspace:*`�
 - 密码 argon2id。登录还要求 `system_role ∈ {admin, operator, assistant}`。
 - Session 最多每 30 分钟 touch 一次（或剩余 idle < 11h）。禁用账户立即删 session **并撤销 PAT**。
 - Agent PAT（K35）与 cookie **并行**：`Authorization: Bearer`；有 Bearer 不回落 cookie。签发：`curl -fsSL http://<host>/agent/login.sh | sh` → `~/.gb-crm/credentials.json`。REST 资源路由 `read`/`write` ∩ `can()`。Skill 在 `skills/gb-crm/`，**不含**密钥。Agent 数据访问走单一自由 SQL 端点 `POST /api/v1/agent/sql`（仅 Bearer PAT，cookie 403）：better-sqlite3 `stmt.readonly` 判读写——只读语句任意 scope/角色放行（含渠道密钥列），写语句必须 write scope + admin；单语句；读上限 1000 行截断。
+- **扮演用户（K49）**：admin 可把当前 cookie session 切到任一可加载用户，用于测试「我的运营」等按人过滤功能。`sessions.impersonated_by` 记录原身份，单层不可嵌套；端点 `/api/v1/auth/impersonate/{targets,:id,stop}` 仅 cookie session（Bearer 403），targets/start 需 `auth.impersonate`，stop 不查角色（会话处于扮演中即准入，否则弱角色无法自行退出）。`/auth/me` 带 `impersonatedBy`。禁止扮演自己；目标须未软删/enabled/有角色。Web 右上角用户菜单「切换身份」，扮演中显示徽标 + 「退出扮演」。
 - 登录限流 10 次/分钟/IP；仅 `TRUST_PROXY=true` 时才信 `X-Forwarded-For`。
 - 权限唯一来源：`packages/shared` 的 `can(role, resource, action)`。缺席 = deny。`role===null` → false。路由用 `requireCan`，不要在 service 再抄一套角色判断。
 - **无行级 ACL**（没有「只看我的客户」的权限收紧；「我的运营」`/my/customers` `/my/deals` 只是 ownerId 固定过滤的列表页，不限制数据可见性）。
