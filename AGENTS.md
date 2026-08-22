@@ -153,7 +153,7 @@ Workspace 依赖写法：`"@gb-crm/shared": "*"`（npm 不支持 `workspace:*`�
 4. **产品目录 `/products`**：类型/状态/是否套餐/价格（分）。
 5. **客户信息 `/customers`**：分页、模糊搜索、来源渠道、归属人（单值 `owner_id`，K39）、社交账号独立表（`customer_social_accounts`，K41，列表页/导出不展示）；预留可空唯一 `wechat_openid`（不接小程序）。导出 Excel：`GET /api/v1/customers/export.xlsx`（exceljs 服务端生成，复用列表同一 WHERE，跟随 q/类型筛选，不分页）。
 6. **成交记录 `/deals`**（K42）：客户（单值 FK 必填）、意向产品、负责人（单值 FK 可空）、阶段（赠送/已付款/退款/已关闭）、订单号、交付日期、支付信息备注；客户城市只读列。assistant 只读。
-7. **交付管理 `/deliveries` + 交付类型 `/delivery-types`**（K44）：交付单（类型 + 客户集合 + 备注，与成交弱关联；客户可手动多选或按产品类型从成交 merge）；交付项（项目维度 / 客户维度——客户维度按客户分组分别打勾 + 备注）；交付类型配置表（名称/说明/默认动作模板，创建交付项时预填）。打勾记完成人/时间，行级 OCC。assistant 只读。
+7. **交付管理 `/deliveries` + 交付类型 `/delivery-types`**（K44）：交付单（类型 + 起止日期（epoch ms，日历输入）+ 客户集合（**可不选**，空交付单）+ 备注，与成交弱关联；客户可手动多选或按意向产品从成交 merge，`/deals` 按 `productId` 过滤）；交付项（项目维度 / 客户维度——客户维度按客户分组分别打勾 + 备注）；交付类型配置表（名称 + 类型 kind 咨询/活动/圈子/其他 + 状态 status 有效/失效 + 说明/默认动作模板，创建交付项时预填）。打勾记完成人/时间，行级 OCC。assistant 只读。
 8. 每张业务表有 `created_at` / `updated_at` / `created_by` / `updated_by`。
 9. **Agent 令牌**：已有用户本机签发 PAT，skill 走单一 SQL 端点 `/api/v1/agent/sql`（K35）。
 

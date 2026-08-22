@@ -104,7 +104,7 @@ export function getDeliveryTypeResult(db: Db, id: number): DeliveryTypeDto {
   return assembleDeliveryType(db, row);
 }
 
-const TYPE_PATCHABLE_KEYS = new Set(["name", "description", "defaultTasks"]);
+const TYPE_PATCHABLE_KEYS = new Set(["name", "kind", "status", "description", "defaultTasks"]);
 
 export function patchDeliveryType(
   db: Db,
@@ -163,13 +163,19 @@ export function createDelivery(db: Db, body: DeliveryWrite, ctx: AuditContext): 
   return inTx(db, (tx) => {
     assertLiveType(tx, body.deliveryTypeId);
     assertLiveCustomers(tx, body.customerIds);
-    const id = insertDelivery(tx, { deliveryTypeId: body.deliveryTypeId, remark: body.remark, ...createAudit(ctx) });
+    const id = insertDelivery(tx, {
+      deliveryTypeId: body.deliveryTypeId,
+      startsAt: body.startsAt ?? null,
+      endsAt: body.endsAt ?? null,
+      remark: body.remark,
+      ...createAudit(ctx),
+    });
     replaceDeliveryCustomers(tx, id, body.customerIds);
     return assembleDelivery(tx, getDeliveryByIdAny(tx, id)!);
   });
 }
 
-const DELIVERY_PATCHABLE_KEYS = new Set(["deliveryTypeId", "remark"]);
+const DELIVERY_PATCHABLE_KEYS = new Set(["deliveryTypeId", "startsAt", "endsAt", "remark"]);
 
 export function patchDelivery(
   db: Db,

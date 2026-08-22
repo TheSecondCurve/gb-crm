@@ -5,7 +5,7 @@ import { useNavigate } from "react-router-dom";
 import { api, ApiError } from "../api/client";
 import type { DeliveryDto } from "../api/types";
 import { useAuth } from "../auth/AuthProvider";
-import { formatDateTime } from "../columns/common";
+import { dateToEpochMs, epochMsToDate, formatDateTime } from "../columns/common";
 import { DataGrid, Pagination } from "../components/DataGrid/DataGrid";
 import { ConfirmDialog } from "../components/ConfirmDialog";
 import { DeliveryFormModal } from "../components/DeliveryFormModal";
@@ -13,6 +13,36 @@ import { SearchBar } from "../components/SearchBar";
 import { useToast } from "../components/Toast";
 import { useResourceList } from "./useResourceList";
 import type { GridColumn } from "../components/DataGrid/DataGrid";
+
+const DATE_KEYS = new Set(["startsAt", "endsAt"]);
+
+/** 起止日期编辑输入 YYYY-MM-DD → epoch ms；已是数字（epoch ms）直接跳过；空 = 清空（null）；非法 → 抛错 */
+function convertDates(body: Record<string, unknown>): Record<string, unknown> {
+  let next = body;
+  for (const key of DATE_KEYS) {
+    if (!(key in next)) continue;
+    const v = next[key];
+    if (typeof v === "number") continue;
+    const ms = dateToEpochMs(v);
+    if (ms === null && String(v ?? "").trim() !== "") {
+      throw new Error("日期需为 YYYY-MM-DD 格式");
+    }
+    next = { ...next, [key]: ms };
+  }
+  return next;
+}
+
+function dateColumn(key: "startsAt" | "endsAt", label: string, canUpdate: boolean): GridColumn<DeliveryDto> {
+  return {
+    key,
+    label,
+    editor: "date",
+    editable: canUpdate,
+    getValue: (row) => epochMsToDate(row[key]),
+    render: (row) => epochMsToDate(row[key]),
+    applyOptimistic: (row, v) => ({ ...row, [key]: dateToEpochMs(v) }),
+  };
+}
 
 function deliveryColumns(role: SystemRole | null): GridColumn<DeliveryDto>[] {
   const canUpdate = can(role, "deliveries", "update");
@@ -29,6 +59,8 @@ function deliveryColumns(role: SystemRole | null): GridColumn<DeliveryDto>[] {
       editable: false,
       render: (row: DeliveryDto) => `${row.customers.length} 人`,
     },
+    dateColumn("startsAt", "开始日期", canUpdate),
+    dateColumn("endsAt", "结束日期", canUpdate),
     {
       key: "remark",
       label: "备注",
@@ -69,7 +101,7 @@ export function DeliveriesPage() {
   const canDelete = can(role, "deliveries", "delete");
 
   const patchRow = useCallback(async (id: number, body: Record<string, unknown>) => {
-    const res = await api.patch<{ data: DeliveryDto }>(`/deliveries/${id}`, body);
+    const res = await api.patch<{ data: DeliveryDto }>(`/deliveries/${id}`, convertDates(body));
     return res!.data;
   }, []);
 
@@ -79,7 +111,7 @@ export function DeliveriesPage() {
       if (existing) {
         await patchRow(existing.id, body);
       } else {
-        await api.post<{ data: DeliveryDto }>("/deliveries", body);
+        await api.post<{ data: DeliveryDto }>("/deliveries", convertDates(body));
       }
       setCreating(false);
       setEditing(null);

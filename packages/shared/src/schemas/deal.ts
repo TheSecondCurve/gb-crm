@@ -33,7 +33,7 @@ export const dealSortSchema = z.enum(["updatedAt", "createdAt", "deliveryDate"])
 export const dealListQuerySchema = pageQuerySchema.extend({
   sort: dealSortSchema.optional(),
   stage: dealStageSchema.optional(),
-  // K44：按产品类型过滤成交（前端「按产品类型 merge 客户」依赖）
+  // K44：按意向产品类型过滤成交（前端「按意向产品 merge 客户」依赖）
   productType: productTypeSchema.optional(),
   customerId: z.coerce.number().int().positive().optional(),
   productId: z.coerce.number().int().positive().optional(),

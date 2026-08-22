@@ -1,9 +1,10 @@
 import { useCallback, useMemo, useState } from "react";
-import { can, type SystemRole } from "@gb-crm/shared";
+import { can, deliveryTypeKindLabels, deliveryTypeStatusLabels, type SystemRole } from "@gb-crm/shared";
 
 import { api, ApiError } from "../api/client";
 import type { DeliveryTypeDto } from "../api/types";
 import { useAuth } from "../auth/AuthProvider";
+import { optionsOf } from "../columns/common";
 import { DataGrid, Pagination } from "../components/DataGrid/DataGrid";
 import { ConfirmDialog } from "../components/ConfirmDialog";
 import { RecordFormModal } from "../components/RecordFormModal";
@@ -12,11 +13,27 @@ import { useToast } from "../components/Toast";
 import { focusEditableCell, useResourceList } from "./useResourceList";
 import type { GridColumn } from "../components/DataGrid/DataGrid";
 
-/** K44 交付类型配置表页：名称 + 说明 + 默认动作模板（多行文本，每行一个动作） */
+/** K44 交付类型配置表页：名称 + 分类 + 状态 + 说明 + 默认动作模板（多行文本，每行一个动作） */
 function deliveryTypeColumns(role: SystemRole | null): GridColumn<DeliveryTypeDto>[] {
   const canUpdate = can(role, "deliveries", "update");
   return [
     { key: "name", label: "类型名称", editor: "text", editable: canUpdate },
+    {
+      key: "kind",
+      label: "类型",
+      editor: "select",
+      editable: canUpdate,
+      options: optionsOf(deliveryTypeKindLabels),
+      render: (row: DeliveryTypeDto) => deliveryTypeKindLabels[row.kind as keyof typeof deliveryTypeKindLabels] ?? row.kind,
+    },
+    {
+      key: "status",
+      label: "状态",
+      editor: "select",
+      editable: canUpdate,
+      options: optionsOf(deliveryTypeStatusLabels),
+      render: (row: DeliveryTypeDto) => deliveryTypeStatusLabels[row.status as keyof typeof deliveryTypeStatusLabels] ?? row.status,
+    },
     { key: "description", label: "说明", editor: "textarea", editable: canUpdate },
     {
       key: "defaultTasks",

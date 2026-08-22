@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 
-export type GridEditorType = "text" | "textarea" | "select" | "multi" | "relation" | "relation-one";
+export type GridEditorType = "text" | "textarea" | "select" | "multi" | "relation" | "relation-one" | "date";
 
 export interface RelationOption {
   id: number;

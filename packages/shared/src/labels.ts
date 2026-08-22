@@ -6,6 +6,8 @@ import type {
   CustomerType,
   DealStage,
   DeliverableDimension,
+  DeliveryTypeKind,
+  DeliveryTypeStatus,
   EmploymentStatus,
   JobTitle,
   Platform,
@@ -124,4 +126,16 @@ export const dealStageLabels: Record<DealStage, string> = {
 export const deliverableDimensionLabels: Record<DeliverableDimension, string> = {
   project: "项目",
   customer: "客户",
+};
+
+export const deliveryTypeKindLabels: Record<DeliveryTypeKind, string> = {
+  consulting: "咨询类",
+  activity: "活动类",
+  circle: "圈子类",
+  other: "其他类",
+};
+
+export const deliveryTypeStatusLabels: Record<DeliveryTypeStatus, string> = {
+  active: "有效",
+  inactive: "失效",
 };

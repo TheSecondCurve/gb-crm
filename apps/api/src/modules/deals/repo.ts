@@ -27,7 +27,7 @@ function listWhere(query: DealListQuery): SQL | undefined {
   const fuzzy = fuzzyWhere(query.q ?? "", SEARCH_COLUMNS);
   if (fuzzy) conditions.push(fuzzy);
   if (query.stage !== undefined) conditions.push(eq(deals.stage, query.stage));
-  // K44：按意向产品类型过滤成交（前端「按产品类型 merge 客户」依赖）
+  // K44：按意向产品（productId 等值）过滤成交（前端「按意向产品 merge 客户」依赖）
   if (query.productType !== undefined) {
     conditions.push(
       sql`EXISTS (

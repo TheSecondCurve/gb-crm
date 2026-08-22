@@ -114,6 +114,10 @@ export interface DealDto {
 export interface DeliveryTypeDto {
   id: number;
   name: string;
+  /** 分类：咨询类/活动类/圈子类/其他类 */
+  kind: string;
+  /** 状态：有效/失效 */
+  status: string;
   description: string | null;
   /** 多行文本，每行一个默认动作；创建交付项时预填模板 */
   defaultTasks: string | null;
@@ -123,12 +127,15 @@ export interface DeliveryTypeDto {
   updatedBy: UserRefDto | null;
 }
 
-/** 交付单（K44：类型 + 客户集合 + 备注） */
+/** 交付单（K44：类型 + 客户集合 + 备注 + 起止日期） */
 export interface DeliveryDto {
   id: number;
   deliveryTypeId: number;
   deliveryType: { id: number; name: string } | null;
   customers: { id: number; nickname: string }[];
+  /** epoch ms（本地时区当天零点），可空 */
+  startsAt: number | null;
+  endsAt: number | null;
   remark: string | null;
   createdAt: number;
   updatedAt: number;

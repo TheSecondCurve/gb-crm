@@ -143,27 +143,49 @@ describe("RBAC（K44：deliveries 统一 resource，assistant 只读）", () => 
 });
 
 describe("delivery-types 配置表", () => {
-  it("CRUD：默认动作模板读写；PATCH 只改一列；软删", async () => {
+  it("CRUD：分类 kind/状态 status + 默认动作模板读写；PATCH 只改一列；软删", async () => {
     const { cookie } = await loginAsRole("admin");
     const created = await post("/api/v1/delivery-types", cookie, {
       name: "线上连麦",
+      kind: "activity",
+      status: "active",
       description: "直播类",
       defaultTasks: "建直播间\n预告",
     });
     expect(created.statusCode).toBe(201);
     const t = created.json().data;
+    expect(t.kind).toBe("activity");
+    expect(t.status).toBe("active");
     expect(t.defaultTasks).toBe("建直播间\n预告");
 
     clock.t += 1000;
     const updated = await patch(`/api/v1/delivery-types/${t.id}`, cookie, {
+      status: "inactive",
       description: "直播+录播",
       updatedAt: t.updatedAt,
     });
+    expect(updated.json().data.status).toBe("inactive");
+    expect(updated.json().data.kind).toBe("activity");
     expect(updated.json().data.description).toBe("直播+录播");
     expect(updated.json().data.defaultTasks).toBe("建直播间\n预告");
 
     expect((await del(`/api/v1/delivery-types/${t.id}`, cookie)).statusCode).toBe(204);
     expect((await get(`/api/v1/delivery-types/${t.id}`, cookie)).statusCode).toBe(404);
+  });
+
+  it("新建不传 kind/status → 默认 other/active；非法枚举 → 422", async () => {
+    const { cookie } = await loginAsRole("admin");
+    const created = await post("/api/v1/delivery-types", cookie, { name: "默认分类" });
+    expect(created.statusCode).toBe(201);
+    expect(created.json().data.kind).toBe("other");
+    expect(created.json().data.status).toBe("active");
+
+    expect(
+      (await post("/api/v1/delivery-types", cookie, { name: "x", kind: "bogus" })).statusCode,
+    ).toBe(422);
+    expect(
+      (await post("/api/v1/delivery-types", cookie, { name: "x", status: "bogus" })).statusCode,
+    ).toBe(422);
   });
 
   it("删除被交付单引用的类型 → 422；q 搜 name/description", async () => {
@@ -179,13 +201,49 @@ describe("delivery-types 配置表", () => {
 });
 
 describe("deliveries 交付单", () => {
-  it("创建：类型必填、客户至少一个；客户/类型不存在 → 422", async () => {
+  it("创建：类型必填；客户可空（空交付单）；客户/类型不存在 → 422", async () => {
     const { cookie } = await loginAsRole("admin");
     expect((await post("/api/v1/deliveries", cookie, {})).statusCode).toBe(422);
     const typeId = (await post("/api/v1/delivery-types", cookie, { name: "T" })).json().data.id;
-    expect((await post("/api/v1/deliveries", cookie, { deliveryTypeId: typeId, customerIds: [] })).statusCode).toBe(422);
+    // 空客户集合允许：创建没有客户的交付单
+    const empty = await post("/api/v1/deliveries", cookie, { deliveryTypeId: typeId, customerIds: [] });
+    expect(empty.statusCode).toBe(201);
+    expect(empty.json().data.customers).toEqual([]);
     expect((await post("/api/v1/deliveries", cookie, { deliveryTypeId: 9999, customerIds: [1] })).statusCode).toBe(422);
     expect((await post("/api/v1/deliveries", cookie, { deliveryTypeId: typeId, customerIds: [9999] })).statusCode).toBe(422);
+  });
+
+  it("起止日期：创建读写；PATCH 缺席不动、null 清空", async () => {
+    const { cookie, typeId } = await seedTypeAndDelivery(1);
+    const created = await post("/api/v1/deliveries", cookie, {
+      deliveryTypeId: typeId,
+      customerIds: [],
+      startsAt: 1700000000000,
+      endsAt: 1700600000000,
+    });
+    expect(created.statusCode).toBe(201);
+    expect(created.json().data.startsAt).toBe(1700000000000);
+    expect(created.json().data.endsAt).toBe(1700600000000);
+
+    // 缺席不动
+    clock.t += 1000;
+    const patched = await patch(`/api/v1/deliveries/${created.json().data.id}`, cookie, {
+      startsAt: 1700100000000,
+      updatedAt: created.json().data.updatedAt,
+    });
+    expect(patched.statusCode).toBe(200);
+    expect(patched.json().data.startsAt).toBe(1700100000000);
+    expect(patched.json().data.endsAt).toBe(1700600000000);
+
+    // null 清空
+    clock.t += 1000;
+    const cleared = await patch(`/api/v1/deliveries/${created.json().data.id}`, cookie, {
+      startsAt: null,
+      updatedAt: patched.json().data.updatedAt,
+    });
+    expect(cleared.statusCode).toBe(200);
+    expect(cleared.json().data.startsAt).toBeNull();
+    expect(cleared.json().data.endsAt).toBe(1700600000000);
   });
 
   it("客户集合整表替换：[] 清空 / 缺席不动；q 搜客户昵称；类型过滤", async () => {
@@ -415,7 +473,7 @@ describe("delivery_tasks 动作清单", () => {
   });
 });
 
-describe("deals productType 过滤（K44 按产品类型 merge 客户依赖）", () => {
+describe("deals productId/productType 过滤（K44 按意向产品 merge 客户依赖）", () => {
   it("productType=knowledge 只返回该类型产品的成交", async () => {
     const { cookie } = await loginAsRole("admin");
     const c1 = seedCustomer(tmp.db, "客户1");

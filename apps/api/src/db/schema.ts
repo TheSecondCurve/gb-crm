@@ -288,12 +288,14 @@ export const deals = sqliteTable(
   ],
 );
 
-// K44 交付类型配置表：分类 + 默认动作模板（多行文本，创建交付项时预填）。
+// K44 交付类型配置表：分类 kind + 状态 status + 默认动作模板（多行文本，创建交付项时预填）。
 export const deliveryTypes = sqliteTable(
   "delivery_types",
   {
     id: integer("id").primaryKey({ autoIncrement: true }),
     name: text("name").notNull(),
+    kind: text("kind").notNull().default("other"),
+    status: text("status").notNull().default("active"),
     description: text("description"),
     defaultTasks: text("default_tasks"),
     createdAt: integer("created_at").notNull(),
@@ -302,9 +304,13 @@ export const deliveryTypes = sqliteTable(
     updatedBy: integer("updated_by").references(() => users.id, { onDelete: "set null" }),
     deletedAt: integer("deleted_at"),
   },
+  () => [
+    check("delivery_types_kind_check", sql`"kind" IN ('consulting','activity','circle','other')`),
+    check("delivery_types_status_check", sql`"status" IN ('active','inactive')`),
+  ],
 );
 
-// K44 交付单（精简：类型 + 客户集合 + 备注；与成交弱关联）
+// K44 交付单（精简：类型 + 客户集合 + 备注 + 起止日期；与成交弱关联）
 export const deliveries = sqliteTable(
   "deliveries",
   {
@@ -312,6 +318,8 @@ export const deliveries = sqliteTable(
     deliveryTypeId: integer("delivery_type_id")
       .notNull()
       .references(() => deliveryTypes.id),
+    startsAt: integer("starts_at"),
+    endsAt: integer("ends_at"),
     remark: text("remark"),
     createdAt: integer("created_at").notNull(),
     updatedAt: integer("updated_at").notNull(),

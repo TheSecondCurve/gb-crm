@@ -7,6 +7,8 @@ import type { DeliveryTypeDto } from "../src/api/types";
 const type: DeliveryTypeDto = {
   id: 1,
   name: "圈子全年交付",
+  kind: "circle",
+  status: "active",
   description: "全年交付",
   defaultTasks: "拉群\n商品发货",
   createdAt: 1000,

@@ -307,3 +307,9 @@ select:focus, textarea:focus { outline: 1px solid var(--ink); }
 .delivery-picker-block { border: 1px solid var(--hairline); border-radius: 6px; padding: 10px; display: flex; flex-direction: column; gap: 6px; }
 
 .delivery-picker-title { font-size: 12px; color: var(--text-3); }
+
+.delivery-picker-selected { display: flex; align-items: center; gap: 8px; font-size: 13px; }
+
+.delivery-picker-selected b { font-weight: 500; }
+
+.delivery-picker-selected .btn-link { padding: 0; border: none; background: none; color: var(--accent); font-size: 12px; cursor: pointer; }

@@ -37,6 +37,8 @@ function loadUserRefs(db: Db, ids: Set<number>): Map<number, UserRef> {
 export interface DeliveryTypeDto {
   id: number;
   name: string;
+  kind: string;
+  status: string;
   description: string | null;
   defaultTasks: string | null;
   createdAt: number;
@@ -53,6 +55,8 @@ export function assembleDeliveryType(db: Db, row: DeliveryTypeRow): DeliveryType
   return {
     id: row.id,
     name: row.name,
+    kind: row.kind,
+    status: row.status,
     description: row.description,
     defaultTasks: row.defaultTasks,
     createdAt: row.createdAt,
@@ -69,6 +73,8 @@ export interface DeliveryDto {
   deliveryTypeId: number;
   deliveryType: { id: number; name: string } | null;
   customers: CustomerRef[];
+  startsAt: number | null;
+  endsAt: number | null;
   remark: string | null;
   createdAt: number;
   updatedAt: number;
@@ -128,6 +134,8 @@ export function assembleDeliveries(db: Db, rows: readonly DeliveryRow[]): Delive
     deliveryTypeId: row.deliveryTypeId,
     deliveryType: typeRefs.get(row.deliveryTypeId) ?? null,
     customers: customersByDelivery.get(row.id) ?? [],
+    startsAt: row.startsAt,
+    endsAt: row.endsAt,
     remark: row.remark,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
