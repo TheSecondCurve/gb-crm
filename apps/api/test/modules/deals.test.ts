@@ -129,6 +129,8 @@ describe("POST /api/v1/deals 创建", () => {
     expect(data.productId).toBeNull();
     expect(data.ownerId).toBeNull();
     expect(data.deliveryDate).toBeNull();
+    expect(data.amountCents).toBeNull();
+    expect(data.afterTaxRatio).toBeNull();
     expect(data.customer).toEqual({ id: customerId, nickname: "极简客户", city: "杭州" });
     expect(data.createdBy).toEqual({ id: adminId, nickname: "昵称-admin" });
   });
@@ -147,6 +149,8 @@ describe("POST /api/v1/deals 创建", () => {
       orderNo: "ORD-2026-001",
       paymentRemark: "对公转账",
       deliveryDate: DELIVERY_DATE,
+      amountCents: 39800,
+      afterTaxRatio: 0.9306,
     });
     expect(res.statusCode).toBe(201);
     const data = res.json().data;
@@ -156,15 +160,28 @@ describe("POST /api/v1/deals 创建", () => {
     expect(data.orderNo).toBe("ORD-2026-001");
     expect(data.paymentRemark).toBe("对公转账");
     expect(data.deliveryDate).toBe(DELIVERY_DATE);
+    expect(data.amountCents).toBe(39800);
+    expect(data.afterTaxRatio).toBe(0.9306);
 
     // 库中列值核对
     const row = tmp.sqlite
-      .prepare("SELECT customer_id, product_id, owner_id, delivery_date FROM deals WHERE id = ?")
-      .get(data.id) as { customer_id: number; product_id: number; owner_id: number; delivery_date: number };
+      .prepare(
+        "SELECT customer_id, product_id, owner_id, delivery_date, amount_cents, after_tax_ratio FROM deals WHERE id = ?",
+      )
+      .get(data.id) as {
+      customer_id: number;
+      product_id: number;
+      owner_id: number;
+      delivery_date: number;
+      amount_cents: number;
+      after_tax_ratio: number;
+    };
     expect(row.customer_id).toBe(customerId);
     expect(row.product_id).toBe(productId);
     expect(row.owner_id).toBe(ownerId);
     expect(row.delivery_date).toBe(DELIVERY_DATE);
+    expect(row.amount_cents).toBe(39800);
+    expect(row.after_tax_ratio).toBe(0.9306);
   });
 
   it("关系校验：customerId/productId/ownerId 引用不存在或已软删 → 422", async () => {
@@ -198,6 +215,8 @@ describe("GET /api/v1/deals 列表", () => {
     expect(raw).not.toContain("order_no");
     expect(raw).not.toContain("payment_remark");
     expect(raw).not.toContain("delivery_date");
+    expect(raw).not.toContain("amount_cents");
+    expect(raw).not.toContain("after_tax_ratio");
     expect(raw).not.toContain("created_at");
     expect(raw).not.toContain("deleted_at");
 
@@ -308,6 +327,44 @@ describe("PATCH /api/v1/deals/:id 内核（K24）", () => {
     const ok = await patch(`/api/v1/deals/${d.id}`, cookie, { ownerId: null, updatedAt: d.updatedAt });
     expect(ok.statusCode).toBe(200);
     expect(ok.json().data.owner).toBeNull();
+  });
+
+  it("PATCH 金额/税后比例：写入读回、null 清空、类型与范围 422", async () => {
+    const { cookie, data: d } = await createDealAsAdmin();
+
+    clock.t += 1000;
+    const r1 = await patch(`/api/v1/deals/${d.id}`, cookie, {
+      amountCents: 12800,
+      afterTaxRatio: 0.9306,
+      updatedAt: d.updatedAt,
+    });
+    expect(r1.statusCode).toBe(200);
+    expect(r1.json().data.amountCents).toBe(12800);
+    expect(r1.json().data.afterTaxRatio).toBe(0.9306);
+
+    // 只改一个，不碰另一个（K24 标量内核）
+    clock.t += 1000;
+    const r2 = await patch(`/api/v1/deals/${d.id}`, cookie, {
+      amountCents: null,
+      updatedAt: r1.json().data.updatedAt,
+    });
+    expect(r2.statusCode).toBe(200);
+    expect(r2.json().data.amountCents).toBeNull();
+    expect(r2.json().data.afterTaxRatio).toBe(0.9306);
+
+    // 校验：金额非整数 / 比例越界 → 422
+    expect(
+      (await patch(`/api/v1/deals/${d.id}`, cookie, { amountCents: 1.5, updatedAt: r2.json().data.updatedAt }))
+        .statusCode,
+    ).toBe(422);
+    expect(
+      (await patch(`/api/v1/deals/${d.id}`, cookie, { afterTaxRatio: 1.2, updatedAt: r2.json().data.updatedAt }))
+        .statusCode,
+    ).toBe(422);
+    expect(
+      (await patch(`/api/v1/deals/${d.id}`, cookie, { afterTaxRatio: -0.1, updatedAt: r2.json().data.updatedAt }))
+        .statusCode,
+    ).toBe(422);
   });
 
   it("PATCH 关系键引用不存在 → 422；缺 updatedAt → 422；软删行 PATCH → 404", async () => {

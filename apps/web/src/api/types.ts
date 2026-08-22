@@ -97,6 +97,10 @@ export interface DealDto {
   paymentRemark: string | null;
   /** epoch ms UTC；null = 未填。UI 展示/编辑 YYYY-MM-DD */
   deliveryDate: number | null;
+  /** 金额，整数分（K13，同 priceCents）；null = 未填。UI 展示/编辑元 */
+  amountCents: number | null;
+  /** 税后金额比例 0~1（如 0.9306）；null = 未填 */
+  afterTaxRatio: number | null;
   customer: DealCustomerRefDto | null;
   product: DealProductRefDto | null;
   owner: UserRefDto | null;
