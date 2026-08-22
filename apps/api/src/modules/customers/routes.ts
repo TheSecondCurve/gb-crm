@@ -15,9 +15,11 @@ import type { Db } from "../../db/client.js";
 import { listMeta } from "../../lib/pagination.js";
 import { forbidden } from "../../plugins/error-handler.js";
 import { requireCan } from "../../plugins/rbac.js";
+import { buildCustomersXlsx } from "./export.js";
 import {
   createCustomer,
   deleteCustomer,
+  exportCustomers,
   getCustomerResult,
   listCustomersResult,
   patchCustomer,
@@ -52,6 +54,29 @@ export function customersRoutes(app: FastifyInstance, opts: CustomersRoutesOptio
     const { data, total } = listCustomersResult(db, query);
     return { data, meta: listMeta(query.page, query.pageSize, total) };
   });
+
+  // 导出 Excel：与列表同一 WHERE（含 q/customerType 等筛选），不分页（注册在 /:id 之前）
+  app.get(
+    "/api/v1/customers/export.xlsx",
+    { preHandler: requireCan("customers", "list") },
+    async (req, reply) => {
+      const query = customerListQuerySchema.parse(req.query ?? {});
+      const buf = await buildCustomersXlsx(exportCustomers(db, query));
+      const d = new Date(now());
+      const pad = (n: number) => String(n).padStart(2, "0");
+      const filename = `客户信息-${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}.xlsx`;
+      return reply
+        .header(
+          "Content-Type",
+          "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        )
+        .header(
+          "Content-Disposition",
+          `attachment; filename="customers.xlsx"; filename*=UTF-8''${encodeURIComponent(filename)}`,
+        )
+        .send(buf);
+    },
+  );
 
   app.post(
     "/api/v1/customers",

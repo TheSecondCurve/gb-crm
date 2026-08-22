@@ -92,6 +92,18 @@ export function listCustomers(
   return { rows, total };
 }
 
+/** 导出用：与列表同一 WHERE（listWhere），不分页，取全部 live 行 */
+export function listAllCustomers(db: Db, query: CustomerListQuery): CustomerRow[] {
+  const sortCol = SORT_COLUMNS[query.sort ?? "updatedAt"];
+  const dir = query.order === "asc" ? asc : desc;
+  return db
+    .select()
+    .from(customers)
+    .where(listWhere(query))
+    .orderBy(dir(sortCol), desc(customers.id))
+    .all();
+}
+
 /** 含软删行（OCC 失败时区分 404 与 409 用） */
 export function getCustomerByIdAny(db: Db, id: number): CustomerRow | undefined {
   return db.select().from(customers).where(eq(customers.id, id)).get();
