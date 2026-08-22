@@ -314,7 +314,7 @@ export const aiConfig = sqliteTable(
     updatedAt: integer("updated_at"),
     updatedBy: integer("updated_by").references(() => users.id, { onDelete: "set null" }),
   },
-  (t) => [check("ai_config_id_check", sql`"id" = 1`)],
+  () => [check("ai_config_id_check", sql`"id" = 1`)],
 );
 
 // K42 成交表：客户必填（创建）；意向产品/负责人单值可空；stage 枚举；delivery_date epoch ms。
