@@ -57,7 +57,17 @@ def request(method: str, url: str, token: str, body: bytes | None) -> tuple[int,
             **({"Content-Type": "application/json"} if body is not None else {}),
         },
     )
-    opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+    # GB_CRM_INSECURE=1：跳过 TLS 证书校验（本机 python 缺 CA 包时的逃生门；
+    # 中间人可拿到 token，能修证书就别开）
+    handlers: list = [urllib.request.ProxyHandler({})]
+    if os.environ.get("GB_CRM_INSECURE") == "1":
+        import ssl
+
+        ctx = ssl.create_default_context()
+        ctx.check_hostname = False
+        ctx.verify_mode = ssl.CERT_NONE
+        handlers.append(urllib.request.HTTPSHandler(context=ctx))
+    opener = urllib.request.build_opener(*handlers)
     try:
         with opener.open(req, timeout=30) as resp:
             return resp.status, resp.read().decode("utf-8")

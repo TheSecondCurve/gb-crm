@@ -41,6 +41,8 @@ curl -fsSL http://<crm-host>/agent/login.sh | sh
 
 本仓库本地开发默认 `http://127.0.0.1:3001`。范围 `read` / `write`：读 SQL 两者都行；写 SQL 要 `write` 且账号是 admin。
 
+本机 python 缺 CA 证书报 `CERTIFICATE_VERIFY_FAILED` 时，优先修证书（macOS python.org 版跑 `Install Certificates.command`）；实在修不了再设 `GB_CRM_INSECURE=1` 跳过 TLS 校验（签发脚本与本脚本都认；中间人可拿到密码/token，别在不可信网络用）。
+
 ## 工作守则
 
 1. 先 `me`，记下自己的 `id` 与 `systemRole`。
