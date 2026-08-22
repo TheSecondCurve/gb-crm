@@ -4,7 +4,15 @@ import type { SystemRole } from "./enums.js";
 
 export type { SystemRole } from "./enums.js";
 
-export const resourceSchema = z.enum(["users", "channels", "products", "customers", "auth"]);
+export const resourceSchema = z.enum([
+  "users",
+  "channels",
+  "products",
+  "customers",
+  "deals",
+  "deliverables",
+  "auth",
+]);
 export type Resource = z.infer<typeof resourceSchema>;
 
 export const actionSchema = z.enum([
@@ -41,6 +49,8 @@ const ALL_CUSTOMER_ACTIONS: readonly Action[] = [
   "delete",
   "updateOwners",
 ];
+const ALL_DEAL_ACTIONS: readonly Action[] = ["list", "read", "create", "update", "delete"];
+const ALL_DELIVERABLE_ACTIONS: readonly Action[] = ["list", "read", "create", "update", "delete"];
 
 const MATRIX: Record<SystemRole, Readonly<Partial<Record<Resource, readonly Action[]>>>> = {
   admin: {
@@ -48,6 +58,8 @@ const MATRIX: Record<SystemRole, Readonly<Partial<Record<Resource, readonly Acti
     channels: ALL_CHANNEL_ACTIONS,
     products: ALL_PRODUCT_ACTIONS,
     customers: ALL_CUSTOMER_ACTIONS,
+    deals: ALL_DEAL_ACTIONS,
+    deliverables: ALL_DELIVERABLE_ACTIONS,
     auth: ["setPassword"],
   },
   operator: {
@@ -56,14 +68,19 @@ const MATRIX: Record<SystemRole, Readonly<Partial<Record<Resource, readonly Acti
     channels: ALL_CHANNEL_ACTIONS,
     products: ALL_PRODUCT_ACTIONS,
     customers: ALL_CUSTOMER_ACTIONS,
+    deals: ALL_DEAL_ACTIONS,
+    deliverables: ALL_DELIVERABLE_ACTIONS,
     auth: ["setPassword"],
   },
   assistant: {
     // K31 锁定：assistant 不能 customers.create / customers.updateOwners
     // K27：assistant 不能 readChannelSecrets / updateChannelSecrets
+    // K42：assistant 对成交表只读（list/read）；K43：交付项同样只读
     customers: ["list", "read", "update"],
     channels: ["list", "read", "update"],
     products: ["list", "read"],
+    deals: ["list", "read"],
+    deliverables: ["list", "read"],
     auth: ["setPassword"],
   },
 };

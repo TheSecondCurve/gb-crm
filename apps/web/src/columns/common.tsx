@@ -37,3 +37,33 @@ export function formatDateTime(ts: number | null): string {
 export function refName(ref: { nickname: string } | null): string {
   return ref?.nickname ?? "";
 }
+
+const pad = (n: number) => String(n).padStart(2, "0");
+
+/** epoch ms（本地时区）→ YYYY-MM-DD 展示文本；null → ""（K42/K43 交付日期列） */
+export function epochMsToDate(ts: number | null): string {
+  if (ts === null) return "";
+  const d = new Date(ts);
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}
+
+/**
+ * YYYY-MM-DD → 本地时区当天零点的 epoch ms；空 → null（清空语义）。
+ * 非空但格式/日期非法 → null（调用方按「无效日期」提示，不静默写库）。
+ */
+export function dateToEpochMs(value: unknown): number | null {
+  if (value === null || value === undefined) return null;
+  const s = String(value).trim();
+  if (s === "") return null;
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(s);
+  if (!m) return null;
+  const year = Number(m[1]);
+  const month = Number(m[2]);
+  const day = Number(m[3]);
+  if (month < 1 || month > 12 || day < 1 || day > 31) return null;
+  const d = new Date(year, month - 1, day);
+  if (d.getFullYear() !== year || d.getMonth() !== month - 1 || d.getDate() !== day) {
+    return null; // 如 2026-02-30
+  }
+  return d.getTime();
+}

@@ -167,6 +167,8 @@ export const products = sqliteTable(
     isPackage: integer("is_package").notNull().default(0),
     status: text("status").notNull().default("on_sale"),
     priceCents: integer("price_cents"),
+    // K43：多行文本，每行一个默认交付动作；新建交付项时预填模板
+    defaultTasks: text("default_tasks"),
     createdAt: integer("created_at").notNull(),
     updatedAt: integer("updated_at").notNull(),
     createdBy: integer("created_by").references(() => users.id, { onDelete: "set null" }),
@@ -254,4 +256,89 @@ export const customerSourceChannels = sqliteTable(
       .references(() => channels.id, { onDelete: "cascade" }),
   },
   (t) => [primaryKey({ columns: [t.customerId, t.channelId] })],
+);
+
+// K42 成交表：客户必填（创建）；意向产品/负责人单值可空；stage 枚举；delivery_date epoch ms。
+export const deals = sqliteTable(
+  "deals",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    customerId: integer("customer_id")
+      .notNull()
+      .references(() => customers.id),
+    productId: integer("product_id").references(() => products.id, { onDelete: "set null" }),
+    ownerId: integer("owner_id").references(() => users.id, { onDelete: "set null" }),
+    stage: text("stage").notNull().default("gift"),
+    orderNo: text("order_no"),
+    paymentRemark: text("payment_remark"),
+    deliveryDate: integer("delivery_date"),
+    createdAt: integer("created_at").notNull(),
+    updatedAt: integer("updated_at").notNull(),
+    createdBy: integer("created_by").references(() => users.id, { onDelete: "set null" }),
+    updatedBy: integer("updated_by").references(() => users.id, { onDelete: "set null" }),
+    deletedAt: integer("deleted_at"),
+  },
+  (t) => [
+    check("deals_stage_check", sql`"stage" IN ('gift','paid','refunded','closed')`),
+    index("deals_customer_id_idx").on(t.customerId),
+    index("deals_product_id_idx").on(t.productId),
+    index("deals_owner_id_idx").on(t.ownerId),
+    index("deals_stage_idx").on(t.stage),
+  ],
+);
+
+// K43 交付项：挂成交（一个成交可拆多条）；状态流转；日期 epoch ms。
+export const deliverables = sqliteTable(
+  "deliverables",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    dealId: integer("deal_id")
+      .notNull()
+      .references(() => deals.id),
+    productId: integer("product_id").references(() => products.id, { onDelete: "set null" }),
+    status: text("status").notNull().default("pending"),
+    planDeliverDate: integer("plan_deliver_date"),
+    actualDeliverDate: integer("actual_deliver_date"),
+    expiryDate: integer("expiry_date"),
+    description: text("description"),
+    deliveryUrl: text("delivery_url"),
+    createdAt: integer("created_at").notNull(),
+    updatedAt: integer("updated_at").notNull(),
+    createdBy: integer("created_by").references(() => users.id, { onDelete: "set null" }),
+    updatedBy: integer("updated_by").references(() => users.id, { onDelete: "set null" }),
+    deletedAt: integer("deleted_at"),
+  },
+  (t) => [
+    check(
+      "deliverables_status_check",
+      sql`"status" IN ('pending','delivering','delivered','cancelled')`,
+    ),
+    index("deliverables_deal_id_idx").on(t.dealId),
+    index("deliverables_product_id_idx").on(t.productId),
+    index("deliverables_status_idx").on(t.status),
+  ],
+);
+
+// K43 动作打勾清单：交付项子表，硬删（无 deleted_at，同 customer_social_accounts）；
+// done 翻转时服务端写 done_at / done_by。
+export const deliveryTasks = sqliteTable(
+  "delivery_tasks",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    deliverableId: integer("deliverable_id")
+      .notNull()
+      .references(() => deliverables.id, { onDelete: "cascade" }),
+    content: text("content").notNull(),
+    done: integer("done").notNull().default(0),
+    doneAt: integer("done_at"),
+    doneBy: integer("done_by").references(() => users.id, { onDelete: "set null" }),
+    createdAt: integer("created_at").notNull(),
+    updatedAt: integer("updated_at").notNull(),
+    createdBy: integer("created_by").references(() => users.id, { onDelete: "set null" }),
+    updatedBy: integer("updated_by").references(() => users.id, { onDelete: "set null" }),
+  },
+  (t) => [
+    check("delivery_tasks_done_check", sql`"done" IN (0, 1)`),
+    index("delivery_tasks_deliverable_id_idx").on(t.deliverableId),
+  ],
 );

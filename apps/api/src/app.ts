@@ -12,6 +12,8 @@ import { authRoutes } from "./modules/auth/routes.js";
 import { agentRoutes } from "./modules/agent/routes.js";
 import { channelsRoutes } from "./modules/channels/routes.js";
 import { customersRoutes } from "./modules/customers/routes.js";
+import { dealsRoutes } from "./modules/deals/routes.js";
+import { deliverablesRoutes } from "./modules/deliverables/routes.js";
 import { productsRoutes } from "./modules/products/routes.js";
 import { usersRoutes, type UsersRoutesOptions } from "./modules/users/routes.js";
 import { registerCookie } from "./plugins/cookie.js";
@@ -67,6 +69,8 @@ export function buildApp(options: BuildAppOptions): FastifyInstance {
     channelsRoutes(instance, { db, now: clock });
     productsRoutes(instance, { db, now: clock });
     customersRoutes(instance, { db, now: clock });
+    dealsRoutes(instance, { db, now: clock });
+    deliverablesRoutes(instance, { db, now: clock });
     agentRoutes(instance, { db });
     done();
   });

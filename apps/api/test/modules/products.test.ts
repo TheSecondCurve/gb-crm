@@ -315,6 +315,30 @@ describe("PATCH /api/v1/products/:id 内核（K24）", () => {
   });
 });
 
+describe("defaultTasks（K43 交付动作模板）", () => {
+  it("创建写入多行文本；PATCH null → 清空；缺省 → null", async () => {
+    const { cookie } = await loginAsRole("admin");
+    const created = await post("/api/v1/products", cookie, {
+      name: "圈子产品",
+      defaultTasks: "拉群\n商品发货\n开课提醒",
+    });
+    expect(created.statusCode).toBe(201);
+    expect(created.json().data.defaultTasks).toBe("拉群\n商品发货\n开课提醒");
+
+    const p = created.json().data;
+    clock.t += 1000;
+    const cleared = await patch(`/api/v1/products/${p.id}`, cookie, {
+      defaultTasks: null,
+      updatedAt: p.updatedAt,
+    });
+    expect(cleared.statusCode).toBe(200);
+    expect(cleared.json().data.defaultTasks).toBeNull();
+
+    const minimal = await post("/api/v1/products", cookie, { name: "无模板产品" });
+    expect(minimal.json().data.defaultTasks).toBeNull();
+  });
+});
+
 describe("GET /api/v1/products/:id 与 DELETE", () => {
   it("GET：软删/不存在 → 404；非法 id → 422。DELETE：204；重复删除 → 404", async () => {
     const { cookie, data: p } = await createProductAsAdmin();
