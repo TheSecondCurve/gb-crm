@@ -7,6 +7,8 @@ import { CustomersPage } from "./pages/CustomersPage";
 import { ChannelsPage } from "./pages/ChannelsPage";
 import { ProductsPage } from "./pages/ProductsPage";
 import { UsersPage } from "./pages/UsersPage";
+import { MyCustomersPage } from "./pages/MyCustomersPage";
+import { MyDealsPage } from "./pages/MyDealsPage";
 import { DealsPage } from "./pages/DealsPage";
 import { DeliveriesPage } from "./pages/DeliveriesPage";
 import { DeliveryDetailPage } from "./pages/DeliveryDetailPage";
@@ -28,6 +30,8 @@ export default function App() {
       <Route path="/login" element={<LoginPage />} />
       <Route element={<RequireAuth />}>
         <Route path="/" element={<Navigate to="/customers" replace />} />
+        <Route path="/my/customers" element={<MyCustomersPage />} />
+        <Route path="/my/deals" element={<MyDealsPage />} />
         <Route path="/customers" element={<CustomersPage />} />
         <Route path="/channels" element={<ChannelsPage />} />
         <Route path="/products" element={<ProductsPage />} />

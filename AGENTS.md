@@ -48,7 +48,7 @@ v1 **不抽** `packages/ui`。视觉 token 在 `apps/web/src/styles/tokens.css`�
 
 ### Web
 
-- 路由：`/login` `/customers` `/channels` `/products` `/users`（默认进客户）
+- 路由：`/login` `/my/customers` `/my/deals` `/customers` `/channels` `/products` `/deals` `/users`（默认进客户）
 - 表格：`components/DataGrid/`（双击编辑 + 行内 PATCH 队列）
 - 列定义：`src/columns/`；列表页：`src/pages/` + `useResourceList.ts`
 - 开发：Vite `:5173`，`server.proxy."/api"` → `:3001`
@@ -111,7 +111,7 @@ Workspace 依赖写法：`"@gb-crm/shared": "*"`（npm 不支持 `workspace:*`�
 - Agent PAT（K35）与 cookie **并行**：`Authorization: Bearer`；有 Bearer 不回落 cookie。签发：`curl -fsSL http://<host>/agent/login.sh | sh` → `~/.gb-crm/credentials.json`。REST 资源路由 `read`/`write` ∩ `can()`。Skill 在 `skills/gb-crm/`，**不含**密钥。Agent 数据访问走单一自由 SQL 端点 `POST /api/v1/agent/sql`（仅 Bearer PAT，cookie 403）：better-sqlite3 `stmt.readonly` 判读写——只读语句任意 scope/角色放行（含渠道密钥列），写语句必须 write scope + admin；单语句；读上限 1000 行截断。
 - 登录限流 10 次/分钟/IP；仅 `TRUST_PROXY=true` 时才信 `X-Forwarded-For`。
 - 权限唯一来源：`packages/shared` 的 `can(role, resource, action)`。缺席 = deny。`role===null` → false。路由用 `requireCan`，不要在 service 再抄一套角色判断。
-- **无行级 ACL**（没有「只看我的客户」）。
+- **无行级 ACL**（没有「只看我的客户」的权限收紧；「我的运营」`/my/customers` `/my/deals` 只是 ownerId 固定过滤的列表页，不限制数据可见性）。
 - Bootstrap：零 live admin 时要 `ADMIN_USERNAME` + `ADMIN_PASSWORD`。已有 live admin 可省略密码。`ADMIN_BOOTSTRAP_RESET_PASSWORD=true` 且无密码 → **拒绝启动**。
 
 角色能力摘要：
@@ -133,7 +133,7 @@ Workspace 依赖写法：`"@gb-crm/shared": "*"`（npm 不支持 `workspace:*`�
 
 - 主底永远冷灰 `#F1F1EF`，禁整页铺玄黑。冷漆红 `#CE1432` 只点睛（面积 ≤5%）。玄黑底上的字用奶白 `#EDEAE3`，别用纯白。
 - 表格：**双击**进入编辑（单击只选中）；文本 debounce 300ms；Tab/Enter **先 flush 再导航**。不是完整 spreadsheet，不要上 AG Grid Enterprise。
-- 列表页：`q` + pageSize 25/50/100 + 至多一个类型/状态下拉。API 上的 `ownerId`/`channelId` 过滤可以有，**UI 不做**。
+- 列表页：`q` + pageSize 25/50/100 + 至多一个类型/状态下拉。API 上的 `ownerId`/`channelId` 过滤可以有，**UI 不做**（例外：「我的运营」`/my/customers`、`/my/deals` 以当前用户为固定 ownerId 等值过滤，不加下拉控件）。
 
 ### 环境变量
 
@@ -154,6 +154,7 @@ Workspace 依赖写法：`"@gb-crm/shared": "*"`（npm 不支持 `workspace:*`�
 5. **客户信息 `/customers`**：分页、模糊搜索、来源渠道、归属人（单值 `owner_id`，K39）、社交账号独立表（`customer_social_accounts`，K41，列表页/导出不展示）；预留可空唯一 `wechat_openid`（不接小程序）。导出 Excel：`GET /api/v1/customers/export.xlsx`（exceljs 服务端生成，复用列表同一 WHERE，跟随 q/类型筛选，不分页）。
 6. **成交记录 `/deals`**（K42）：客户（单值 FK 必填）、意向产品、负责人（单值 FK 可空）、阶段（赠送/已付款/退款/已关闭）、订单号、交付日期、支付信息备注；客户城市只读列。assistant 只读。
 7. **交付管理 `/deliveries` + 交付类型 `/delivery-types`**（K44）：交付单（类型 + 起止日期（epoch ms，日历输入）+ 客户集合（**可不选**，空交付单）+ 备注，与成交弱关联；客户可手动多选或按意向产品从成交 merge，`/deals` 按 `productId` 过滤）；交付项（项目维度 / 客户维度——客户维度按客户分组分别打勾 + 备注）；交付类型配置表（名称 + 类型 kind 咨询/活动/圈子/其他 + 状态 status 有效/失效 + 说明/默认动作模板，创建交付项时预填）。打勾记完成人/时间，行级 OCC。assistant 只读。
+8. **我的运营**（一级菜单）：`/my/customers` 我的客户（归属人 = 当前用户）、`/my/deals` 我的成交（负责人 = 当前用户）。复用对应列表页的列定义/搜索/筛选/行内编辑/导出，固定 `ownerId` 等值过滤，不加下拉控件；不提供「新增」（新建行不会归属当前用户）。
 8. 每张业务表有 `created_at` / `updated_at` / `created_by` / `updated_by`。
 9. **Agent 令牌**：已有用户本机签发 PAT，skill 走单一 SQL 端点 `/api/v1/agent/sql`（K35）。
 

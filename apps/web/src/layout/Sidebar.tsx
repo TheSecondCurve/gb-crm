@@ -18,6 +18,19 @@ export function Sidebar({ hidden }: { hidden: boolean }) {
       </div>
       <nav className="sidebar-nav">
         <div className="nav-group">
+          <div className="nav-group-title">我的运营</div>
+          <div className="nav-group-items">
+            <div className="nav-group-inner">
+              <NavLink to="/my/customers" className={NAV_LINK_CLASS}>
+                我的客户
+              </NavLink>
+              <NavLink to="/my/deals" className={NAV_LINK_CLASS}>
+                我的成交
+              </NavLink>
+            </div>
+          </div>
+        </div>
+        <div className="nav-group">
           <div className="nav-group-title">主数据</div>
           <div className="nav-group-items">
             <div className="nav-group-inner">

@@ -28,6 +28,8 @@ export interface ResourceList<T extends GridRow> {
 export function useResourceList<T extends GridRow>(
   resource: string,
   filterKey: string,
+  /** 固定过滤参数（如「我的客户」ownerId=当前用户），并入 query 与 queryKey */
+  fixedQuery?: Record<string, string | number | undefined>,
 ): ResourceList<T> {
   const queryClient = useQueryClient();
   const gridRef = useRef<DataGridHandle>(null);
@@ -36,12 +38,12 @@ export function useResourceList<T extends GridRow>(
   const [q, setQ] = useState("");
   const [filter, setFilter] = useState("");
 
-  const queryKey = [resource, page, pageSize, q, filter] as const;
+  const queryKey = [resource, page, pageSize, q, filter, fixedQuery] as const;
   const { data, isLoading } = useQuery({
     queryKey,
     queryFn: async () =>
       (await api.get<ListEnvelope<T>>(
-        `/${resource}${buildQuery({ page, pageSize, q, [filterKey]: filter })}`,
+        `/${resource}${buildQuery({ page, pageSize, q, [filterKey]: filter, ...fixedQuery })}`,
       )) ?? { data: [], meta: { page, pageSize, total: 0 } },
   });
 
