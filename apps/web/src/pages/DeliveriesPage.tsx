@@ -170,6 +170,11 @@ export function DeliveriesPage() {
               canUpdate || canDelete
                 ? (row) => (
                     <span className="row-actions">
+                      {row.deliveryType?.kind === "circle" && (
+                        <button type="button" onClick={() => navigate(`/deliveries/${row.id}/circle`)}>
+                          圈子工作台
+                        </button>
+                      )}
                       <button type="button" onClick={() => navigate(`/deliveries/${row.id}`)}>
                         详情
                       </button>
@@ -187,6 +192,11 @@ export function DeliveriesPage() {
                   )
                 : (row) => (
                     <span className="row-actions">
+                      {row.deliveryType?.kind === "circle" && (
+                        <button type="button" onClick={() => navigate(`/deliveries/${row.id}/circle`)}>
+                          圈子工作台
+                        </button>
+                      )}
                       <button type="button" onClick={() => navigate(`/deliveries/${row.id}`)}>
                         详情
                       </button>

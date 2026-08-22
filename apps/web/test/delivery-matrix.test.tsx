@@ -7,7 +7,7 @@ import type { DeliverableDto, DeliveryDto, DeliveryTaskDto } from "../src/api/ty
 const delivery: DeliveryDto = {
   id: 1,
   deliveryTypeId: 11,
-  deliveryType: { id: 11, name: "圈子全年交付" },
+  deliveryType: { id: 11, name: "圈子全年交付", kind: "circle" },
   customers: [
     { id: 101, nickname: "张三" },
     { id: 102, nickname: "李四" },

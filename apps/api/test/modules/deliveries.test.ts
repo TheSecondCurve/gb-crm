@@ -113,6 +113,8 @@ describe("RBAC（K44：deliveries 统一 resource，assistant 只读）", () => 
     expect((await get("/api/v1/deliveries", aCookie)).statusCode).toBe(200);
     expect((await get(`/api/v1/deliveries/${delivery.id}`, aCookie)).statusCode).toBe(200);
     expect((await get(`/api/v1/deliveries/${delivery.id}/items`, aCookie)).statusCode).toBe(200);
+    expect((await get(`/api/v1/deliveries/${delivery.id}/customers`, aCookie)).statusCode).toBe(200);
+    expect((await get(`/api/v1/deliveries/${delivery.id}/customers/export.xlsx`, aCookie)).statusCode).toBe(200);
 
     expect((await post("/api/v1/delivery-types", aCookie, { name: "x" })).statusCode).toBe(403);
     expect((await post("/api/v1/deliveries", aCookie, { deliveryTypeId: typeId, customerIds: [1] })).statusCode).toBe(403);
@@ -288,6 +290,68 @@ describe("deliveries 交付单", () => {
     expect((await get("/api/v1/deliveries", cookie)).json().meta.total).toBe(0);
     expect((await get(`/api/v1/deliveries/${delivery.id}`, cookie)).statusCode).toBe(404);
     expect((await del(`/api/v1/deliveries/${delivery.id}`, cookie)).statusCode).toBe(404);
+  });
+});
+
+describe("deliveries/:id/customers（圈子工作台：客户全量 + Excel 导出）", () => {
+  it("deliveryType ref 携带 kind（圈子工作台入口判断）", async () => {
+    const { cookie, typeId } = await seedTypeAndDelivery(1, { kind: "circle" });
+    const created = await post("/api/v1/deliveries", cookie, { deliveryTypeId: typeId, customerIds: [] });
+    expect(created.statusCode).toBe(201);
+    const one = await get(`/api/v1/deliveries/${created.json().data.id}`, cookie);
+    expect(one.json().data.deliveryType).toMatchObject({ id: typeId, name: "圈子全年交付", kind: "circle" });
+    // 列表项同样带 kind
+    const list = await get("/api/v1/deliveries", cookie);
+    expect(list.json().data[0].deliveryType.kind).toBe("circle");
+  });
+
+  it("返回完整客户信息；软删客户不出现；交付不存在 404", async () => {
+    const { cookie, delivery } = await seedTypeAndDelivery();
+    const c1 = seedCustomer(tmp.db, "完整客户", { phone: "13800000001", wechat: "wx_1", customerType: "partner" });
+    const r1 = await patch(`/api/v1/deliveries/${delivery.id}`, cookie, {
+      customerIds: [c1],
+      updatedAt: delivery.updatedAt,
+    });
+    expect(r1.statusCode).toBe(200);
+
+    // 软删客户应被排除
+    const deleted = seedCustomer(tmp.db, "已删客户");
+    const r2 = await patch(`/api/v1/deliveries/${delivery.id}`, cookie, {
+      customerIds: [c1, deleted],
+      updatedAt: r1.json().data.updatedAt,
+    });
+    expect(r2.statusCode).toBe(200);
+    tmp.sqlite.prepare("UPDATE customers SET deleted_at = ? WHERE id = ?").run(clock.t, deleted);
+
+    const res = await get(`/api/v1/deliveries/${delivery.id}/customers`, cookie);
+    expect(res.statusCode).toBe(200);
+    expect(res.json().data).toHaveLength(1);
+    expect(res.json().data[0]).toMatchObject({
+      id: c1,
+      nickname: "完整客户",
+      phone: "13800000001",
+      wechat: "wx_1",
+      customerType: "partner",
+      city: "杭州",
+    });
+
+    expect((await get("/api/v1/deliveries/999999/customers", cookie)).statusCode).toBe(404);
+  });
+
+  it("导出 xlsx：200 + xlsx content-type + attachment 文件名；assistant 可读", async () => {
+    const { cookie, delivery } = await seedTypeAndDelivery();
+    const res = await get(`/api/v1/deliveries/${delivery.id}/customers/export.xlsx`, cookie);
+    expect(res.statusCode).toBe(200);
+    expect(res.headers["content-type"]).toContain(
+      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    );
+    expect(res.headers["content-disposition"]).toContain("attachment");
+    expect(res.headers["content-disposition"]).toContain(encodeURIComponent("圈子客户-"));
+
+    const { cookie: aCookie } = await loginAsRole("assistant");
+    expect(
+      (await get(`/api/v1/deliveries/${delivery.id}/customers/export.xlsx`, aCookie)).statusCode,
+    ).toBe(200);
   });
 });
 

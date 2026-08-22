@@ -432,3 +432,13 @@ select:focus, textarea:focus { outline: 1px solid var(--ink); }
 }
 
 .matrix-cell[data-remark]:hover::after { opacity: 1; }
+
+/* ---- 圈子工作台（/deliveries/:id/circle）---- */
+.circle-stats { display: flex; gap: 28px; padding: 4px 0 12px; flex-wrap: wrap; }
+.circle-stat { display: flex; flex-direction: column; gap: 4px; }
+.circle-stat-value { font-size: 18px; font-weight: 600; color: var(--ink); display: flex; align-items: center; gap: 6px; }
+.circle-stat-label { font-size: 12px; color: var(--text-3); }
+
+/* 客户紧凑表：昵称列固定，其余列白底 */
+.circle-customer-table td { background: #fff; }
+.circle-customer-table th.matrix-row-head { font-weight: 600; }

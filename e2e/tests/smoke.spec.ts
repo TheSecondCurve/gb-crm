@@ -78,3 +78,28 @@ test("admin：交付管理页可见种子交付单，详情页可见客户维度
   await expect(page.getByText("e2e拉群")).toBeVisible();
   await expect(page.getByText("1/4", { exact: true })).toBeVisible();
 });
+
+test("admin：圈子类交付 → 圈子工作台页（基本信息/客户表/导出/甘特与时序 todo）", async ({ page }) => {
+  await login(page, ADMIN.username, ADMIN.password);
+  await page.getByRole("link", { name: "交付管理" }).click();
+
+  // 列表行操作提供「圈子工作台」入口（种子类型 kind=circle）
+  await page.getByRole("button", { name: "圈子工作台" }).first().click();
+  await expect(page).toHaveURL(/\/deliveries\/\d+\/circle/);
+
+  // 基本信息：人数 / 周期状态（未排期）
+  await expect(page.getByText("圈子工作台 · e2e圈子交付")).toBeVisible();
+  await expect(page.getByText("圈子基本信息")).toBeVisible();
+  await expect(page.getByText("2 人", { exact: true })).toBeVisible();
+  await expect(page.getByText("未排期")).toBeVisible();
+  await expect(page.getByText("e2e 交付备注")).toBeVisible();
+
+  // 客户全量表（种子 2 客户；首个用例可能改过其中一个昵称 → 只断言行数）+ 导出 Excel
+  await expect(page.getByRole("button", { name: "导出 Excel" })).toBeVisible();
+  await expect(page.getByRole("table").locator("tbody tr")).toHaveCount(2);
+
+  // 交付项 + 甘特 + 时序 todo
+  await expect(page.getByText("e2e拉群")).toBeVisible();
+  await expect(page.getByText(/项目交付项甘特/)).toBeVisible();
+  await expect(page.getByText(/时序 todo/)).toBeVisible();
+});

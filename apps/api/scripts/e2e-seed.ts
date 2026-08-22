@@ -86,6 +86,7 @@ const typeId = Number(
     .insert(deliveryTypes)
     .values({
       name: E2E_DELIVERY_TYPE,
+      kind: "circle", // 圈子类：详情/列表提供「圈子工作台」入口
       description: "e2e 圈子全年交付",
       defaultTasks: "拉群\n商品发货",
       createdAt: now,

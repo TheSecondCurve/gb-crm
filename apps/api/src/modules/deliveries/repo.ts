@@ -17,6 +17,7 @@ import {
 } from "../../db/schema.js";
 import { escapeLike, fuzzyTokens } from "../../lib/fuzzy.js";
 import { toOffset } from "../../lib/pagination.js";
+import type { CustomerRow } from "../customers/repo.js";
 
 export type DeliveryTypeRow = typeof deliveryTypes.$inferSelect;
 export type DeliveryRow = typeof deliveries.$inferSelect;
@@ -258,6 +259,17 @@ export function getDeliveryCustomerIds(db: Db, deliveryId: number): Set<number> 
     .where(eq(deliveryCustomers.deliveryId, deliveryId))
     .all();
   return new Set(rows.map((r) => r.customerId));
+}
+
+/** 交付单关联客户完整行（JOIN customers，排除软删；供圈子工作台客户表 / Excel 导出） */
+export function listDeliveryCustomerRowsById(db: Db, deliveryId: number): CustomerRow[] {
+  return db
+    .select({ customer: customers })
+    .from(deliveryCustomers)
+    .innerJoin(customers, eq(customers.id, deliveryCustomers.customerId))
+    .where(and(eq(deliveryCustomers.deliveryId, deliveryId), isNull(customers.deletedAt)))
+    .all()
+    .map((r) => r.customer);
 }
 
 // ---- deliverables（交付项）----
