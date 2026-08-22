@@ -60,13 +60,17 @@ interface Call {
   body?: string;
 }
 
-function mockGanttApi(me: Me, items: DeliverableDto[] = [projectA, projectB, projectC]) {
+function mockGanttApi(
+  me: Me,
+  items: DeliverableDto[] = [projectA, projectB, projectC],
+  deliveryOverride: Partial<DeliveryDto> = {},
+) {
   const calls: Call[] = [];
   mockFetch((url, init) => {
     const method = init?.method ?? "GET";
     calls.push({ url, method, body: init?.body });
     if (url === "/api/v1/auth/me") return { status: 200, body: { data: me } };
-    if (url === "/api/v1/deliveries/1") return { status: 200, body: { data: delivery } };
+    if (url === "/api/v1/deliveries/1") return { status: 200, body: { data: { ...delivery, ...deliveryOverride } } };
     if (url.startsWith("/api/v1/deliveries/1/items")) {
       if (method === "GET") return { status: 200, body: { data: items } };
       if (method === "POST") {
@@ -162,5 +166,17 @@ describe("交付甘特图页（项目维度）", () => {
     expect(screen.queryByRole("button", { name: "删除 项目A" })).toBeNull();
     expect(screen.queryByLabelText("项目A 开始日期")).toBeNull();
     expect(screen.getByText(`${epochMsToDate(d1)} ~ ${epochMsToDate(d3)}`)).toBeTruthy();
+  });
+
+  it("无项目交付项：仍按交付单周期渲染时间轴刻度", async () => {
+    mockGanttApi(adminMe, [], { startsAt: d1, endsAt: d12 });
+    renderApp("/deliveries/1/gantt");
+
+    // 时间轴刻度仍存在（按交付单周期 8/1~8/12）
+    expect(await screen.findByText("8月")).toBeTruthy();
+    expect(screen.getByTitle(epochMsToDate(d1))).toBeTruthy();
+    expect(screen.getByTitle(epochMsToDate(d12))).toBeTruthy();
+    // 空态提示仍在（无项目交付项）
+    expect(screen.getByText(/暂无项目维度交付项/)).toBeTruthy();
   });
 });
