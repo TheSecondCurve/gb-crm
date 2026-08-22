@@ -1,6 +1,5 @@
 // 列定义共享助手：枚举选项、徽章展示、日期格式化。labels 全部来自 @gb-crm/shared（禁止另写中文映射）。
 import type { ReactNode } from "react";
-import { tagLabels, type Tag } from "@gb-crm/shared";
 
 export type BadgeTone = "plain" | "accent" | "muted";
 
@@ -24,20 +23,6 @@ export function enumBadge(
     if (value === null || value === "") return "—";
     return badge(labels[value] ?? value, tones[value] ?? "plain");
   };
-}
-
-/** 标签列只读展示：多个 badge */
-export function tagBadges(codes: readonly string[]): ReactNode {
-  if (codes.length === 0) return "";
-  return (
-    <span style={{ display: "inline-flex", gap: 4, flexWrap: "wrap" }}>
-      {codes.map((code) => (
-        <span key={code} className="badge">
-          {tagLabels[code as Tag] ?? code}
-        </span>
-      ))}
-    </span>
-  );
 }
 
 /** epoch ms → YYYY-MM-DD HH:mm（本地时区）；null → "" */

@@ -1,4 +1,4 @@
-// customers CRUD + 三张 join + wechatOpenid + K31 权限（PR 7）。
+// customers CRUD + 社交账号/来源渠道子表 + 归属人单值（K39）+ wechatOpenid + K31 权限（PR 7）。
 // inject + loginAs，假时钟控 updatedAt；PATCH 内核走收口后的 lib/patch-kernel.ts。
 import type { FastifyInstance } from "fastify";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -70,6 +70,14 @@ const joinCount = (table: string, customerId: number): number =>
     }
   ).c;
 
+/** 归属人单值（K39）：直接读 customers.owner_id */
+const ownerIdOf = (customerId: number): number | null =>
+  (
+    tmp.sqlite.prepare("SELECT owner_id FROM customers WHERE id = ?").get(customerId) as {
+      owner_id: number | null;
+    }
+  ).owner_id;
+
 describe("RBAC 矩阵（customers 资源，K31 锁定）", () => {
   it("assistant：POST → 403；DELETE → 403；GET list/read → 200", async () => {
     const { cookie } = await loginAsRole("assistant");
@@ -94,25 +102,25 @@ describe("RBAC 矩阵（customers 资源，K31 锁定）", () => {
     expect(res.json().data.nickname).toBe("助手改名");
   });
 
-  it("assistant PATCH 含 ownerIds 键 → 403（键存在即拦，[] 也算）", async () => {
+  it("assistant PATCH 含 ownerId 键 → 403（键存在即拦，null 也算）", async () => {
     const { id: asstId, cookie } = await loginAsRole("assistant");
     const { data: c } = await createCustomerAsAdmin();
 
     const r1 = await patch(`/api/v1/customers/${c.id}`, cookie, {
-      ownerIds: [asstId],
+      ownerId: asstId,
       updatedAt: c.updatedAt,
     });
     expect(r1.statusCode).toBe(403);
     expect(r1.json().error.code).toBe("FORBIDDEN");
 
     const r3 = await patch(`/api/v1/customers/${c.id}`, cookie, {
-      ownerIds: [],
+      ownerId: null,
       updatedAt: c.updatedAt,
     });
     expect(r3.statusCode).toBe(403);
   });
 
-  it("operator：POST 201、PATCH ownerIds 200、DELETE 204（K31 只锁 assistant）", async () => {
+  it("operator：POST 201、PATCH ownerId 200、DELETE 204（K31 只锁 assistant）", async () => {
     const { id: opId, cookie } = await loginAsRole("operator");
     const created = await post("/api/v1/customers", cookie, { nickname: "运营建" });
     expect(created.statusCode).toBe(201);
@@ -120,11 +128,11 @@ describe("RBAC 矩阵（customers 资源，K31 锁定）", () => {
 
     clock.t += 1000;
     const patched = await patch(`/api/v1/customers/${c.id}`, cookie, {
-      ownerIds: [opId],
+      ownerId: opId,
       updatedAt: c.updatedAt,
     });
     expect(patched.statusCode).toBe(200);
-    expect(patched.json().data.owners).toEqual([{ id: opId, nickname: "昵称-operator" }]);
+    expect(patched.json().data.owner).toEqual({ id: opId, nickname: "昵称-operator" });
 
     expect((await del(`/api/v1/customers/${c.id}`, cookie)).statusCode).toBe(204);
   });
@@ -135,22 +143,30 @@ describe("RBAC 矩阵（customers 资源，K31 锁定）", () => {
 });
 
 describe("POST /api/v1/customers 创建", () => {
-  it("省略可选字段 → 默认值；审计列展开；可同时带关系数组", async () => {
+  it("省略可选字段 → 默认值；审计列展开；可同时带归属人与社交账号/来源渠道", async () => {
     const { id: adminId, cookie } = await loginAsRole("admin");
     const ownerId = await seedUser(tmp.db, { username: "owner1", nickname: "归属人一" });
     const chId = seedChannel(tmp.db, "来源渠道一");
 
     const res = await post("/api/v1/customers", cookie, {
       nickname: "客户全量",
-      tagCodes: ["vip", "ip"],
-      ownerIds: [ownerId],
+      socialAccounts: [
+        { platform: "xiaohongshu", account: "xhs-1" },
+        { platform: "weibo", account: "wb-1" },
+      ],
+      ownerId,
       sourceChannelIds: [chId],
     });
     expect(res.statusCode).toBe(201);
     const data = res.json().data;
     expect(data.customerType).toBe("customer"); // schema 默认
-    expect(data.tagCodes).toEqual(expect.arrayContaining(["vip", "ip"]));
-    expect(data.owners).toEqual([{ id: ownerId, nickname: "归属人一" }]);
+    expect(data.socialAccounts).toEqual(
+      expect.arrayContaining([
+        { platform: "xiaohongshu", account: "xhs-1" },
+        { platform: "weibo", account: "wb-1" },
+      ]),
+    );
+    expect(data.owner).toEqual({ id: ownerId, nickname: "归属人一" });
     expect(data.sourceChannels).toEqual([{ id: chId, name: "来源渠道一" }]);
     expect(data.createdBy).toEqual({ id: adminId, nickname: "昵称-admin" });
     expect(data.updatedBy).toEqual({ id: adminId, nickname: "昵称-admin" });
@@ -162,25 +178,38 @@ describe("POST /api/v1/customers 创建", () => {
     expect((await post("/api/v1/customers", cookie, { nickname: "" })).statusCode).toBe(422);
   });
 
-  it("ownerIds 引用不存在/已软删用户 → 422（事务回滚，客户未创建）", async () => {
+  it("ownerId 引用不存在/已软删用户 → 422（事务回滚，客户未创建）", async () => {
     const { cookie } = await loginAsRole("admin");
     const ghost = await seedUser(tmp.db, { username: "ghost", deletedAt: clock.t });
 
     expect(
-      (await post("/api/v1/customers", cookie, { nickname: "x", ownerIds: [9999] })).statusCode,
+      (await post("/api/v1/customers", cookie, { nickname: "x", ownerId: 9999 })).statusCode,
     ).toBe(422);
     expect(
-      (await post("/api/v1/customers", cookie, { nickname: "x", ownerIds: [ghost] })).statusCode,
+      (await post("/api/v1/customers", cookie, { nickname: "x", ownerId: ghost })).statusCode,
     ).toBe(422);
     expect((await get("/api/v1/customers", cookie)).json().meta.total).toBe(0);
   });
 
-  it("tagCodes 非法枚举 → 422；sourceChannelIds 引用软删渠道 → 422", async () => {
+  it("socialAccounts 非法 platform / 空账号 → 422；sourceChannelIds 引用软删渠道 → 422", async () => {
     const { cookie } = await loginAsRole("admin");
     const deadCh = seedChannel(tmp.db, "已删渠道", clock.t);
 
     expect(
-      (await post("/api/v1/customers", cookie, { nickname: "x", tagCodes: ["bogus"] })).statusCode,
+      (
+        await post("/api/v1/customers", cookie, {
+          nickname: "x",
+          socialAccounts: [{ platform: "bilibili", account: "x" }],
+        })
+      ).statusCode,
+    ).toBe(422);
+    expect(
+      (
+        await post("/api/v1/customers", cookie, {
+          nickname: "x",
+          socialAccounts: [{ platform: "weibo", account: "" }],
+        })
+      ).statusCode,
     ).toBe(422);
     expect(
       (
@@ -203,13 +232,13 @@ describe("PATCH /api/v1/customers/:id 内核（K24）", () => {
     expect(res.json().data.phone).toBe("1");
   });
 
-  it("必测2a：PATCH {} 仅 updatedAt → 200，join 不变、updatedAt bump", async () => {
+  it("必测2a：PATCH {} 仅 updatedAt → 200，子表与 owner 不变、updatedAt bump", async () => {
     const { cookie } = await loginAsRole("admin");
     const ownerId = await seedUser(tmp.db, { username: "o1", nickname: "一" });
     const created = await post("/api/v1/customers", cookie, {
       nickname: "c",
-      ownerIds: [ownerId],
-      tagCodes: ["vip"],
+      ownerId,
+      socialAccounts: [{ platform: "weibo", account: "wb" }],
     });
     const c = created.json().data;
 
@@ -217,36 +246,36 @@ describe("PATCH /api/v1/customers/:id 内核（K24）", () => {
     const res = await patch(`/api/v1/customers/${c.id}`, cookie, { updatedAt: c.updatedAt });
     expect(res.statusCode).toBe(200);
     expect(res.json().data.updatedAt).toBe(clock.t);
-    expect(res.json().data.owners).toEqual([{ id: ownerId, nickname: "一" }]);
-    expect(res.json().data.tagCodes).toEqual(["vip"]);
+    expect(res.json().data.owner).toEqual({ id: ownerId, nickname: "一" });
+    expect(res.json().data.socialAccounts).toEqual([{ platform: "weibo", account: "wb" }]);
   });
 
-  it("必测2b：ownerIds [] → 清空；[ids] → 整表替换并 bump updatedAt", async () => {
+  it("必测2b：ownerId 新值 → 覆盖；null → 清空，并 bump updatedAt", async () => {
     const { cookie } = await loginAsRole("admin");
     const u1 = await seedUser(tmp.db, { username: "o1", nickname: "一" });
     const u2 = await seedUser(tmp.db, { username: "o2", nickname: "二" });
-    const created = await post("/api/v1/customers", cookie, { nickname: "c", ownerIds: [u1] });
+    const created = await post("/api/v1/customers", cookie, { nickname: "c", ownerId: u1 });
     const c = created.json().data;
 
-    // [ids] → 替换
+    // 新值 → 覆盖（单值语义，不再是整表替换）
     clock.t += 1000;
     const replaced = await patch(`/api/v1/customers/${c.id}`, cookie, {
-      ownerIds: [u2, u1],
+      ownerId: u2,
       updatedAt: c.updatedAt,
     });
     expect(replaced.statusCode).toBe(200);
-    expect(replaced.json().data.owners).toHaveLength(2);
+    expect(replaced.json().data.owner).toEqual({ id: u2, nickname: "二" });
     expect(replaced.json().data.updatedAt).toBe(clock.t);
 
-    // [] → 清空（join 行也清空）
+    // null → 清空（owner_id 变 NULL）
     clock.t += 1000;
     const cleared = await patch(`/api/v1/customers/${c.id}`, cookie, {
-      ownerIds: [],
+      ownerId: null,
       updatedAt: replaced.json().data.updatedAt,
     });
     expect(cleared.statusCode).toBe(200);
-    expect(cleared.json().data.owners).toEqual([]);
-    expect(joinCount("customer_owners", c.id)).toBe(0);
+    expect(cleared.json().data.owner).toBeNull();
+    expect(ownerIdOf(c.id)).toBeNull();
   });
 
   it("必测3/4：同一 updatedAt 两次 PATCH → 200 后 409；用新 updatedAt → 200；409 data 带当前完整行（含 expansions）", async () => {
@@ -255,7 +284,7 @@ describe("PATCH /api/v1/customers/:id 内核（K24）", () => {
     const created = await post("/api/v1/customers", cookie, {
       nickname: "c",
       phone: "1",
-      ownerIds: [ownerId],
+      ownerId,
     });
     const c = created.json().data;
 
@@ -276,7 +305,7 @@ describe("PATCH /api/v1/customers/:id 内核（K24）", () => {
     const current = r2.json().data;
     expect(current.nickname).toBe("第一改");
     expect(current.updatedAt).toBe(r1.json().data.updatedAt);
-    expect(current.owners).toEqual([{ id: ownerId, nickname: "一" }]);
+    expect(current.owner).toEqual({ id: ownerId, nickname: "一" });
 
     const r3 = await patch(`/api/v1/customers/${c.id}`, cookie, {
       nickname: "第三改",
@@ -326,55 +355,65 @@ describe("PATCH /api/v1/customers/:id 内核（K24）", () => {
 });
 
 describe("关系展开与软删（K9）", () => {
-  it("软删 owner 用户后：GET owners: []，但 customer_owners join 行仍在", async () => {
+  it("软删 owner 用户后：GET owner: null，但 owner_id 仍指向原用户（K9）", async () => {
     const { cookie: adminCookie } = await loginAsRole("admin");
     const { id: opId } = await loginAsRole("operator");
     const created = await post("/api/v1/customers", adminCookie, {
       nickname: "c",
-      ownerIds: [opId],
+      ownerId: opId,
     });
     const c = created.json().data;
-    expect(c.owners).toEqual([{ id: opId, nickname: "昵称-operator" }]);
+    expect(c.owner).toEqual({ id: opId, nickname: "昵称-operator" });
 
     expect((await del(`/api/v1/users/${opId}`, adminCookie)).statusCode).toBe(204);
 
     const res = await get(`/api/v1/customers/${c.id}`, adminCookie);
     expect(res.statusCode).toBe(200);
-    expect(res.json().data.owners).toEqual([]);
-    expect(joinCount("customer_owners", c.id)).toBe(1);
+    expect(res.json().data.owner).toBeNull();
+    expect(ownerIdOf(c.id)).toBe(opId);
   });
 
-  it("PATCH tagCodes：[tags] 替换、[] 清空、非法值 422；渠道关系整表替换", async () => {
+  it("PATCH socialAccounts：[值] 替换、[] 清空、非法 platform 422；渠道关系整表替换", async () => {
     const { cookie } = await loginAsRole("admin");
     const ch1 = seedChannel(tmp.db, "渠道一");
     const ch2 = seedChannel(tmp.db, "渠道二");
     const created = await post("/api/v1/customers", cookie, {
       nickname: "c",
-      tagCodes: ["vip"],
+      socialAccounts: [{ platform: "weibo", account: "wb-1" }],
       sourceChannelIds: [ch1],
     });
     const c = created.json().data;
 
+    // [值] → 替换（同平台可多账号）
     clock.t += 1000;
     const r1 = await patch(`/api/v1/customers/${c.id}`, cookie, {
-      tagCodes: ["ip", "guest"],
+      socialAccounts: [
+        { platform: "xiaohongshu", account: "xhs-1" },
+        { platform: "xiaohongshu", account: "xhs-2" },
+      ],
       sourceChannelIds: [ch2],
       updatedAt: c.updatedAt,
     });
     expect(r1.statusCode).toBe(200);
-    expect(r1.json().data.tagCodes).toEqual(expect.arrayContaining(["ip", "guest"]));
+    expect(r1.json().data.socialAccounts).toEqual(
+      expect.arrayContaining([
+        { platform: "xiaohongshu", account: "xhs-1" },
+        { platform: "xiaohongshu", account: "xhs-2" },
+      ]),
+    );
     expect(r1.json().data.sourceChannels).toEqual([{ id: ch2, name: "渠道二" }]);
 
+    // [] → 清空（子表行也清空）
     clock.t += 1000;
     const r2 = await patch(`/api/v1/customers/${c.id}`, cookie, {
-      tagCodes: [],
+      socialAccounts: [],
       updatedAt: r1.json().data.updatedAt,
     });
-    expect(r2.json().data.tagCodes).toEqual([]);
-    expect(joinCount("customer_tags", c.id)).toBe(0);
+    expect(r2.json().data.socialAccounts).toEqual([]);
+    expect(joinCount("customer_social_accounts", c.id)).toBe(0);
 
     const bad = await patch(`/api/v1/customers/${c.id}`, cookie, {
-      tagCodes: ["not-a-tag"],
+      socialAccounts: [{ platform: "bilibili", account: "x" }],
       updatedAt: r2.json().data.updatedAt,
     });
     expect(bad.statusCode).toBe(422);
@@ -387,7 +426,7 @@ describe("关系展开与软删（K9）", () => {
     const { data: c } = await createCustomerAsAdmin();
 
     const r1 = await patch(`/api/v1/customers/${c.id}`, cookie, {
-      ownerIds: [ghost],
+      ownerId: ghost,
       updatedAt: c.updatedAt,
     });
     expect(r1.statusCode).toBe(422);
@@ -504,14 +543,13 @@ describe("GET /api/v1/customers 列表", () => {
     expect(none.json().meta.total).toBe(0);
   });
 
-  it("过滤 customerType/tag/ownerId 生效；非法枚举 → 422", async () => {
+  it("过滤 customerType/ownerId 生效；非法枚举 → 422", async () => {
     const { cookie } = await loginAsRole("admin");
     const u1 = await seedUser(tmp.db, { username: "o1", nickname: "一" });
     await post("/api/v1/customers", cookie, {
       nickname: "企业客户",
       customerType: "company",
-      tagCodes: ["vip"],
-      ownerIds: [u1],
+      ownerId: u1,
     });
     await post("/api/v1/customers", cookie, { nickname: "普通客户" });
 
@@ -519,16 +557,11 @@ describe("GET /api/v1/customers 列表", () => {
     expect(byType.json().meta.total).toBe(1);
     expect(byType.json().data[0].nickname).toBe("企业客户");
 
-    const byTag = await get("/api/v1/customers?tag=vip", cookie);
-    expect(byTag.json().meta.total).toBe(1);
-    expect((await get("/api/v1/customers?tag=ip", cookie)).json().meta.total).toBe(0);
-
     const byOwner = await get(`/api/v1/customers?ownerId=${u1}`, cookie);
     expect(byOwner.json().meta.total).toBe(1);
     expect((await get("/api/v1/customers?ownerId=9999", cookie)).json().meta.total).toBe(0);
 
     expect((await get("/api/v1/customers?customerType=bogus", cookie)).statusCode).toBe(422);
-    expect((await get("/api/v1/customers?tag=bogus", cookie)).statusCode).toBe(422);
   });
 
   it("过滤 channelId：来源渠道包含该渠道即命中", async () => {
@@ -562,22 +595,22 @@ describe("GET /api/v1/customers 列表", () => {
     expect((await get("/api/v1/customers?sort=deletedAt", cookie)).statusCode).toBe(422);
   });
 
-  it("list 项带完整 expansions（owners/tags/sourceChannels 形状正确），与 GET one 同形", async () => {
+  it("list 项带完整 expansions（owner/socialAccounts/sourceChannels 形状正确），与 GET one 同形", async () => {
     const { cookie } = await loginAsRole("admin");
     const u1 = await seedUser(tmp.db, { username: "o1", nickname: "一" });
     const ch1 = seedChannel(tmp.db, "渠道一");
     const created = await post("/api/v1/customers", cookie, {
       nickname: "全量客户",
-      tagCodes: ["vip"],
-      ownerIds: [u1],
+      socialAccounts: [{ platform: "douyin", account: "dy-1" }],
+      ownerId: u1,
       sourceChannelIds: [ch1],
     });
     const c = created.json().data;
 
     const list = (await get("/api/v1/customers", cookie)).json();
     const item = list.data.find((x: { id: number }) => x.id === c.id);
-    expect(item.owners).toEqual([{ id: u1, nickname: "一" }]);
-    expect(item.tagCodes).toEqual(["vip"]);
+    expect(item.owner).toEqual({ id: u1, nickname: "一" });
+    expect(item.socialAccounts).toEqual([{ platform: "douyin", account: "dy-1" }]);
     expect(item.sourceChannels).toEqual([{ id: ch1, name: "渠道一" }]);
 
     const one = (await get(`/api/v1/customers/${c.id}`, cookie)).json().data;
@@ -590,7 +623,6 @@ describe("GET /api/v1/customers/:id", () => {
     const { cookie, data: c } = await createCustomerAsAdmin({
       phone: "1",
       wechatOpenid: "openid-x",
-      tagCodes: ["vip"],
     });
     const res = await get(`/api/v1/customers/${c.id}`, cookie);
     expect(res.statusCode).toBe(200);
@@ -611,13 +643,13 @@ describe("GET /api/v1/customers/:id", () => {
 });
 
 describe("DELETE /api/v1/customers/:id", () => {
-  it("软删：204；重复删除/不存在 → 404；行与 join 行仍在库", async () => {
+  it("软删：204；重复删除/不存在 → 404；行与子表行仍在库、owner_id 保留", async () => {
     const { cookie } = await loginAsRole("admin");
     const u1 = await seedUser(tmp.db, { username: "o1", nickname: "一" });
     const created = await post("/api/v1/customers", cookie, {
       nickname: "c",
-      ownerIds: [u1],
-      tagCodes: ["vip"],
+      ownerId: u1,
+      socialAccounts: [{ platform: "weibo", account: "wb-1" }],
     });
     const c = created.json().data;
 
@@ -629,8 +661,8 @@ describe("DELETE /api/v1/customers/:id", () => {
       .prepare("SELECT deleted_at FROM customers WHERE id = ?")
       .get(c.id) as { deleted_at: number };
     expect(row.deleted_at).toBe(clock.t);
-    // K9：软删不剥 join 行
-    expect(joinCount("customer_owners", c.id)).toBe(1);
-    expect(joinCount("customer_tags", c.id)).toBe(1);
+    // K9：软删不剥子表行，owner_id 也保留
+    expect(ownerIdOf(c.id)).toBe(u1);
+    expect(joinCount("customer_social_accounts", c.id)).toBe(1);
   });
 });

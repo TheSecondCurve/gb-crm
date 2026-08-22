@@ -29,9 +29,8 @@ describe("migration", () => {
       "api_tokens",
       "channel_owners",
       "channels",
-      "customer_owners",
+      "customer_social_accounts",
       "customer_source_channels",
-      "customer_tags",
       "customers",
       "products",
       "sessions",
@@ -90,25 +89,27 @@ describe("CHECK constraints", () => {
     ).toThrowError(/CHECK/i);
   });
 
-  it("rejects an invalid customer_tags.tag", () => {
-    tmp.sqlite
-      .prepare("INSERT INTO customers (nickname, created_at, updated_at) VALUES (?, 1, 1)")
-      .run("c");
-    expect(() =>
-      tmp.sqlite.prepare("INSERT INTO customer_tags (customer_id, tag) VALUES (1, ?)").run("nope"),
-    ).toThrowError(/CHECK/i);
-  });
-});
-
-describe("foreign keys", () => {
-  it("rejects a join row referencing a non-existent user", () => {
+  it("rejects an invalid customer_social_accounts.platform", () => {
     tmp.sqlite
       .prepare("INSERT INTO customers (nickname, created_at, updated_at) VALUES (?, 1, 1)")
       .run("c");
     expect(() =>
       tmp.sqlite
-        .prepare("INSERT INTO customer_owners (customer_id, user_id) VALUES (1, 999)")
+        .prepare(
+          "INSERT INTO customer_social_accounts (customer_id, platform, account, created_at, updated_at) VALUES (1, 'bilibili', 'x', 1, 1)",
+        )
         .run(),
+    ).toThrowError(/CHECK/i);
+  });
+});
+
+describe("foreign keys", () => {
+  it("rejects customers.owner_id referencing a non-existent user", () => {
+    tmp.sqlite
+      .prepare("INSERT INTO customers (nickname, created_at, updated_at) VALUES (?, 1, 1)")
+      .run("c");
+    expect(() =>
+      tmp.sqlite.prepare("UPDATE customers SET owner_id = 999 WHERE id = 1").run(),
     ).toThrowError(/FOREIGN KEY/i);
   });
 });

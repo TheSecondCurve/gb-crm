@@ -18,12 +18,6 @@ export interface CustomerDto {
   title: string | null;
   phone: string | null;
   wechat: string | null;
-  otherSocial: string | null;
-  wechatChannelsAccount: string | null;
-  xiaoyuzhouAccount: string | null;
-  xiaohongshuAccount: string | null;
-  weiboAccount: string | null;
-  douyinAccount: string | null;
   country: string | null;
   city: string | null;
   originStory: string | null;
@@ -31,8 +25,8 @@ export interface CustomerDto {
   customerType: string;
   wechatOpenid: string | null;
   lastFollowedAt: number | null;
-  tagCodes: string[];
-  owners: UserRefDto[];
+  socialAccounts: { platform: string; account: string }[];
+  owner: UserRefDto | null;
   sourceChannels: ChannelRefDto[];
   createdAt: number;
   updatedAt: number;

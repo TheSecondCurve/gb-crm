@@ -98,7 +98,7 @@ Workspace 依赖写法：`"@gb-crm/shared": "*"`（npm 不支持 `workspace:*`�
 - JSON **一律 camelCase**（含 `sort=updatedAt`）。禁止 snake_case query 混 camelCase body。
 - 时间戳：**epoch 毫秒 UTC**。Cookie `maxAge` 例外（秒）。
 - 金额：`priceCents` 整数贯穿 DB 与 JSON；UI 展示元。禁止 `yuan * 100` 不 round 就写入。
-- PATCH 内核：JSON **键存在** → SET（`null` 清空可空列）；**键缺席** → 不动。关系数组同理：缺席不动，`[]` 清空。行级 OCC 用 `updatedAt`；客户端每行一条队列、串行、每次带上一次 200 的 `updatedAt`。
+- PATCH 内核：JSON **键存在** → SET（`null` 清空可空列）；**键缺席** → 不动。关系数组同理：缺席不动，`[]` 清空。客户归属人 `ownerId` 单值（K39）：缺席不动、`null` 清空；社交账号 `socialAccounts` 值数组 `{ platform, account }`（K41）。行级 OCC 用 `updatedAt`；客户端每行一条队列、串行、每次带上一次 200 的 `updatedAt`。
 - 删除 = 软删 `deleted_at`。v1 **无**回收站、**无**硬删。软删时 **不剥** join 行。GET 展开只 INNER **未删除** 的用户/渠道。
 - SQLite PRAGMA（WAL / busy_timeout=5000 / foreign_keys=ON）只在 `db/client.ts` 每条连接上执行，**不写进 migration**。库文件创建后 `chmod 600`。备份只用 `.backup`，禁止 `cp` 热库。
 - handler 是同步 SQLite，会堵住事件循环。v1 不上 worker pool / Redis / Postgres。
@@ -121,7 +121,7 @@ Workspace 依赖写法：`"@gb-crm/shared": "*"`（npm 不支持 `workspace:*`�
 | users 写 / 设角色 / 设他人密码 | ✓ | list/read only | ✗ |
 | channels 全套含密钥字段 | ✓ | ✓ | 可改普通字段；密钥 GET 为 null，不可 PATCH |
 | products | ✓ | ✓ | list/read only |
-| customers.create / updateOwners | ✓ | ✓ | ✗（仍可 PATCH 其它标量） |
+| customers.create / updateOwners（ownerId 键，K39 单值） | ✓ | ✓ | ✗（仍可 PATCH 其它标量） |
 
 渠道密钥字段：`accountId` / `registerPhone` / `registrant` / `realNamePerson` / `loginDevice`。
 
@@ -131,7 +131,7 @@ Workspace 依赖写法：`"@gb-crm/shared": "*"`（npm 不支持 `workspace:*`�
 
 - 主底永远冷灰 `#F1F1EF`，禁整页铺玄黑。冷漆红 `#CE1432` 只点睛（面积 ≤5%）。玄黑底上的字用奶白 `#EDEAE3`，别用纯白。
 - 表格：**双击**进入编辑（单击只选中）；文本 debounce 300ms；Tab/Enter **先 flush 再导航**。不是完整 spreadsheet，不要上 AG Grid Enterprise。
-- 列表页：`q` + pageSize 25/50/100 + 至多一个类型/状态下拉。API 上的 `ownerId`/`tag`/`channelId` 过滤可以有，**UI 不做**。
+- 列表页：`q` + pageSize 25/50/100 + 至多一个类型/状态下拉。API 上的 `ownerId`/`channelId` 过滤可以有，**UI 不做**。
 
 ### 环境变量
 
@@ -149,7 +149,7 @@ Workspace 依赖写法：`"@gb-crm/shared": "*"`（npm 不支持 `workspace:*`�
 2. **团队成员 `/users`**：账户、昵称、真实姓名、电话、微信、岗位、系统角色、雇佣状态、账户状态。仅 admin 可写。
 3. **渠道资产 `/channels`**：内容/对客渠道账号；关联负责人（M2M）；助手看不到登录资产。
 4. **产品目录 `/products`**：类型/状态/是否套餐/价格（分）。
-5. **客户信息 `/customers`**：分页、模糊搜索、标签、来源渠道、归属人；预留可空唯一 `wechat_openid`（不接小程序）。导出 Excel：`GET /api/v1/customers/export.xlsx`（exceljs 服务端生成，复用列表同一 WHERE，跟随 q/类型筛选，不分页）。
+5. **客户信息 `/customers`**：分页、模糊搜索、来源渠道、归属人（单值 `owner_id`，K39）、社交账号独立表（`customer_social_accounts`，K41，列表页/导出不展示）；预留可空唯一 `wechat_openid`（不接小程序）。导出 Excel：`GET /api/v1/customers/export.xlsx`（exceljs 服务端生成，复用列表同一 WHERE，跟随 q/类型筛选，不分页）。
 6. 每张业务表有 `created_at` / `updated_at` / `created_by` / `updated_by`。
 7. **Agent 令牌**：已有用户本机签发 PAT，skill 走单一 SQL 端点 `/api/v1/agent/sql`（K35）。
 

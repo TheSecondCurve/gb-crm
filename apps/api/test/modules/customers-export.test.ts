@@ -73,8 +73,7 @@ describe("GET /api/v1/customers/export.xlsx", () => {
       nickname: "客户甲",
       realName: "张三",
       customerType: "company",
-      tagCodes: ["vip", "partner"],
-      ownerIds: [ownerId],
+      ownerId,
       sourceChannelIds: [channelId],
     });
     await createCustomer(cookie, { nickname: "客户乙" });
@@ -91,7 +90,7 @@ describe("GET /api/v1/customers/export.xlsx", () => {
     expect(header).toContain("昵称");
     expect(header).toContain("归属人");
     expect(header).toContain("来源渠道");
-    expect(header).toContain("标签");
+    expect(header).not.toContain("标签");
     expect(ws.rowCount).toBe(3); // 表头 + 2 行
 
     // 找「客户甲」行（导出顺序 updatedAt desc，两行 clock 相同，按 id desc → 乙在前）
@@ -103,7 +102,6 @@ describe("GET /api/v1/customers/export.xlsx", () => {
     expect(row).toBeDefined();
     const cellByHeader = (name: string) => row!.getCell(header.indexOf(name) + 1).value;
     expect(cellByHeader("类型")).toBe("企业");
-    expect(String(cellByHeader("标签")).split("、").sort()).toEqual(["VIP", "合作伙伴"]);
     expect(cellByHeader("归属人")).toBe("运营B");
     expect(cellByHeader("来源渠道")).toBe("公众号主号");
     expect(cellByHeader("创建时间")).toBeInstanceOf(Date);

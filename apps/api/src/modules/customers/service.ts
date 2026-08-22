@@ -1,13 +1,14 @@
 // customers 业务规则（§3 service 层）：
 // - PATCH 内核用收口后的 lib/patch-kernel.ts（K24）：键存在才 SET；updatedAt 必带 OCC；
 //   changes===0 → 软删 404，否则 409 且 data 带当前完整行（含 expansions）；
-// - 关系数组（K24）：tagCodes/ownerIds/sourceChannelIds
-//   缺席=不动、[]=清空、[ids]=事务内整表替换并 bump updated_at；
-//   引用的用户/渠道必须存在且未软删，否则 422；tagCodes 枚举由 Zod 挡 422；
+// - 关系数组（K24）：socialAccounts（K41 值数组）/sourceChannelIds
+//   缺席=不动、[]=清空、[values/ids]=事务内整表替换并 bump updated_at；
+//   引用的渠道必须存在且未软删，否则 422；socialAccounts.platform 枚举由 Zod 挡 422；
+// - 归属人单值（K39）：ownerId 是可空标量，缺席=不动、null=清空，非 null 必须引用 live 用户；
 // - wechatOpenid 可空唯一（live 行内）：冲突 → 409；软删后释放可复用（partial unique 兜底）；
 // - create：nickname 必填（shared schema 要求 min(1)）；「未命名客户」默认值由 web/导入侧决定，
 //   API 不代填；customerType 默认 customer（schema default）。
-// - 删除 = 软删，三张 join 行保留（K9/K33）。
+// - 删除 = 软删，join 行保留（K9/K33）。
 import type { CustomerListQuery, CustomerPatch, CustomerWrite } from "@gb-crm/shared";
 
 import type { Db } from "../../db/client.js";
@@ -24,27 +25,14 @@ import {
   listAllCustomers,
   listCustomers,
   occUpdateCustomer,
-  replaceCustomerOwners,
+  replaceCustomerSocialAccounts,
   replaceCustomerSourceChannels,
-  replaceCustomerTags,
   softDeleteCustomer,
 } from "./repo.js";
 
 // better-sqlite3 事务是同步的；tx 与 Db 的查询接口同构，收窄类型以复用 repo 函数
 function inTx<T>(db: Db, fn: (tx: Db) => T): T {
   return db.transaction((tx) => fn(tx as unknown as Db));
-}
-
-function assertLiveUsers(db: Db, ids: readonly number[], path: string, label: string): void {
-  const unique = [...new Set(ids)];
-  if (unique.length === 0) return;
-  const live = findLiveUserIds(db, unique);
-  const missing = unique.filter((id) => !live.has(id));
-  if (missing.length > 0) {
-    throw unprocessable(`${label}不存在或已删除`, [
-      { path, message: `无效用户 id: ${missing.join(",")}` },
-    ]);
-  }
 }
 
 function assertLiveChannels(db: Db, ids: readonly number[], path: string, label: string): void {
@@ -59,6 +47,14 @@ function assertLiveChannels(db: Db, ids: readonly number[], path: string, label:
   }
 }
 
+/** ownerId 单值校验（K39）：null/缺席跳过；非 null 必须引用 live 用户 */
+function assertLiveOwner(db: Db, ownerId: number | null | undefined, path: string): void {
+  if (ownerId == null) return;
+  if (!findLiveUserIds(db, [ownerId]).has(ownerId)) {
+    throw unprocessable("归属人不存在或已删除", [{ path, message: `无效用户 id: ${ownerId}` }]);
+  }
+}
+
 /** wechatOpenid 可空唯一（live 行内）；冲突 → 409。null/缺席不校验 */
 function assertWechatOpenidFree(db: Db, openid: string, excludeId?: number): void {
   if (findLiveByWechatOpenid(db, openid, excludeId)) {
@@ -68,27 +64,26 @@ function assertWechatOpenidFree(db: Db, openid: string, excludeId?: number): voi
 
 /** 关系键校验（存在才校验；同事务替换在 PATCH 标量成功后执行） */
 function assertRelations(db: Db, body: {
-  ownerIds?: number[];
   sourceChannelIds?: number[];
 }): void {
-  if (body.ownerIds !== undefined) assertLiveUsers(db, body.ownerIds, "ownerIds", "归属人");
   if (body.sourceChannelIds !== undefined) {
     assertLiveChannels(db, body.sourceChannelIds, "sourceChannelIds", "来源渠道");
   }
 }
 
-/** 关系整表替换（仅处理出现的键；调用方保证在事务内） */
+/** 关系整表替换（仅处理出现的键；调用方保证在事务内，审计值由调用方注入） */
 function replaceRelations(
   db: Db,
   id: number,
   body: {
-    tagCodes?: string[];
-    ownerIds?: number[];
+    socialAccounts?: { platform: string; account: string }[];
     sourceChannelIds?: number[];
   },
+  audit: { createdAt: number; updatedAt: number; createdBy: number | null; updatedBy: number | null },
 ): void {
-  if (body.tagCodes !== undefined) replaceCustomerTags(db, id, body.tagCodes);
-  if (body.ownerIds !== undefined) replaceCustomerOwners(db, id, body.ownerIds);
+  if (body.socialAccounts !== undefined) {
+    replaceCustomerSocialAccounts(db, id, body.socialAccounts, audit);
+  }
   if (body.sourceChannelIds !== undefined) {
     replaceCustomerSourceChannels(db, id, body.sourceChannelIds);
   }
@@ -115,29 +110,24 @@ export function exportCustomers(db: Db, query: CustomerListQuery): CustomerDto[]
 
 export function createCustomer(db: Db, body: CustomerWrite, ctx: AuditContext): CustomerDto {
   return inTx(db, (tx) => {
-    const { tagCodes, ownerIds, sourceChannelIds, ...fields } = body;
-    assertRelations(tx, { ownerIds, sourceChannelIds });
+    const { socialAccounts, sourceChannelIds, ...fields } = body;
+    assertRelations(tx, { sourceChannelIds });
+    assertLiveOwner(tx, fields.ownerId, "ownerId");
     if (fields.wechatOpenid != null) assertWechatOpenidFree(tx, fields.wechatOpenid);
 
     const id = insertCustomer(tx, { ...fields, ...createAudit(ctx) });
-    replaceRelations(tx, id, { tagCodes, ownerIds, sourceChannelIds });
+    replaceRelations(tx, id, { socialAccounts, sourceChannelIds }, createAudit(ctx));
     return assembleCustomer(tx, getCustomerByIdAny(tx, id)!);
   });
 }
 
-/** PATCH 可写标量键（updatedAt 是 OCC 凭证；关系键走整表替换，不在此列） */
+/** PATCH 可写标量键（updatedAt 是 OCC 凭证；ownerId 单值走标量内核，关系键走整表替换） */
 const PATCHABLE_KEYS = new Set([
   "nickname",
   "realName",
   "title",
   "phone",
   "wechat",
-  "otherSocial",
-  "wechatChannelsAccount",
-  "xiaoyuzhouAccount",
-  "xiaohongshuAccount",
-  "weiboAccount",
-  "douyinAccount",
   "country",
   "city",
   "originStory",
@@ -145,6 +135,7 @@ const PATCHABLE_KEYS = new Set([
   "customerType",
   "wechatOpenid",
   "lastFollowedAt",
+  "ownerId",
 ]);
 
 export function patchCustomer(
@@ -156,6 +147,7 @@ export function patchCustomer(
   return inTx(db, (tx) => {
     // 先校验（422 先于任何写入；事务回滚兜底）
     assertRelations(tx, patch);
+    assertLiveOwner(tx, patch.ownerId, "ownerId");
     if (patch.wechatOpenid !== undefined && patch.wechatOpenid !== null) {
       assertWechatOpenidFree(tx, patch.wechatOpenid, id);
     }
@@ -171,7 +163,7 @@ export function patchCustomer(
     });
 
     // 关系键：缺席=不动；[]=清空；[ids]=整表替换（与标量同一事务，updated_at 已 bump）
-    replaceRelations(tx, id, patch);
+    replaceRelations(tx, id, patch, createAudit(ctx));
     return assembleCustomer(tx, getCustomerByIdAny(tx, id)!);
   });
 }

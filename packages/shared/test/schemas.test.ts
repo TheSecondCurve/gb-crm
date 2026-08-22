@@ -44,8 +44,8 @@ describe("list query：camelCase + 每资源独立 sort enum", () => {
       channelListQuerySchema.parse({ platform: "wechat", channelType: "private" }),
     ).toMatchObject({ platform: "wechat", channelType: "private" });
     expect(
-      customerListQuerySchema.parse({ ownerId: "3", channelId: "7", tag: "vip" }),
-    ).toMatchObject({ ownerId: 3, channelId: 7, tag: "vip" });
+      customerListQuerySchema.parse({ ownerId: "3", channelId: "7" }),
+    ).toMatchObject({ ownerId: 3, channelId: 7 });
     expect(productListQuerySchema.parse({ isPackage: "true" })).toMatchObject({
       isPackage: true,
     });
@@ -77,11 +77,11 @@ describe("patch schema（K24：键可缺席，不得绑默认值）", () => {
     expect(r.updatedAt).toBe(1724000000000);
     expect("customerType" in r).toBe(false);
     expect("nickname" in r).toBe(false);
-    expect("ownerIds" in r).toBe(false);
+    expect("ownerId" in r).toBe(false);
   });
 
-  it("{ ownerIds: [] } 通过（关系 [] = 清空）", () => {
-    expect(customerPatchSchema.parse({ ownerIds: [], updatedAt: 1 }).ownerIds).toEqual([]);
+  it("{ ownerId: null } 通过（单值归属人 null = 清空；channel 关系 [] = 清空）", () => {
+    expect(customerPatchSchema.parse({ ownerId: null, updatedAt: 1 }).ownerId).toBeNull();
     expect(channelPatchSchema.parse({ ownerIds: [], updatedAt: 1 }).ownerIds).toEqual([]);
   });
 
@@ -109,13 +109,31 @@ describe("patch schema（K24：键可缺席，不得绑默认值）", () => {
       customerPatchSchema.safeParse({ customerType: "vip", updatedAt: 1 }).success,
     ).toBe(false);
     expect(
-      customerPatchSchema.parse({ tagCodes: ["vip", "stage_0_1"], updatedAt: 1 }).tagCodes,
-    ).toEqual(["vip", "stage_0_1"]);
+      customerPatchSchema.parse({
+        socialAccounts: [
+          { platform: "xiaohongshu", account: "xhs-id" },
+          { platform: "weibo", account: "wb" },
+        ],
+        updatedAt: 1,
+      }).socialAccounts,
+    ).toEqual([
+      { platform: "xiaohongshu", account: "xhs-id" },
+      { platform: "weibo", account: "wb" },
+    ]);
     expect(
-      customerPatchSchema.safeParse({ tagCodes: ["nope"], updatedAt: 1 }).success,
+      customerPatchSchema.safeParse({
+        socialAccounts: [{ platform: "bilibili", account: "x" }],
+        updatedAt: 1,
+      }).success,
     ).toBe(false);
     expect(
-      customerPatchSchema.safeParse({ ownerIds: [1.5], updatedAt: 1 }).success,
+      customerPatchSchema.safeParse({
+        socialAccounts: [{ platform: "weibo", account: "" }],
+        updatedAt: 1,
+      }).success,
+    ).toBe(false);
+    expect(
+      customerPatchSchema.safeParse({ ownerId: 1.5, updatedAt: 1 }).success,
     ).toBe(false);
   });
 });
