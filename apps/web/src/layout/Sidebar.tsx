@@ -33,6 +33,19 @@ export function Sidebar({ hidden }: { hidden: boolean }) {
             </div>
           </div>
         </div>
+        <div className="nav-group">
+          <div className="nav-group-title">运营流程</div>
+          <div className="nav-group-items">
+            <div className="nav-group-inner">
+              <NavLink to="/deals" className={NAV_LINK_CLASS}>
+                成交记录
+              </NavLink>
+              <NavLink to="/deliverables" className={NAV_LINK_CLASS}>
+                交付管理
+              </NavLink>
+            </div>
+          </div>
+        </div>
         {canListUsers && (
           <div className="nav-group">
             <div className="nav-group-title">系统</div>

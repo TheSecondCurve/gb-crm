@@ -10,6 +10,9 @@ export type RelationLoader = (search: string) => Promise<RelationOption[]>;
 
 export const userLabelCache = new Map<number, string>();
 export const channelLabelCache = new Map<number, string>();
+export const customerLabelCache = new Map<number, string>();
+export const productLabelCache = new Map<number, string>();
+export const dealLabelCache = new Map<number, string>();
 
 /** GET {path}?pageSize=100&q=… → RelationOption[]，并填充 label 缓存 */
 export function createRelationLoader(
@@ -38,6 +41,27 @@ export const channelOptionsLoader: RelationLoader = createRelationLoader(
   "/channels",
   (item) => String(item.name ?? item.id),
   channelLabelCache,
+);
+export const customerOptionsLoader: RelationLoader = createRelationLoader(
+  "/customers",
+  (item) => String(item.nickname ?? item.id),
+  customerLabelCache,
+);
+export const productOptionsLoader: RelationLoader = createRelationLoader(
+  "/products",
+  (item) => String(item.name ?? item.id),
+  productLabelCache,
+);
+/** 成交 ref 选项：订单号 · 客户昵称（K43 交付项创建时选成交） */
+export const dealOptionsLoader: RelationLoader = createRelationLoader(
+  "/deals",
+  (item) => {
+    const row = item as { orderNo?: unknown; customer?: { nickname?: string } | null };
+    const orderNo = String(row.orderNo ?? "");
+    const nickname = row.customer?.nickname ?? "";
+    return `${orderNo}${orderNo && nickname ? " · " : ""}${nickname}`.trim() || `#${String(item.id)}`;
+  },
+  dealLabelCache,
 );
 
 /** relation 编辑初值：refs → number[] */

@@ -13,7 +13,7 @@
 
 ## Overview
 
-闪光团队目前用飞书多维表格「团队核心数据库」维护客户、渠道、产品和成员信息。该 Base 已有约 393 条客户、64 条渠道、24 条产品、16 名成员，但缺少真正的登录权限、审计字段、Excel 式就地编辑，以及后续运营流程（成交 / 跟进 / 权益）的落地点。`docs/core.md` 要求建立「客户信息管理系统和运营流程系统」；本设计把 **v1 收窄为四张主数据的权限化 CRUD**，运营流程表明确放到 Phase 2。
+闪光团队目前用飞书多维表格「团队核心数据库」维护客户、渠道、产品和成员信息。该 Base 已有约 393 条客户、64 条渠道、24 条产品、16 名成员，但缺少真正的登录权限、审计字段、Excel 式就地编辑，以及后续运营流程（成交 / 跟进 / 权益）的落地点。`docs/core.md` 要求建立「客户信息管理系统和运营流程系统」；本设计把 **v1 收窄为四张主数据的权限化 CRUD + 成交表（K42）**，其余运营流程表（跟进 / 权益 / 活动交付等）明确放到 Phase 2。
 
 本仓库目前几乎是空的。2026-08-21 实测：`HEAD -> main`，`main` / `origin/main` / `dev` / `origin/dev` 同停在 `df6b542 docs: initial project documentation`。**不要创建 `dev`**，它已在。该 commit 里 `docs/core.md` 与 `docs/style.md` 是 0 字节空 blob（`e69de29`）；真实需求与 `docs/dev.md`、`example/example_page.html.mhtml` 只存在于工作区、尚未进 git。v1 以 **npm workspaces + TypeScript monorepo** 从零搭建：`apps/web`（Vite + React）复用女商运营管理端已验证的视觉系统；`apps/api`（Fastify + Drizzle + SQLite）提供 REST；`packages/shared` 共享 Zod / ACL / label。认证用 **签名** httpOnly session cookie；表格用 TanStack Table **双击** 单元格编辑 + **行内 PATCH 队列**。规模按飞书摘录实数设计（数百行、十余人），单进程同步 SQLite 足够，不做微服务、Redis 或云厂商绑定。
 
@@ -30,7 +30,7 @@
 | Git | `HEAD -> main`（不是 `dev`）。`origin/dev` **已存在** 且与 `main` 同 SHA `df6b542`。不要再 `git branch dev`。 |
 | 女商 · 运营管理端 | `https://gb-dev.localhosts.vip/admin/wechat-users`，布局与 CSS token 已在未跟踪的 `example/example_page.html.mhtml` 固化；业务是微信用户 / 积分 / 会员，**不是本 CRM**。快照是 **行点击** 三列表，不是单元格编辑器。 |
 
-飞书四张 v1 表与记录数（父对话 2026-08-21 查询摘录，**未在本环境对 live Base 复核**）：
+飞书 v1 表与记录数（父对话 2026-08-21 查询摘录；成交表字段已 2026-08-22 对 live Base 复核，见 A.6）：
 
 | 飞书表 | table_id | 记录数 | 本系统实体 |
 | --- | --- | --- | --- |
@@ -38,8 +38,10 @@
 | 渠道资产 | `tblx3PGzNONP3Ugk` | 64 | `channels` |
 | 产品目录 | `tblljYU2iuLOOb5F` | 24 | `products` |
 | 客户名单 | `tblvKLGIHObVQ3dV` | 393 | `customers` |
+| 成交表 | `tblU9xWQEC9vt5yb` | 176 | `deals`（K42） |
+| 用户权益明细表 | `tbl5PQgyV5vfKia0` | 526 | `deliverables`（K43） |
 
-Phase 2 表（本设计不建表、不导入）：成交表 176、用户权益明细 526、活动交付 12、内容资产 56、客户跟进 0、团队调休流水 48。
+Phase 2 表（本设计不建表、不导入）：活动交付 12、内容资产 56、客户跟进 0、团队调休流水 48。（成交表 176 由 K42 提前入 v1；用户权益明细 526 由 K43 以交付项形态入 v1。）
 
 ### 痛点
 
@@ -85,7 +87,7 @@ Phase 2 表（本设计不建表、不导入）：成交表 176、用户权益�
 
 ### Non-Goals（v1 明确不做）
 
-- 成交、跟进、权益、活动交付、内容资产、调休流水（Phase 2）。
+- 活动交付记录、内容资产、调休流水（Phase 2）。（成交表 K42、交付项 K43 已提前入 v1。）
 - 飞书双向同步、飞书 OAuth、飞书机器人。
 - 微信小程序、微信支付、OpenID 换票（只留列）。
 - GraphQL、微服务、Kafka、Redis、对象存储。
@@ -147,6 +149,8 @@ Phase 2 表（本设计不建表、不导入）：成交表 176、用户权益�
 | K39 | 客户归属人 **M2M → 单值**：删 `customer_owners` join 表，`customers.owner_id` 可空 FK 单值。缺席=不动、`null`=清空、新值=覆盖。多归属人存量迁移保留最小 `user_id`。**渠道 `channel_owners` 保持 M2M**。K31 不变：PATCH 含 `ownerId` 键仍需 `customers.updateOwners`（assistant ✗） | 2026-08-22 产品决策撤销 K15 的客户归属人 M2M。`0005_single_customer_owner.sql` 迁移 |
 | K40 | **删除客户标签**：`customer_tags` 表、`tagCodes` 字段、API `tag` 过滤、UI 标签徽章列、导出 Excel 标签列全部移除 | 2026-08-22 产品决策：客户画像未来单独做。`0006_drop_customer_tags.sql` 迁移 |
 | K41 | **客户社交媒体信息表** `customer_social_accounts`（`customer × platform × account` 三元组 + 审计列）。platform 枚举沿用原 customers 表 6 类（wechat_channels/xiaoyuzhou/xiaohongshu/weibo/douyin/other），**同平台允许多账号**（不设唯一约束）。customers 表 6 个账号字段迁移进新表后删除。列表页/导出 **不展示**（仅数据层 + API，UI 等画像/详情页） | 2026-08-22 产品决策。`0007_customer_social_accounts.sql` 迁移 |
+| K42 | **成交表 v1 化**：`deals` 表（对照飞书「团队核心数据库 → 成交表」176 条）。字段裁剪：客户 / 意向产品 / 负责人均为 **单值 FK**（`customer_id` 创建必填；`product_id` / `owner_id` 可空，缺席不动 / null 清空）；`stage` 枚举 gift/paid/refunded/closed（默认 gift 赠送）+ `order_no` / `payment_remark` / `delivery_date`（epoch ms）。**不做**：成交人、财务类（税后系数 / 提现基数 / 奖金系数 / 金额 / 成交人比例 / 各类奖金 / 奖金核算记录）、是否进群 / 是否发货、线索标题 formula、Excel 导出。客户 ref 展开带 `city`（「客户城市」只读列）。**assistant 只读**（list/read），admin/operator 全 CRUD。列表过滤：stage（UI）+ customerId/productId/ownerId（API） | 2026-08-22 产品决策（参考飞书成交表现字段，逐项裁剪）。`0008_deals.sql` 迁移。侧栏新增「运营流程 → 成交记录」 |
+| K43 | **交付项 + 动作打勾清单**：`deliverables`（交付项，对照飞书「用户权益明细表」526 条）+ `delivery_tasks`（动作清单子表，硬删）。交付项挂成交（`deal_id` NOT NULL，一个成交可拆多条，客户从成交继承）；`status` 枚举 pending/delivering/delivered/cancelled + 计划/实际交付日期、有效期、交付说明、交付物链接。**动作模板**：`products.default_tasks` 多行文本（每行一个默认动作），**新建交付项时服务端复制为初始清单**，之后完全独立（模板不实时同步、允许单独增删改）。打勾子端点：POST/PATCH/DELETE `/deliverables/:id/tasks`，PATCH `done` 翻转时服务端记 `done_at`/`done_by`（任务行级 OCC）。**不做**：活动交付记录（线上连麦等，字段已摸清后续排）、模板实时同步、动作排序拖拽。**assistant 只读**。列表过滤：status（UI）+ dealId/productId/customerId、q 搜客户昵称（API） | 2026-08-22 产品决策。`0009_deliverables.sql` 迁移。侧栏新增「运营流程 → 交付管理」 |
 
 ---
 
@@ -485,7 +489,7 @@ Skill 包：仓库 `skills/gb-crm/`（`SKILL.md` + `scripts/gb-crm.py`）备用�
 
 ```ts
 export type SystemRole = "admin" | "operator" | "assistant";
-export type Resource = "users" | "channels" | "products" | "customers" | "auth";
+export type Resource = "users" | "channels" | "products" | "customers" | "deals" | "deliverables" | "auth";
 export type Action =
   | "list" | "read" | "create" | "update" | "delete"
   | "updateRole" | "setPassword" | "updateOwners"
@@ -506,6 +510,10 @@ export function can(role: SystemRole | null, resource: Resource, action: Action)
 | channels readChannelSecrets / updateChannelSecrets | ✓ | ✓ | ✗ | GET 对助手返回 null |
 | products list/read | ✓ | ✓ | ✓ | |
 | products create/update/delete | ✓ | ✓ | ✗ | |
+| deals list/read | ✓ | ✓ | ✓ | K42 成交表 |
+| deals create/update/delete | ✓ | ✓ | ✗ | K42：assistant 只读 |
+| deliverables list/read | ✓ | ✓ | ✓ | K43 交付项（动作打勾端点同走 update） |
+| deliverables create/update/delete | ✓ | ✓ | ✗ | K43：assistant 只读 |
 | users list/read | ✓ | ✓ | ✗ | 永不返回 `passwordHash` |
 | users create/update/delete/updateRole/setPassword | ✓ | ✗ | ✗ | |
 | auth 改自己密码 | ✓ | ✓ | ✓ | `PATCH /auth/password` |
@@ -516,6 +524,7 @@ export function can(role: SystemRole | null, resource: Resource, action: Action)
 - assistant POST customer → 403（K31）
 - assistant PATCH customer `{ nickname, updatedAt }` → 200
 - assistant PATCH customer `{ ownerId, updatedAt }` → 403（K31，null 也算）
+- assistant PATCH deal → 403（K42）
 - assistant GET channel → `accountId` 等为 `null`
 - `system_role` null 即使用户 enabled 也不能 login
 
@@ -1369,9 +1378,9 @@ Base 标题：团队核心数据库。摘录 `base_token=IWFEbuZcfalvQus6vkOcJXU
 | 渠道资产 | `tblx3PGzNONP3Ugk` | 64 | `channels` |
 | 产品目录 | `tblljYU2iuLOOb5F` | 24 | `products` |
 | 客户名单 | `tblvKLGIHObVQ3dV` | 393 | `customers` |
-| 成交表 | `tblU9xWQEC9vt5yb` | 176 | Phase 2 DROP |
-| 用户权益明细表 | `tbl5PQgyV5vfKia0` | 526 | Phase 2 DROP |
-| 活动交付记录 | `tblZaAryoZeXyKEs` | 12 | Phase 2 DROP |
+| 成交表 | `tblU9xWQEC9vt5yb` | 176 | `deals`（K42） |
+| 用户权益明细表 | `tbl5PQgyV5vfKia0` | 526 | `deliverables`（K43） |
+| 活动交付记录 | `tblZaAryoZeXyKEs` | 12 | Phase 2 |
 | 内容资产表 | `tblFUT6iCNZEXfU2` | 56 | Phase 2 DROP |
 | 客户跟进记录 | `tblI8KxzaJW7lXTL` | 0 | Phase 2 DROP |
 | 团队调休流水表 | `tbl3QdNXtm7EpbWP` | 48 | Phase 2 DROP |
@@ -1533,6 +1542,40 @@ Base 标题：团队核心数据库。摘录 `base_token=IWFEbuZcfalvQus6vkOcJXU
 
 「业务阶段 1-10 / 10-100」等 tag 枚举已随 K40 删除（客户画像未来单独做）。
 
+### A.6 成交表 → `deals`（K42，2026-08-22 实地读 Base 字段）
+
+| 飞书字段 | 类型 | 选项/说明 | 列 | 变换 |
+| --- | --- | --- | --- | --- |
+| 客户名称 | link → 客户名单 | | `customer_id` | 单值 FK，创建必填 |
+| 意向产品 | link → 产品目录 | | `product_id` | 单值 FK，可空 |
+| 负责人 | link → 团队成员 | | `owner_id` | 单值 FK，可空 |
+| 阶段 | select | 赠送 / 已付款 / 退款 / 已关闭 | `stage` | 默认 `gift`（赠送） |
+| 订单号 | text | | `order_no` | |
+| 支付信息备注 | text | | `payment_remark` | |
+| 交付日期 | datetime yyyy-MM-dd | | `delivery_date` | epoch ms；UI 文本 YYYY-MM-DD |
+| 客户城市 | lookup（客户名单.城市） | | 展开 `customer.city` | 只读展示列 |
+| 创建日期 | datetime | | `created_at` | 系统审计列 |
+| 负责人奖金 / 提现基数 / 税后系数 / 成交人奖金 / 奖金金额 / 奖金系数 / 成交人比例 / 实际金额 | formula / number | | DROP | 财务类（K42 不做） |
+| 成交人 | link → 团队成员 | | DROP | K42 先不做 |
+| 奖金核算记录 | text | | DROP | 财务核算记录 |
+| 线索标题 | formula | `[意向产品]&" - "&[创建日期]&" - "&[客户名称]` | DROP | 派生展示 |
+| 是否进群 / 是否发货 | text | | DROP | 2026-08-22 产品拍板先不做 |
+
+### A.7 用户权益明细表 → `deliverables`（K43，2026-08-22 实地读 Base 字段）
+
+| 飞书字段 | 类型 | 说明 | 列 | 变换 |
+| --- | --- | --- | --- | --- |
+| 客户名称 | link → 客户名单 | | `deal_id`（客户从成交继承） | 挂成交；一个成交可拆多条 |
+| 交付产品 | link → 产品目录 | | `product_id` | 可空 |
+| 来源记录 | link → 成交表 | | 同上 `deal_id` | 合并为交付项主 FK |
+| 状态 | select 未交付/交付中/已交付/已取消 | | `status` | 枚举，默认 `pending` |
+| 计划交付日期 / 实际交付日期 / 有效期 | datetime | | `plan_deliver_date` / `actual_deliver_date` / `expiry_date` | epoch ms |
+| 交付说明 / 特殊交付备注 | text | | `description` | 合并为交付说明 |
+| 交付物链接 | url | | `delivery_url` | |
+| 交付项名称 | formula | | DROP | 派生展示 |
+| 创建日期 | datetime | | `created_at` | 系统审计列 |
+| （本系统） | — | 动作打勾清单 | `delivery_tasks` | K43：模板预填 + 单独增删改 |
+
 ---
 
 ## Appendix B — 列规格（DataGrid）
@@ -1575,6 +1618,14 @@ Base 标题：团队核心数据库。摘录 `base_token=IWFEbuZcfalvQus6vkOcJXU
 ### users（冻结 `nickname`）
 
 全部列默认可见。可编（仅 admin）：nickname、realName、phone、wechat、jobTitle、systemRole、accountStatus、duties、notes。username 创建时可写，之后只读（改用户名不在 v1）。密码列不上表。
+
+### deals（K42，冻结无；客户必填）
+
+全部列默认可见。可编（admin/operator）：customer（relation-one 单值，必填）、product（relation-one）、owner（relation-one）、stage（select）、orderNo（text）、deliveryDate（text，UI YYYY-MM-DD → epoch ms）、paymentRemark（textarea）。city（客户城市）只读，来自 `customer.city` expansion。assistant 整表只读（K42：deals update deny），无「新增」按钮。
+
+### deliverables（K43，冻结无；成交必填）
+
+全部列默认可见。可编（admin/operator）：deal（relation-one 单值，必填，显示「订单号 · 客户昵称」）、product（relation-one）、status（select）、planDeliverDate / actualDeliverDate / expiryDate（text，UI YYYY-MM-DD → epoch ms）、deliveryUrl（text）、description（textarea）。taskProgress（动作进度 `已打勾/总数`）只读，全部完成 → accent。行操作按钮：动作（打开 TaskModal 打勾清单）、修改、删除。assistant 整表只读，无任何操作按钮。
 
 ---
 
