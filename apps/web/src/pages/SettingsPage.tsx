@@ -1,13 +1,16 @@
-// 系统设置页（K46/K50）：LLM 打标配置（仅 admin）。存储为 system_configs code='llm'。
-// 标签词表已拆到「业务设置」页（/business-settings，K50）。
-// 路由守卫：can(system, read) 否则显示无权限；侧栏入口同样按 can 显隐。
-import { useEffect, useMemo, useState, type FormEvent } from "react";
+// 系统设置页（K46/K50/K51）：tab 结构（URL query 驱动，?tab=llm|jobs）。
+// 「LLM 打标配置」（仅 admin，存储为 system_configs code='llm'）+「后台任务」（K51 运维查看/取消，全角色）。
+// 标签词表在「业务设置」页（/business-settings，K50）。
+// 路由守卫：仅登录即可访问；LLM tab 按 can(system, read) 显隐；侧栏入口同样按角色显隐。
+import { useEffect, useState, type FormEvent } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { can } from "@gb-crm/shared";
+import { useSearchParams } from "react-router-dom";
 
 import { api, ApiError } from "../api/client";
 import type { AiConfigDto } from "../api/types";
 import { useAuth } from "../auth/AuthProvider";
+import { JobsTab } from "../components/JobsTab";
 import { useToast } from "../components/Toast";
 
 export function SettingsPage() {
@@ -15,15 +18,20 @@ export function SettingsPage() {
   const role = me?.systemRole ?? null;
   const showToast = useToast();
   const queryClient = useQueryClient();
-  const [busy, setBusy] = useState(false);
+  const [searchParams, setSearchParams] = useSearchParams();
+  const requestedTab = searchParams.get("tab");
+  // LLM tab 仅 admin；其余（jobs/缺失/越权）→ jobs。非 admin 固定 jobs。
+  const canSystem = can(role, "system", "read");
+  const tab = canSystem ? (requestedTab === "jobs" ? "jobs" : "llm") : "jobs";
 
   const { data: aiConfig } = useQuery({
     queryKey: ["system", "ai-config"],
     queryFn: async () =>
       (await api.get<{ data: AiConfigDto }>("/system/ai-config"))?.data,
-    enabled: can(role, "system", "read"),
+    enabled: canSystem,
   });
 
+  const [busy, setBusy] = useState(false);
   const [form, setForm] = useState({ provider: "", baseUrl: "", model: "", apiKey: "" });
 
   const toastError = (err: unknown, fallback: string) =>
@@ -66,78 +74,83 @@ export function SettingsPage() {
     }
   }, [aiConfig]);
 
-  const canRead = useMemo(() => can(role, "system", "read"), [role]);
-  if (!canRead) {
-    return (
-      <div className="page-head">
-        <h1>系统设置</h1>
-        <div className="task-empty">没有权限访问系统设置</div>
-      </div>
-    );
-  }
-
   return (
     <>
       <div className="page-head">
         <h1>系统设置</h1>
       </div>
 
-      <div className="settings-section">
-        <div className="card">
-          <div className="card-head">
-            <h2>LLM 打标配置</h2>
-          </div>
-          <div className="card-body">
-            <form className="settings-form" onSubmit={(e) => void saveConfig(e)}>
-              <label className="field">
-                供应商（OpenAI 兼容）
-                <input
-                  autoComplete="off"
-                  placeholder="如 deepseek / moonshot / ollama"
-                  value={form.provider}
-                  onChange={(e) => setForm((f) => ({ ...f, provider: e.target.value }))}
-                />
-              </label>
-              <label className="field">
-                Base URL
-                <input
-                  autoComplete="off"
-                  placeholder="如 https://api.deepseek.com/v1"
-                  value={form.baseUrl}
-                  onChange={(e) => setForm((f) => ({ ...f, baseUrl: e.target.value }))}
-                />
-              </label>
-              <label className="field">
-                模型
-                <input
-                  autoComplete="off"
-                  placeholder="如 deepseek-chat"
-                  value={form.model}
-                  onChange={(e) => setForm((f) => ({ ...f, model: e.target.value }))}
-                />
-              </label>
-              <label className="field">
-                API Key
-                <input
-                  type="password"
-                  autoComplete="off"
-                  placeholder={aiConfig?.apiKeySet ? `已配置（${aiConfig.apiKeyMasked}），留空则不改` : "未配置"}
-                  value={form.apiKey}
-                  onChange={(e) => setForm((f) => ({ ...f, apiKey: e.target.value }))}
-                />
-              </label>
-              <div className="modal-actions field-span">
-                <button type="button" onClick={() => loadConfigIntoForm(aiConfig)} disabled={busy}>
-                  还原
-                </button>
-                <button type="submit" className="btn-primary" disabled={busy}>
-                  保存配置
-                </button>
-              </div>
-            </form>
+      <div className="tabs" role="tablist" aria-label="系统设置">
+        {canSystem && (
+          <button type="button" role="tab" aria-selected={tab === "llm"} onClick={() => setSearchParams({ tab: "llm" })}>
+            LLM 打标配置
+          </button>
+        )}
+        <button type="button" role="tab" aria-selected={tab === "jobs"} onClick={() => setSearchParams({ tab: "jobs" })}>
+          后台任务
+        </button>
+      </div>
+
+      {tab === "jobs" ? (
+        <JobsTab />
+      ) : (
+        <div className="settings-section">
+          <div className="card">
+            <div className="card-head">
+              <h2>LLM 打标配置</h2>
+            </div>
+            <div className="card-body">
+              <form className="settings-form" onSubmit={(e) => void saveConfig(e)}>
+                <label className="field">
+                  供应商（OpenAI 兼容）
+                  <input
+                    autoComplete="off"
+                    placeholder="如 deepseek / moonshot / ollama"
+                    value={form.provider}
+                    onChange={(e) => setForm((f) => ({ ...f, provider: e.target.value }))}
+                  />
+                </label>
+                <label className="field">
+                  Base URL
+                  <input
+                    autoComplete="off"
+                    placeholder="如 https://api.deepseek.com/v1"
+                    value={form.baseUrl}
+                    onChange={(e) => setForm((f) => ({ ...f, baseUrl: e.target.value }))}
+                  />
+                </label>
+                <label className="field">
+                  模型
+                  <input
+                    autoComplete="off"
+                    placeholder="如 deepseek-chat"
+                    value={form.model}
+                    onChange={(e) => setForm((f) => ({ ...f, model: e.target.value }))}
+                  />
+                </label>
+                <label className="field">
+                  API Key
+                  <input
+                    type="password"
+                    autoComplete="off"
+                    placeholder={aiConfig?.apiKeySet ? `已配置（${aiConfig.apiKeyMasked}），留空则不改` : "未配置"}
+                    value={form.apiKey}
+                    onChange={(e) => setForm((f) => ({ ...f, apiKey: e.target.value }))}
+                  />
+                </label>
+                <div className="modal-actions field-span">
+                  <button type="button" onClick={() => loadConfigIntoForm(aiConfig)} disabled={busy}>
+                    还原
+                  </button>
+                  <button type="submit" className="btn-primary" disabled={busy}>
+                    保存配置
+                  </button>
+                </div>
+              </form>
+            </div>
           </div>
         </div>
-      </div>
+      )}
     </>
   );
 }

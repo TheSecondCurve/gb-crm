@@ -252,6 +252,51 @@ describe("执行器（pumpOnce）", () => {
     expect(result.succeeded).toBe(1);
     expect(mockFetch).toHaveBeenCalledTimes(1);
   });
+
+  it("runBulkTaggingJob 新标签预算：跨客户累计，超预算的新标签丢弃", async () => {
+    seedAiConfigRow();
+    const cookie = await loginAsRole("admin");
+    await createCustomer(cookie, "批量新标签 A");
+    await createCustomer(cookie, "批量新标签 B");
+    await createCustomer(cookie, "批量新标签 C");
+
+    // 每个客户返回 2 个互不相同的新标签（共 6 个唯一名）；注入预算 max=4 → 只建 4 个
+    let n = 0;
+    const mockFetch = vi.fn(async () => {
+      n += 1;
+      const payload = {
+        identity: [],
+        stage: [],
+        interest: [],
+        newTags: [
+          { name: `批量新${n}-甲`, scope: "identity" },
+          { name: `批量新${n}-乙`, scope: "interest" },
+        ],
+      };
+      return new Response(JSON.stringify({ choices: [{ message: { content: JSON.stringify(payload) } }] }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    }) as unknown as typeof fetch;
+
+    const result = await runBulkTaggingJob(
+      tmp.db,
+      { page: 1, pageSize: 25 },
+      { now: clock.t, userId: 1 },
+      { fetchFn: mockFetch, newTagBudget: { used: 0, max: 4 } },
+    );
+    expect(result.succeeded).toBe(3);
+
+    const created = (tmp.sqlite.prepare("SELECT COUNT(*) c FROM tags WHERE name LIKE '批量新%'").get() as { c: number }).c;
+    expect(created).toBe(4); // 预算 4：前两个被处理客户各建 2 个，最后一个客户预算耗尽全丢
+
+    // 新标签落库总量 = 4，且分布在 2 个客户上（每客户 2 个），剩余 1 个客户不落任何新标签
+    const links = tmp.sqlite.prepare(
+      "SELECT customer_id, COUNT(*) c FROM customer_tags WHERE tag_id IN (SELECT id FROM tags WHERE name LIKE '批量新%') GROUP BY customer_id",
+    ).all() as { customer_id: number; c: number }[];
+    expect(links).toHaveLength(2);
+    expect(links.every((r) => r.c === 2)).toBe(true);
+  });
 });
 
 describe("取消任务", () => {

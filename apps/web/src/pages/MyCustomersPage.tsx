@@ -91,7 +91,7 @@ export function MyCustomersPage() {
     try {
       await api.post(`/customers/${id}/tags/generate`);
       await list.invalidate();
-      showToast("AI 已更新标签");
+      showToast("AI 已更新标签与行业");
     } catch (err) {
       showToast(err instanceof ApiError ? err.message : "AI 打标失败，请稍后重试");
     } finally {
@@ -99,7 +99,7 @@ export function MyCustomersPage() {
     }
   };
 
-  // K51 全量生成标签：创建后台任务（固定 ownerId=当前用户，与导出一致），进度在业务设置-后台任务查看
+  // K51 全量生成标签：创建后台任务（固定 ownerId=当前用户，与导出一致），进度在系统设置-后台任务查看
   const bulkGenerate = async () => {
     setBusy(true);
     try {
@@ -108,8 +108,8 @@ export function MyCustomersPage() {
       if (list.filter) params.customerType = list.filter;
       await api.post("/background-jobs", { type: "customer-tags-generate-all", params });
       setBulkOpen(false);
-      showToast("任务已创建，可在「业务设置 → 后台任务」查看进度");
-      navigate("/business-settings?tab=jobs");
+      showToast("任务已创建，可在「系统设置 → 后台任务」查看进度");
+      navigate("/settings?tab=jobs");
     } catch (err) {
       showToast(err instanceof ApiError ? err.message : "创建任务失败，请稍后重试");
     } finally {

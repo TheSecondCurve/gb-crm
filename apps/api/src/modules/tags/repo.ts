@@ -1,6 +1,6 @@
 // tags 表 Drizzle 查询（§3：repo 层，路由/服务不写 SQL）。
 // K45：词表 list 排除软删；COUNT 与列表同一 WHERE；name live-unique（软删后释放可复用）。
-import { and, asc, count, desc, eq, inArray, isNull, ne, type SQL } from "drizzle-orm";
+import { and, asc, count, desc, eq, inArray, isNull, max, ne, type SQL } from "drizzle-orm";
 
 import type { TagListQuery } from "@gb-crm/shared";
 
@@ -124,4 +124,9 @@ export function listEnabledLiveTags(
     .where(and(isNull(tags.deletedAt), eq(tags.enabled, 1)))
     .orderBy(asc(tags.sort), asc(tags.name))
     .all();
+}
+
+/** 当前最大 sort（AI 自建新标签排序 = max+1；空表回 0） */
+export function maxTagSort(db: Db): number {
+  return db.select({ v: max(tags.sort) }).from(tags).get()?.v ?? 0;
 }

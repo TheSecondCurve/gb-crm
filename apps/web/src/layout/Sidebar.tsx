@@ -9,7 +9,6 @@ const NAV_LINK_CLASS = ({ isActive }: { isActive: boolean }) => (isActive ? "act
 export function Sidebar({ hidden }: { hidden: boolean }) {
   const { me } = useAuth();
   const canListUsers = can(me?.systemRole ?? null, "users", "list");
-  const canSystem = can(me?.systemRole ?? null, "system", "read");
   const canBusinessSettings = can(me?.systemRole ?? null, "tags", "read");
 
   return (
@@ -64,23 +63,21 @@ export function Sidebar({ hidden }: { hidden: boolean }) {
             </div>
           </div>
         </div>
-        {canListUsers && (
-          <div className="nav-group">
-            <div className="nav-group-title">系统</div>
-            <div className="nav-group-items">
-              <div className="nav-group-inner">
+        <div className="nav-group">
+          <div className="nav-group-title">系统</div>
+          <div className="nav-group-items">
+            <div className="nav-group-inner">
+              {canListUsers && (
                 <NavLink to="/users" className={NAV_LINK_CLASS}>
                   团队成员
                 </NavLink>
-                {canSystem && (
-                  <NavLink to="/settings" className={NAV_LINK_CLASS}>
-                    系统设置
-                  </NavLink>
-                )}
-              </div>
+              )}
+              <NavLink to="/settings" className={NAV_LINK_CLASS}>
+                系统设置
+              </NavLink>
             </div>
           </div>
-        )}
+        </div>
         {canBusinessSettings && (
           <div className="nav-group">
             <div className="nav-group-title">业务设置</div>
