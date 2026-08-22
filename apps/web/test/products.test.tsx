@@ -6,7 +6,6 @@ import type { ProductDto } from "../src/api/types";
 
 const product: ProductDto = {
   id: 1,
-  feishuRecordId: null,
   name: "咨询课A",
   notes: null,
   sopUrl: null,
@@ -16,7 +15,6 @@ const product: ProductDto = {
   isPackage: false,
   status: "on_sale",
   priceCents: 12345,
-  feishuCreatedDate: null,
   createdAt: 1000,
   updatedAt: 2000,
   createdBy: null,

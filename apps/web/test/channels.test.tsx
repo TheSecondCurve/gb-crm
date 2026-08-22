@@ -7,7 +7,6 @@ import type { ChannelDto } from "../src/api/types";
 function makeChannel(partial: Partial<ChannelDto>): ChannelDto {
   return {
     id: 1,
-    feishuRecordId: null,
     name: "公众号A",
     description: null,
     accountId: "gh_abc",

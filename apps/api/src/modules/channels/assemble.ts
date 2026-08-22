@@ -11,7 +11,6 @@ import { listChannelOwnerRows, type ChannelRow } from "./repo.js";
 
 export interface ChannelDto {
   id: number;
-  feishuRecordId: string | null;
   name: string;
   description: string | null;
   accountId: string | null;
@@ -66,7 +65,6 @@ export function assembleChannels(db: Db, rows: readonly ChannelRow[]): ChannelDt
   const ref = (id: number | null): UserRef | null => (id === null ? null : (refs.get(id) ?? null));
   return rows.map((row) => ({
     id: row.id,
-    feishuRecordId: row.feishuRecordId,
     name: row.name,
     description: row.description,
     accountId: row.accountId,

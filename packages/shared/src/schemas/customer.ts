@@ -24,18 +24,13 @@ export const customerWriteSchema = z.object({
   city: nullableText.optional(),
   originStory: nullableText.optional(),
   notes: nullableText.optional(),
-  profileUrl: nullableText.optional(),
   customerType: customerTypeSchema.default("customer"),
-  parentId: z.number().int().positive().nullable().optional(),
   wechatOpenid: nullableText.optional(),
   lastFollowedAt: z.number().int().nullable().optional(),
-  feishuCreatedDate: z.number().int().nullable().optional(),
   // 关系数组（K24）：缺席=不动；[]=清空；[ids]=事务内整表替换
   tagCodes: z.array(tagSchema).optional(),
   ownerIds: idArraySchema.optional(),
-  upsellOwnerIds: idArraySchema.optional(),
   sourceChannelIds: idArraySchema.optional(),
-  communityChannelIds: idArraySchema.optional(),
 });
 export type CustomerWrite = z.infer<typeof customerWriteSchema>;
 

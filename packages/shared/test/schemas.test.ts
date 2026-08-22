@@ -87,7 +87,7 @@ describe("patch schema（K24：键可缺席，不得绑默认值）", () => {
 
   it("显式 null 清空可空标量", () => {
     expect(customerPatchSchema.parse({ realName: null, updatedAt: 1 }).realName).toBeNull();
-    expect(customerPatchSchema.parse({ parentId: null, updatedAt: 1 }).parentId).toBeNull();
+    expect(customerPatchSchema.parse({ lastFollowedAt: null, updatedAt: 1 }).lastFollowedAt).toBeNull();
     expect(productPatchSchema.parse({ priceCents: null, updatedAt: 1 }).priceCents).toBeNull();
   });
 
