@@ -142,7 +142,7 @@ describe("Bearer 认证", () => {
     const res = await app.inject({ method: "GET", url: "/api/v1/auth/me", headers: bearer(token) });
     expect(res.statusCode).toBe(200);
     expect(res.json()).toEqual({
-      data: { id, username: "alice", nickname: "爱丽丝", systemRole: "admin" },
+      data: { id, username: "alice", nickname: "爱丽丝", systemRole: "admin", impersonatedBy: null },
     });
     expect(res.headers["set-cookie"]).toBeUndefined();
   });

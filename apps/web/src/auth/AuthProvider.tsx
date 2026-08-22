@@ -10,6 +10,8 @@ export interface Me {
   username: string | null;
   nickname: string;
   systemRole: SystemRole | null;
+  /** K49：扮演发起人（原 admin）。非空 = 当前正以 me 的身份扮演中 */
+  impersonatedBy: { id: number; nickname: string } | null;
 }
 
 interface AuthContextValue {
@@ -19,6 +21,10 @@ interface AuthContextValue {
   /** 成功 204 + 写 session cookie 后刷新 me；失败抛 ApiError（401 为统一中文文案） */
   login: (username: string, password: string) => Promise<void>;
   logout: () => Promise<void>;
+  /** K49：admin 扮演用户（POST /auth/impersonate/:id 后刷新 me） */
+  impersonate: (userId: number) => Promise<void>;
+  /** K49：退出扮演（POST /auth/impersonate/stop 后刷新 me） */
+  stopImpersonation: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null);
@@ -60,8 +66,23 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, [queryClient]);
 
+  const impersonate = useCallback(
+    async (userId: number) => {
+      await api.post(`/auth/impersonate/${userId}`);
+      await queryClient.invalidateQueries({ queryKey: ME_QUERY_KEY });
+    },
+    [queryClient],
+  );
+
+  const stopImpersonation = useCallback(async () => {
+    await api.post("/auth/impersonate/stop");
+    await queryClient.invalidateQueries({ queryKey: ME_QUERY_KEY });
+  }, [queryClient]);
+
   return (
-    <AuthContext.Provider value={{ me: data ?? null, isLoading, login, logout }}>
+    <AuthContext.Provider
+      value={{ me: data ?? null, isLoading, login, logout, impersonate, stopImpersonation }}
+    >
       {children}
     </AuthContext.Provider>
   );

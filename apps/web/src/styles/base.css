@@ -49,6 +49,33 @@ button:disabled { color: var(--text-3); cursor: not-allowed; }
 
 .navbar-logout { padding: 6px 12px; font-size: 13px; }
 
+/* K49：右上角用户下拉菜单 + 扮演徽标 */
+.navbar-menu-wrap { position: relative; }
+
+.navbar-menu-trigger { display: flex; align-items: center; gap: 4px; padding: 6px 10px; font-size: 13px; }
+
+.navbar-caret { font-size: 10px; color: var(--text-3); }
+
+.navbar-menu-mask { position: fixed; inset: 0; z-index: 19; }
+
+.navbar-menu { position: absolute; right: 0; top: calc(100% + 6px); z-index: 20; display: flex; flex-direction: column; gap: 2px; min-width: 180px; padding: 6px; background: rgb(255, 255, 255); border: 1px solid var(--hairline); border-radius: 6px; box-shadow: 0 4px 16px rgba(20, 18, 16, 0.08); }
+
+.navbar-menu button { border: none; background: transparent; text-align: left; padding: 8px 10px; border-radius: 4px; font-size: 13px; }
+
+.navbar-menu button:hover { background: var(--bg); }
+
+.impersonate-badge { display: inline-flex; align-items: center; padding: 3px 10px; font-size: 12px; color: var(--accent); border: 1px solid var(--accent); border-radius: 999px; background: rgb(255, 255, 255); white-space: nowrap; }
+
+.impersonate-list { display: flex; flex-direction: column; gap: 4px; max-height: 320px; overflow-y: auto; }
+
+.impersonate-option { display: flex; align-items: baseline; gap: 10px; padding: 8px 10px; border: 1px solid var(--hairline); border-radius: 6px; text-align: left; background: rgb(255, 255, 255); }
+
+.impersonate-option:hover { border-color: var(--accent); }
+
+.impersonate-name { font-weight: 500; }
+
+.impersonate-meta { font-size: 12px; color: var(--text-3); }
+
 .sidebar { width: 220px; flex-shrink: 0; background: var(--ink); color: var(--cream); display: flex; flex-direction: column; position: sticky; top: 0; height: 100vh; margin-left: 0; transition: margin-left 0.25s; }
 
 .sidebar-hidden { margin-left: -220px; }

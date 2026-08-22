@@ -9,18 +9,35 @@ import { AuthProvider, type Me } from "../src/auth/AuthProvider";
 
 export type { Me };
 
-export const adminMe: Me = { id: 1, username: "admin", nickname: "管理员", systemRole: "admin" };
+export const adminMe: Me = {
+  id: 1,
+  username: "admin",
+  nickname: "管理员",
+  systemRole: "admin",
+  impersonatedBy: null,
+};
 export const assistantMe: Me = {
   id: 2,
   username: "assistant",
   nickname: "兼职助手",
   systemRole: "assistant",
+  impersonatedBy: null,
 };
 export const operatorMe: Me = {
   id: 3,
   username: "operator",
   nickname: "团队运营",
   systemRole: "operator",
+  impersonatedBy: null,
+};
+
+/** K49：扮演中的 me（真实身份是 admin，当前以 target 身份操作） */
+export const impersonatingMe: Me = {
+  id: 2,
+  username: "assistant",
+  nickname: "兼职助手",
+  systemRole: "assistant",
+  impersonatedBy: { id: 1, nickname: "管理员" },
 };
 
 /** 空列表响应（落在列表页但本测试不关心列表数据时用） */
