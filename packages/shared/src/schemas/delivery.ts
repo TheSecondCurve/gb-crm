@@ -66,12 +66,15 @@ export type DeliveryListQuery = z.infer<typeof deliveryListQuerySchema>;
 // ---- 交付项（K44：项目维度 / 客户维度；无独立状态，打勾进度即状态）----
 // 客户维度创建时 customerIds 省略 = 交付单全部客户；显式传 = 部分客户。
 // dimension 与 customer 范围创建后不可改（避免迁移已生成的任务）。
+// startsAt/endsAt：epoch ms 可空（项目维度甘特排期；缺一端 = 未排期）。
 export const deliverableWriteSchema = z.object({
   content: z.string().min(1),
   dimension: deliverableDimensionSchema.default("project"),
   customerIds: idArraySchema.optional(),
   description: nullableText.optional(),
   deliveryUrl: nullableText.optional(),
+  startsAt: epochMsSchema.nullable().optional(),
+  endsAt: epochMsSchema.nullable().optional(),
 });
 export type DeliverableWrite = z.infer<typeof deliverableWriteSchema>;
 
@@ -80,6 +83,8 @@ export const deliverablePatchSchema = z
     content: z.string().min(1).optional(),
     description: nullableText.optional(),
     deliveryUrl: nullableText.optional(),
+    startsAt: epochMsSchema.nullable().optional(),
+    endsAt: epochMsSchema.nullable().optional(),
   })
   .extend({ updatedAt: epochMsSchema });
 export type DeliverablePatch = z.infer<typeof deliverablePatchSchema>;

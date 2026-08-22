@@ -28,6 +28,8 @@ const item: DeliverableDto = {
   dimension: "customer",
   description: null,
   deliveryUrl: null,
+  startsAt: null,
+  endsAt: null,
   tasks: [
     { id: 1, customer: { id: 101, nickname: "张三" }, content: "拉群", done: true, doneAt: 1000, doneBy: null, remark: "已进群", updatedAt: 1500 },
     { id: 2, customer: { id: 101, nickname: "张三" }, content: "商品发货", done: false, doneAt: null, doneBy: null, remark: null, updatedAt: 1500 },
@@ -100,6 +102,14 @@ describe("交付单详情页", () => {
     expect(screen.getByText("张三")).toBeTruthy();
     expect(screen.getByText("1/4")).toBeTruthy();
     expect(screen.queryByRole("button", { name: "新增交付项" })).toBeNull();
+  });
+
+  it("页头提供甘特图 / 状态矩阵入口（所有人可见）", async () => {
+    mockDetailApi(assistantMe);
+    renderApp("/deliveries/1");
+    await screen.findByText("拉群");
+    expect(screen.getByRole("button", { name: "甘特图" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "状态矩阵" })).toBeTruthy();
   });
 
   it("新增交付项：客户维度默认全选 → POST dimension=customer 不带 customerIds", async () => {

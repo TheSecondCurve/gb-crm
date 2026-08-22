@@ -169,6 +169,8 @@ export interface DeliverableDto {
   dimension: string;
   description: string | null;
   deliveryUrl: string | null;
+  startsAt: number | null;
+  endsAt: number | null;
   tasks: DeliveryTaskDto[];
   createdAt: number;
   updatedAt: number;
@@ -227,6 +229,8 @@ export function assembleDeliverables(db: Db, rows: readonly DeliverableRow[]): D
     dimension: row.dimension,
     description: row.description,
     deliveryUrl: row.deliveryUrl,
+    startsAt: row.startsAt,
+    endsAt: row.endsAt,
     tasks: tasksByDeliverable.get(row.id) ?? [],
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
