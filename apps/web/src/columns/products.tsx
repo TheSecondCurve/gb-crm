@@ -83,13 +83,6 @@ export function productColumns(role: SystemRole | null): GridColumn<ProductDto>[
     },
     { key: "sopUrl", label: "SOP链接", editor: "text", editable: canUpdate },
     {
-      key: "defaultTasks",
-      label: "默认交付动作",
-      editor: "textarea",
-      editable: canUpdate,
-      render: (row) => row.defaultTasks || "—",
-    },
-    {
       key: "packageIncludes",
       label: "套餐包含",
       editor: "textarea",

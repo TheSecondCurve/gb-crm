@@ -40,8 +40,11 @@ export function Sidebar({ hidden }: { hidden: boolean }) {
               <NavLink to="/deals" className={NAV_LINK_CLASS}>
                 成交记录
               </NavLink>
-              <NavLink to="/deliverables" className={NAV_LINK_CLASS}>
+              <NavLink to="/deliveries" className={NAV_LINK_CLASS}>
                 交付管理
+              </NavLink>
+              <NavLink to="/delivery-types" className={NAV_LINK_CLASS}>
+                交付类型
               </NavLink>
             </div>
           </div>

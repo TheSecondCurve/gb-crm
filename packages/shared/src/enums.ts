@@ -98,11 +98,6 @@ export type SocialPlatform = z.infer<typeof socialPlatformSchema>;
 export const dealStageSchema = z.enum(["gift", "paid", "refunded", "closed"]);
 export type DealStage = z.infer<typeof dealStageSchema>;
 
-/** 交付项状态（K43，对照飞书「用户权益明细表」状态下拉） */
-export const deliverableStatusSchema = z.enum([
-  "pending",
-  "delivering",
-  "delivered",
-  "cancelled",
-]);
-export type DeliverableStatus = z.infer<typeof deliverableStatusSchema>;
+/** 交付项维度（K44：项目维度 / 客户维度——客户维度任务按客户展开，分别打勾备注） */
+export const deliverableDimensionSchema = z.enum(["project", "customer"]);
+export type DeliverableDimension = z.infer<typeof deliverableDimensionSchema>;

@@ -20,8 +20,6 @@ export interface ProductDto {
   status: string;
   /** K13：integer 分；null = 未定价 */
   priceCents: number | null;
-  /** K43：多行文本，每行一个默认交付动作（新建交付项时预填模板） */
-  defaultTasks: string | null;
   createdAt: number;
   updatedAt: number;
   createdBy: UserRef | null;
@@ -41,7 +39,6 @@ function toDto(row: ProductRow, refs: Map<number, UserRef>): ProductDto {
     isPackage: row.isPackage === 1,
     status: row.status,
     priceCents: row.priceCents,
-    defaultTasks: row.defaultTasks,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
     createdBy: ref(row.createdBy),

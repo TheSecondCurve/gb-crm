@@ -52,7 +52,6 @@ const PATCHABLE_KEYS = new Set([
   "productType",
   "status",
   "priceCents",
-  "defaultTasks",
 ]);
 
 export function patchProduct(

@@ -8,7 +8,9 @@ import { ChannelsPage } from "./pages/ChannelsPage";
 import { ProductsPage } from "./pages/ProductsPage";
 import { UsersPage } from "./pages/UsersPage";
 import { DealsPage } from "./pages/DealsPage";
-import { DeliverablesPage } from "./pages/DeliverablesPage";
+import { DeliveriesPage } from "./pages/DeliveriesPage";
+import { DeliveryDetailPage } from "./pages/DeliveryDetailPage";
+import { DeliveryTypesPage } from "./pages/DeliveryTypesPage";
 
 /** 未登录访问受保护页 → /login；等待 /auth/me 时显示占位 */
 function RequireAuth() {
@@ -28,7 +30,9 @@ export default function App() {
         <Route path="/channels" element={<ChannelsPage />} />
         <Route path="/products" element={<ProductsPage />} />
         <Route path="/deals" element={<DealsPage />} />
-        <Route path="/deliverables" element={<DeliverablesPage />} />
+        <Route path="/deliveries" element={<DeliveriesPage />} />
+        <Route path="/deliveries/:id" element={<DeliveryDetailPage />} />
+        <Route path="/delivery-types" element={<DeliveryTypesPage />} />
         <Route path="/users" element={<UsersPage />} />
         <Route path="*" element={<Navigate to="/customers" replace />} />
       </Route>

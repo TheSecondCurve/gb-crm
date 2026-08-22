@@ -5,7 +5,7 @@ import type {
   ChannelType,
   CustomerType,
   DealStage,
-  DeliverableStatus,
+  DeliverableDimension,
   EmploymentStatus,
   JobTitle,
   Platform,
@@ -121,9 +121,7 @@ export const dealStageLabels: Record<DealStage, string> = {
   closed: "已关闭",
 };
 
-export const deliverableStatusLabels: Record<DeliverableStatus, string> = {
-  pending: "未交付",
-  delivering: "交付中",
-  delivered: "已交付",
-  cancelled: "已取消",
+export const deliverableDimensionLabels: Record<DeliverableDimension, string> = {
+  project: "项目",
+  customer: "客户",
 };

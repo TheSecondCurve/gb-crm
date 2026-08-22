@@ -10,7 +10,7 @@ export const resourceSchema = z.enum([
   "products",
   "customers",
   "deals",
-  "deliverables",
+  "deliveries",
   "auth",
 ]);
 export type Resource = z.infer<typeof resourceSchema>;
@@ -50,7 +50,8 @@ const ALL_CUSTOMER_ACTIONS: readonly Action[] = [
   "updateOwners",
 ];
 const ALL_DEAL_ACTIONS: readonly Action[] = ["list", "read", "create", "update", "delete"];
-const ALL_DELIVERABLE_ACTIONS: readonly Action[] = ["list", "read", "create", "update", "delete"];
+// K44：交付相关（类型/交付单/交付项/任务）统一归 deliveries 一个 resource
+const ALL_DELIVERY_ACTIONS: readonly Action[] = ["list", "read", "create", "update", "delete"];
 
 const MATRIX: Record<SystemRole, Readonly<Partial<Record<Resource, readonly Action[]>>>> = {
   admin: {
@@ -59,7 +60,7 @@ const MATRIX: Record<SystemRole, Readonly<Partial<Record<Resource, readonly Acti
     products: ALL_PRODUCT_ACTIONS,
     customers: ALL_CUSTOMER_ACTIONS,
     deals: ALL_DEAL_ACTIONS,
-    deliverables: ALL_DELIVERABLE_ACTIONS,
+    deliveries: ALL_DELIVERY_ACTIONS,
     auth: ["setPassword"],
   },
   operator: {
@@ -69,18 +70,18 @@ const MATRIX: Record<SystemRole, Readonly<Partial<Record<Resource, readonly Acti
     products: ALL_PRODUCT_ACTIONS,
     customers: ALL_CUSTOMER_ACTIONS,
     deals: ALL_DEAL_ACTIONS,
-    deliverables: ALL_DELIVERABLE_ACTIONS,
+    deliveries: ALL_DELIVERY_ACTIONS,
     auth: ["setPassword"],
   },
   assistant: {
     // K31 锁定：assistant 不能 customers.create / customers.updateOwners
     // K27：assistant 不能 readChannelSecrets / updateChannelSecrets
-    // K42：assistant 对成交表只读（list/read）；K43：交付项同样只读
+    // K42/K44：成交与交付相关只读（list/read）
     customers: ["list", "read", "update"],
     channels: ["list", "read", "update"],
     products: ["list", "read"],
     deals: ["list", "read"],
-    deliverables: ["list", "read"],
+    deliveries: ["list", "read"],
     auth: ["setPassword"],
   },
 };
