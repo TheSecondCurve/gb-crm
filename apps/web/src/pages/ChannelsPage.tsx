@@ -1,13 +1,14 @@
 import { useCallback, useMemo, useState } from "react";
 import { can, channelStatusLabels } from "@gb-crm/shared";
 
-import { api } from "../api/client";
+import { api, ApiError } from "../api/client";
 import type { ChannelDto } from "../api/types";
 import { useAuth } from "../auth/AuthProvider";
 import { channelColumns } from "../columns/channels";
 import { optionsOf } from "../columns/common";
 import { DataGrid, Pagination } from "../components/DataGrid/DataGrid";
 import { ConfirmDialog } from "../components/ConfirmDialog";
+import { CreateRecordModal } from "../components/CreateRecordModal";
 import { SearchBar } from "../components/SearchBar";
 import { useToast } from "../components/Toast";
 import { focusEditableCell, useResourceList } from "./useResourceList";
@@ -18,6 +19,7 @@ export function ChannelsPage() {
   const showToast = useToast();
   const list = useResourceList<ChannelDto>("channels", "status");
   const columns = useMemo(() => channelColumns(role), [role]);
+  const [creating, setCreating] = useState(false);
   const [deleting, setDeleting] = useState<ChannelDto | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -34,12 +36,25 @@ export function ChannelsPage() {
     return res!.data;
   }, []);
 
-  const createRow = async () => {
+  // 新增：先弹字段表单，确认后才 POST（不再直接插空行）
+  const createChannel = async (body: Record<string, unknown>) => {
+    if ("followerCount" in body) {
+      const n = Number(body.followerCount);
+      if (!Number.isFinite(n)) {
+        showToast("粉丝/好友数需为数字");
+        return;
+      }
+      body = { ...body, followerCount: n };
+    }
     setBusy(true);
     try {
-      const res = await api.post<{ data: ChannelDto }>("/channels", { name: "未命名渠道" });
+      const res = await api.post<{ data: ChannelDto }>("/channels", body);
+      setCreating(false);
       await list.invalidate();
+      showToast("已创建渠道");
       if (res?.data) focusEditableCell(res.data.id, "name");
+    } catch (err) {
+      showToast(err instanceof ApiError ? err.message : "创建失败，请稍后重试");
     } finally {
       setBusy(false);
     }
@@ -77,7 +92,7 @@ export function ChannelsPage() {
             ))}
           </select>
           {canCreate && (
-            <button type="button" className="btn-primary" onClick={() => void createRow()} disabled={busy}>
+            <button type="button" className="btn-primary" onClick={() => setCreating(true)}>
               新增
             </button>
           )}
@@ -114,6 +129,16 @@ export function ChannelsPage() {
           />
         </div>
       </div>
+      {creating && (
+        <CreateRecordModal
+          title="新增渠道"
+          columns={columns}
+          requiredKeys={["name"]}
+          busy={busy}
+          onClose={() => setCreating(false)}
+          onSubmit={createChannel}
+        />
+      )}
       {deleting && (
         <ConfirmDialog
           title="删除渠道"

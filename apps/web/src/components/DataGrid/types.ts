@@ -19,8 +19,6 @@ export interface GridColumn<Row> {
   editor?: GridEditorType | null;
   /** 是否可编（需要 editor 同时非 null）；assistant 只读等由调用方算好 */
   editable?: boolean;
-  /** 默认可见；缺省 true。列选择器可覆盖并持久化 */
-  defaultVisible?: boolean;
   width?: number;
   /** PATCH body 里的键；缺省 = key（关系列常是 ownerIds ≠ 展示键 owners） */
   patchKey?: string;
