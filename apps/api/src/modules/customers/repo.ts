@@ -155,6 +155,16 @@ export function touchCustomer(
   db.update(customers).set(set).where(eq(customers.id, id)).run();
 }
 
+/** AI 打标写回行业（与 touch 同事务；自带 updated_at/updated_by bump，K48 扩展） */
+export function updateCustomerIndustry(
+  db: Db,
+  id: number,
+  industry: string,
+  set: { updatedAt: number; updatedBy: number | null },
+): void {
+  db.update(customers).set({ industry, ...set }).where(eq(customers.id, id)).run();
+}
+
 /** live 行中 wechat_openid 已被占用则返回该行（excludeId 用于 PATCH 排除自己；K24/可空唯一） */
 export function findLiveByWechatOpenid(
   db: Db,

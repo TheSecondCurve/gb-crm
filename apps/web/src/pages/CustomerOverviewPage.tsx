@@ -64,7 +64,7 @@ export function CustomerOverviewPage() {
       await api.post(`/customers/${customerId}/tags/generate`);
       setPicked([]);
       await refetch();
-      showToast("AI 已更新标签");
+      showToast("AI 已更新标签与行业");
     } catch (err) {
       toastError(err, "AI 打标失败，请稍后重试");
     } finally {

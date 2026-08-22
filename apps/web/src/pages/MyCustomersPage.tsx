@@ -91,7 +91,7 @@ export function MyCustomersPage() {
     try {
       await api.post(`/customers/${id}/tags/generate`);
       await list.invalidate();
-      showToast("AI 已更新标签");
+      showToast("AI 已更新标签与行业");
     } catch (err) {
       showToast(err instanceof ApiError ? err.message : "AI 打标失败，请稍后重试");
     } finally {
