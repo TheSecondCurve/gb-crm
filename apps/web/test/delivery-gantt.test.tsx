@@ -108,9 +108,37 @@ describe("交付甘特图页（项目维度）", () => {
     expect(barB.style.left).toBe(`${9 * COL_W}px`);
     expect(barB.style.width).toBe(`${3 * COL_W}px`);
 
-    // 未排期项在下方列表
-    expect(screen.getByText("未排期（1）")).toBeTruthy();
-    expect(screen.getByText("未排期项")).toBeTruthy();
+    // 未排期项在未排期卡片与 todo 清单各展示一次
+    expect(screen.getByText(/全部项目交付项/)).toBeTruthy();
+    expect(screen.getAllByText("未排期项").length).toBeGreaterThan(0);
+  });
+
+  it("时间轴范围固定为交付单周期：周期外交付项不扩展刻度", async () => {
+    const late = projectItem(24, "晚交付", dateToEpochMs("2026-09-01") as number, dateToEpochMs("2026-09-05") as number);
+    mockGanttApi(adminMe, [late], { startsAt: d1, endsAt: d12 });
+    renderApp("/deliveries/1/gantt");
+
+    // 轴 = 交付单周期 8/1~8/12：有 8月 刻度、无 9月 刻度（不被 9/1 交付项撑开）
+    expect(await screen.findByText("8月")).toBeTruthy();
+    expect(screen.queryByText("9月")).toBeNull();
+    expect(screen.getByTitle(epochMsToDate(d1))).toBeTruthy();
+    expect(screen.getByTitle(epochMsToDate(d12))).toBeTruthy();
+    // 9/1 交付项条块存在（轴外，被 track 裁剪），但不在时间轴刻度内
+    expect(await screen.findByLabelText("晚交付 排期条")).toBeTruthy();
+  });
+
+  it("下方 todo 列表：全部项目交付项按开始时间排序，未排期排最后", async () => {
+    mockGanttApi(adminMe);
+    renderApp("/deliveries/1/gantt");
+    await screen.findByLabelText("项目A 排期条");
+
+    const rows = within(screen.getByRole("list")).getAllByRole("listitem");
+    expect(rows).toHaveLength(3);
+    // 项目A(8/1) → 项目B(8/10) → 未排期项(startsAt null 最后，标注未排期)
+    expect(rows[0]!.textContent).toContain("项目A");
+    expect(rows[1]!.textContent).toContain("项目B");
+    expect(rows[2]!.textContent).toContain("未排期项");
+    expect(rows[2]!.textContent).toContain("未排期");
   });
 
   it("行内编辑起止日期 → PATCH 带 updatedAt；新增项目交付项 → POST dimension=project", async () => {
@@ -165,7 +193,8 @@ describe("交付甘特图页（项目维度）", () => {
     expect(screen.queryByRole("button", { name: "新增项目交付项" })).toBeNull();
     expect(screen.queryByRole("button", { name: "删除 项目A" })).toBeNull();
     expect(screen.queryByLabelText("项目A 开始日期")).toBeNull();
-    expect(screen.getByText(`${epochMsToDate(d1)} ~ ${epochMsToDate(d3)}`)).toBeTruthy();
+    // 时间轴行 + todo 清单各展示一次日期文本
+    expect(screen.getAllByText(`${epochMsToDate(d1)} ~ ${epochMsToDate(d3)}`).length).toBeGreaterThan(0);
   });
 
   it("无项目交付项：仍按交付单周期渲染时间轴刻度", async () => {

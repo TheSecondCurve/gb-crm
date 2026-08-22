@@ -1,7 +1,7 @@
 // 交付单详情 → 甘特图页（项目维度交付项，K44 增强）：
-// - 时间轴天粒度展示已排期（startsAt+endsAt 均非空）项目交付项条块；
+// - 时间轴天粒度展示已排期（startsAt+endsAt 均非空）项目交付项条块；时间轴固定按交付单周期；
 // - 行内编辑起止日期（change 即 PATCH，updatedAt OCC）；
-// - 新增（项目维度）/ 删除直接在本页维护；未排期项列在下区；
+// - 新增（项目维度）/ 删除直接在本页维护；下方按开始时间排序列出全部项目交付项（todo 风格）；
 // - assistant 只读（无编辑控件）。纯 CSS 网格实现，不引第三方甘特库。
 import { useMemo, useState, type FormEvent } from "react";
 import { useQuery } from "@tanstack/react-query";
@@ -19,6 +19,44 @@ import { useToast } from "../components/Toast";
 const DAY_MS = 86_400_000;
 const COL_W = 28; // 每列（天）像素宽
 
+/** 起止日期行内编辑（change 即 PATCH，updatedAt OCC）；只读时展示日期文本 */
+function DateRangeInputs({ item, canUpdate, onPatchDates }: { item: DeliverableDto; canUpdate: boolean; onPatchDates: (item: DeliverableDto, patch: Record<string, unknown>) => void }) {
+  if (!canUpdate) {
+    return (
+      <div className="gantt-item-meta">
+        {item.startsAt ? epochMsToDate(item.startsAt) : "—"} ~ {item.endsAt ? epochMsToDate(item.endsAt) : "—"}
+      </div>
+    );
+  }
+  return (
+    <div className="gantt-item-dates">
+      <input
+        type="date"
+        aria-label={`${item.content} 开始日期`}
+        autoComplete="off"
+        value={epochMsToDate(item.startsAt)}
+        onChange={(e) => {
+          const ms = dateToEpochMs(e.target.value);
+          if (ms === item.startsAt) return;
+          onPatchDates(item, { startsAt: ms });
+        }}
+      />
+      <span>—</span>
+      <input
+        type="date"
+        aria-label={`${item.content} 结束日期`}
+        autoComplete="off"
+        value={epochMsToDate(item.endsAt)}
+        onChange={(e) => {
+          const ms = dateToEpochMs(e.target.value);
+          if (ms === item.endsAt) return;
+          onPatchDates(item, { endsAt: ms });
+        }}
+      />
+    </div>
+  );
+}
+
 interface GanttItemProps {
   item: DeliverableDto;
   rangeStart: number;
@@ -28,7 +66,7 @@ interface GanttItemProps {
   onDelete: (item: DeliverableDto) => void;
 }
 
-/** 时间轴行：左标签列 + 右侧天网格（条块绝对定位） */
+/** 时间轴行：左标签列 + 右侧天网格（条块绝对定位，轴外部分由 track 裁剪） */
 function GanttItemRow({ item, rangeStart, rangeDays, canUpdate, onPatchDates, onDelete }: GanttItemProps) {
   const done = item.tasks.filter((t) => t.done).length;
   const total = item.tasks.length;
@@ -50,37 +88,7 @@ function GanttItemRow({ item, rangeStart, rangeDays, canUpdate, onPatchDates, on
         <div className="gantt-item-title" title={hint || undefined}>
           {item.content}
         </div>
-        {canUpdate ? (
-          <div className="gantt-item-dates">
-            <input
-              type="date"
-              aria-label={`${item.content} 开始日期`}
-              autoComplete="off"
-              value={epochMsToDate(item.startsAt)}
-              onChange={(e) => {
-                const ms = dateToEpochMs(e.target.value);
-                if (ms === item.startsAt) return;
-                onPatchDates(item, { startsAt: ms });
-              }}
-            />
-            <span>—</span>
-            <input
-              type="date"
-              aria-label={`${item.content} 结束日期`}
-              autoComplete="off"
-              value={epochMsToDate(item.endsAt)}
-              onChange={(e) => {
-                const ms = dateToEpochMs(e.target.value);
-                if (ms === item.endsAt) return;
-                onPatchDates(item, { endsAt: ms });
-              }}
-            />
-          </div>
-        ) : (
-          <div className="gantt-item-meta">
-            {item.startsAt ? epochMsToDate(item.startsAt) : "—"} ~ {item.endsAt ? epochMsToDate(item.endsAt) : "—"}
-          </div>
-        )}
+        <DateRangeInputs item={item} canUpdate={canUpdate} onPatchDates={onPatchDates} />
         <div className="gantt-item-meta">
           {total > 0 ? `进度 ${done}/${total}` : "无动作"}
         </div>
@@ -106,6 +114,26 @@ function GanttItemRow({ item, rangeStart, rangeDays, canUpdate, onPatchDates, on
             {item.content}
           </div>
         )}
+      </div>
+    </div>
+  );
+}
+
+/** todo 行：全部项目交付项只读清单（按开始时间排序）——标题 + 进度 + 日期/未排期 */
+function ProjectTodoRow({ item }: { item: DeliverableDto }) {
+  const done = item.tasks.filter((t) => t.done).length;
+  const total = item.tasks.length;
+  const scheduled = item.startsAt != null && item.endsAt != null;
+
+  return (
+    <div className="gantt-todo-row" role="listitem">
+      <span className={`gantt-todo-dot ${total > 0 && done === total ? "gantt-todo-done" : ""}`} />
+      <div className="gantt-todo-main">
+        <div className="gantt-todo-title">{item.content}</div>
+        <div className="gantt-todo-meta">{total > 0 ? `进度 ${done}/${total}` : "无动作"}</div>
+      </div>
+      <div className={`gantt-todo-meta ${scheduled ? "" : "gantt-todo-unscheduled"}`}>
+        {scheduled ? `${epochMsToDate(item.startsAt)} ~ ${epochMsToDate(item.endsAt)}` : "未排期"}
       </div>
     </div>
   );
@@ -204,27 +232,41 @@ export function DeliveryGanttPage() {
   const projectItems = useMemo(() => (items ?? []).filter((i) => i.dimension === "project"), [items]);
   const scheduled = projectItems.filter((i) => i.startsAt != null && i.endsAt != null);
   const unscheduled = projectItems.filter((i) => i.startsAt == null || i.endsAt == null);
+  // todo 清单：全部项目交付项按开始时间升序（未排期排最后）
+  const sortedProjectItems = useMemo(
+    () => [...projectItems].sort((a, b) => (a.startsAt ?? Infinity) - (b.startsAt ?? Infinity)),
+    [projectItems],
+  );
 
-  // 时间范围：已排期交付项 ∪ 交付单起止；两端取 min/max（按天）。
-  // 全部缺失时兜底为「当前月」；缺一端时 = 对端 ± 30 天，保证任何情况都有时间刻度。
+  // 时间范围：优先固定为交付单周期（startsAt ~ endsAt），不随交付项排期外扩；
+  // 交付单两端都缺时退而依赖交付项范围；仍缺 → 当前月；缺一端 → 对端 ± 30 天。
   const range = useMemo(() => {
-    const starts: number[] = [];
-    const ends: number[] = [];
-    if (delivery?.startsAt) starts.push(delivery.startsAt);
-    if (delivery?.endsAt) ends.push(delivery.endsAt);
-    for (const i of scheduled) {
-      if (i.startsAt != null) starts.push(i.startsAt);
-      if (i.endsAt != null) ends.push(i.endsAt);
-    }
+    const dStart = delivery?.startsAt ?? null;
+    const dEnd = delivery?.endsAt ?? null;
+    const itemStarts = scheduled.map((i) => i.startsAt as number);
+    const itemEnds = scheduled.map((i) => i.endsAt as number);
     let start: number;
     let end: number;
-    if (starts.length === 0 && ends.length === 0) {
-      const now = new Date();
-      start = new Date(now.getFullYear(), now.getMonth(), 1).getTime();
-      end = new Date(now.getFullYear(), now.getMonth() + 1, 0).getTime();
+    if (dStart !== null && dEnd !== null) {
+      start = dStart;
+      end = dEnd;
     } else {
-      start = starts.length > 0 ? Math.min(...starts) : Math.max(...ends) - 30 * DAY_MS;
-      end = ends.length > 0 ? Math.max(...ends) : Math.min(...starts) + 30 * DAY_MS;
+      const s = dStart ?? (itemStarts.length > 0 ? Math.min(...itemStarts) : null);
+      const e = dEnd ?? (itemEnds.length > 0 ? Math.max(...itemEnds) : null);
+      if (s !== null && e !== null) {
+        start = s;
+        end = e;
+      } else if (s === null && e === null) {
+        const now = new Date();
+        start = new Date(now.getFullYear(), now.getMonth(), 1).getTime();
+        end = new Date(now.getFullYear(), now.getMonth() + 1, 0).getTime();
+      } else if (s === null) {
+        start = e! - 30 * DAY_MS;
+        end = e!;
+      } else {
+        start = s;
+        end = s + 30 * DAY_MS;
+      }
     }
     if (end < start) return null;
     return { start, end, days: Math.round((end - start) / DAY_MS) + 1 };
@@ -383,6 +425,22 @@ export function DeliveryGanttPage() {
           </div>
         </div>
       )}
+
+      {/* 全部项目交付项：按开始时间排序的只读 todo 清单（含未排期，排在末尾） */}
+      <div className="card">
+        <div className="card-head">
+          <h2>全部项目交付项（{projectItems.length}）· 按开始时间</h2>
+        </div>
+        <div className="card-body-flush">
+          {sortedProjectItems.length > 0 && (
+            <div className="gantt-todo" role="list">
+              {sortedProjectItems.map((item) => (
+                <ProjectTodoRow key={item.id} item={item} />
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
 
       {creating && (
         <GanttItemFormModal busy={busy} onClose={() => setCreating(false)} onSubmit={createItem} />
