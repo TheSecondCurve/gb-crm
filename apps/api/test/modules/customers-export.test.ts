@@ -47,7 +47,8 @@ async function createCustomer(cookie: string, payload: Record<string, unknown>) 
 
 async function loadSheet(buf: Buffer): Promise<ExcelJS.Worksheet> {
   const wb = new ExcelJS.Workbook();
-  await wb.xlsx.load(buf);
+  // exceljs 的 load 声明引用旧版 @types/node 的 Buffer，与现版泛型 Buffer 不兼容，收窄断言
+  await wb.xlsx.load(buf as unknown as Parameters<ExcelJS.Workbook["xlsx"]["load"]>[0]);
   const ws = wb.getWorksheet("客户");
   expect(ws).toBeDefined();
   return ws!;
