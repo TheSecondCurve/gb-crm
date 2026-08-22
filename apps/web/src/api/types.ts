@@ -11,14 +11,8 @@ export interface ChannelRefDto {
   name: string;
 }
 
-export interface CustomerRefDto {
-  id: number;
-  nickname: string;
-}
-
 export interface CustomerDto {
   id: number;
-  feishuRecordId: string | null;
   nickname: string;
   realName: string | null;
   title: string | null;
@@ -34,20 +28,12 @@ export interface CustomerDto {
   city: string | null;
   originStory: string | null;
   notes: string | null;
-  profileUrl: string | null;
   customerType: string;
-  /** 原始 FK，即使父已软删也保留 */
-  parentId: number | null;
   wechatOpenid: string | null;
   lastFollowedAt: number | null;
-  feishuCreatedDate: number | null;
   tagCodes: string[];
   owners: UserRefDto[];
-  upsellOwners: UserRefDto[];
   sourceChannels: ChannelRefDto[];
-  communityChannels: ChannelRefDto[];
-  /** 父客户展开（live only）；父已软删则为 null */
-  parent: CustomerRefDto | null;
   createdAt: number;
   updatedAt: number;
   createdBy: UserRefDto | null;
@@ -56,7 +42,6 @@ export interface CustomerDto {
 
 export interface ChannelDto {
   id: number;
-  feishuRecordId: string | null;
   name: string;
   description: string | null;
   /** 以下五个为密钥字段（K27）：assistant GET 时为 null，前端展示「—」 */
@@ -80,7 +65,6 @@ export interface ChannelDto {
 
 export interface ProductDto {
   id: number;
-  feishuRecordId: string | null;
   name: string;
   notes: string | null;
   sopUrl: string | null;
@@ -91,7 +75,6 @@ export interface ProductDto {
   status: string;
   /** K13：integer 分；null = 未定价。UI 展示/编辑元 */
   priceCents: number | null;
-  feishuCreatedDate: number | null;
   createdAt: number;
   updatedAt: number;
   createdBy: UserRefDto | null;
@@ -100,7 +83,6 @@ export interface ProductDto {
 
 export interface UserDto {
   id: number;
-  feishuRecordId: string | null;
   username: string | null;
   nickname: string;
   realName: string | null;
@@ -112,7 +94,6 @@ export interface UserDto {
   accountStatus: string;
   duties: string | null;
   notes: string | null;
-  feishuUserId: string | null;
   createdAt: number;
   updatedAt: number;
   createdBy: UserRefDto | null;

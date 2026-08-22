@@ -1,4 +1,4 @@
-// customers CRUD + 五张 join + parent_id（K15）+ wechatOpenid + K31 权限（PR 7）。
+// customers CRUD + 三张 join + wechatOpenid + K31 权限（PR 7）。
 // inject + loginAs，假时钟控 updatedAt；PATCH 内核走收口后的 lib/patch-kernel.ts。
 import type { FastifyInstance } from "fastify";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -94,7 +94,7 @@ describe("RBAC 矩阵（customers 资源，K31 锁定）", () => {
     expect(res.json().data.nickname).toBe("助手改名");
   });
 
-  it("assistant PATCH 含 ownerIds 或 upsellOwnerIds 键 → 403（键存在即拦，[] 也算）", async () => {
+  it("assistant PATCH 含 ownerIds 键 → 403（键存在即拦，[] 也算）", async () => {
     const { id: asstId, cookie } = await loginAsRole("assistant");
     const { data: c } = await createCustomerAsAdmin();
 
@@ -104,12 +104,6 @@ describe("RBAC 矩阵（customers 资源，K31 锁定）", () => {
     });
     expect(r1.statusCode).toBe(403);
     expect(r1.json().error.code).toBe("FORBIDDEN");
-
-    const r2 = await patch(`/api/v1/customers/${c.id}`, cookie, {
-      upsellOwnerIds: [asstId],
-      updatedAt: c.updatedAt,
-    });
-    expect(r2.statusCode).toBe(403);
 
     const r3 = await patch(`/api/v1/customers/${c.id}`, cookie, {
       ownerIds: [],
@@ -141,35 +135,23 @@ describe("RBAC 矩阵（customers 资源，K31 锁定）", () => {
 });
 
 describe("POST /api/v1/customers 创建", () => {
-  it("省略可选字段 → 默认值；审计列展开；可同时带关系数组与 parentId", async () => {
+  it("省略可选字段 → 默认值；审计列展开；可同时带关系数组", async () => {
     const { id: adminId, cookie } = await loginAsRole("admin");
     const ownerId = await seedUser(tmp.db, { username: "owner1", nickname: "归属人一" });
     const chId = seedChannel(tmp.db, "来源渠道一");
-    const parent = await post("/api/v1/customers", cookie, {
-      nickname: "企业父",
-      customerType: "company",
-    });
-    expect(parent.statusCode).toBe(201);
 
     const res = await post("/api/v1/customers", cookie, {
-      nickname: "下属客户",
-      parentId: parent.json().data.id,
+      nickname: "客户全量",
       tagCodes: ["vip", "ip"],
       ownerIds: [ownerId],
-      upsellOwnerIds: [ownerId],
       sourceChannelIds: [chId],
-      communityChannelIds: [chId],
     });
     expect(res.statusCode).toBe(201);
     const data = res.json().data;
     expect(data.customerType).toBe("customer"); // schema 默认
-    expect(data.parentId).toBe(parent.json().data.id);
-    expect(data.parent).toEqual({ id: parent.json().data.id, nickname: "企业父" });
     expect(data.tagCodes).toEqual(expect.arrayContaining(["vip", "ip"]));
     expect(data.owners).toEqual([{ id: ownerId, nickname: "归属人一" }]);
-    expect(data.upsellOwners).toEqual([{ id: ownerId, nickname: "归属人一" }]);
     expect(data.sourceChannels).toEqual([{ id: chId, name: "来源渠道一" }]);
-    expect(data.communityChannels).toEqual([{ id: chId, name: "来源渠道一" }]);
     expect(data.createdBy).toEqual({ id: adminId, nickname: "昵称-admin" });
     expect(data.updatedBy).toEqual({ id: adminId, nickname: "昵称-admin" });
   });
@@ -362,22 +344,6 @@ describe("关系展开与软删（K9）", () => {
     expect(joinCount("customer_owners", c.id)).toBe(1);
   });
 
-  it("父客户软删后：parentId 仍在（原始 FK），parent: null", async () => {
-    const { cookie } = await loginAsRole("admin");
-    const parent = (await post("/api/v1/customers", cookie, { nickname: "父" })).json().data;
-    const child = (
-      await post("/api/v1/customers", cookie, { nickname: "子", parentId: parent.id })
-    ).json().data;
-    expect(child.parent).toEqual({ id: parent.id, nickname: "父" });
-
-    expect((await del(`/api/v1/customers/${parent.id}`, cookie)).statusCode).toBe(204);
-
-    const res = await get(`/api/v1/customers/${child.id}`, cookie);
-    expect(res.statusCode).toBe(200);
-    expect(res.json().data.parentId).toBe(parent.id);
-    expect(res.json().data.parent).toBeNull();
-  });
-
   it("PATCH tagCodes：[tags] 替换、[] 清空、非法值 422；渠道关系整表替换", async () => {
     const { cookie } = await loginAsRole("admin");
     const ch1 = seedChannel(tmp.db, "渠道一");
@@ -393,13 +359,11 @@ describe("关系展开与软删（K9）", () => {
     const r1 = await patch(`/api/v1/customers/${c.id}`, cookie, {
       tagCodes: ["ip", "guest"],
       sourceChannelIds: [ch2],
-      communityChannelIds: [ch1, ch2],
       updatedAt: c.updatedAt,
     });
     expect(r1.statusCode).toBe(200);
     expect(r1.json().data.tagCodes).toEqual(expect.arrayContaining(["ip", "guest"]));
     expect(r1.json().data.sourceChannels).toEqual([{ id: ch2, name: "渠道二" }]);
-    expect(r1.json().data.communityChannels).toHaveLength(2);
 
     clock.t += 1000;
     const r2 = await patch(`/api/v1/customers/${c.id}`, cookie, {
@@ -423,141 +387,16 @@ describe("关系展开与软删（K9）", () => {
     const { data: c } = await createCustomerAsAdmin();
 
     const r1 = await patch(`/api/v1/customers/${c.id}`, cookie, {
-      upsellOwnerIds: [ghost],
+      ownerIds: [ghost],
       updatedAt: c.updatedAt,
     });
     expect(r1.statusCode).toBe(422);
 
     const r2 = await patch(`/api/v1/customers/${c.id}`, cookie, {
-      communityChannelIds: [deadCh],
+      sourceChannelIds: [deadCh],
       updatedAt: c.updatedAt,
     });
     expect(r2.statusCode).toBe(422);
-  });
-});
-
-describe("parentId 校验（K15，始终执行）", () => {
-  it("自指 → 422", async () => {
-    const { cookie, data: c } = await createCustomerAsAdmin();
-    const res = await patch(`/api/v1/customers/${c.id}`, cookie, {
-      parentId: c.id,
-      updatedAt: c.updatedAt,
-    });
-    expect(res.statusCode).toBe(422);
-    expect(res.json().error.code).toBe("VALIDATION");
-  });
-
-  it("环 → 422：A 是 B 的父之后，B 不能再是 A 的父", async () => {
-    const { cookie } = await loginAsRole("admin");
-    const a = (await post("/api/v1/customers", cookie, { nickname: "A" })).json().data;
-    const b = (await post("/api/v1/customers", cookie, { nickname: "B" })).json().data;
-
-    clock.t += 1000;
-    const ok = await patch(`/api/v1/customers/${b.id}`, cookie, {
-      parentId: a.id,
-      updatedAt: b.updatedAt,
-    });
-    expect(ok.statusCode).toBe(200);
-
-    clock.t += 1000;
-    const cyc = await patch(`/api/v1/customers/${a.id}`, cookie, {
-      parentId: b.id,
-      updatedAt: a.updatedAt,
-    });
-    expect(cyc.statusCode).toBe(422);
-  });
-
-  it("深度 > 2 拒绝（两个方向）：新父自身已有父 → 422；自己已有下属再被指为子 → 422", async () => {
-    const { cookie } = await loginAsRole("admin");
-    const a = (await post("/api/v1/customers", cookie, { nickname: "A" })).json().data;
-    const b = (await post("/api/v1/customers", cookie, { nickname: "B" })).json().data;
-    const c = (await post("/api/v1/customers", cookie, { nickname: "C" })).json().data;
-
-    // B 挂在 A 下（A → B，两层，允许）
-    clock.t += 1000;
-    expect(
-      (
-        await patch(`/api/v1/customers/${b.id}`, cookie, {
-          parentId: a.id,
-          updatedAt: b.updatedAt,
-        })
-      ).statusCode,
-    ).toBe(200);
-
-    // 方向一：C 挂到 B 下 → 新父 B 自身已有父 A → 第三层，拒绝
-    clock.t += 1000;
-    expect(
-      (
-        await patch(`/api/v1/customers/${c.id}`, cookie, {
-          parentId: b.id,
-          updatedAt: c.updatedAt,
-        })
-      ).statusCode,
-    ).toBe(422);
-
-    // 方向二：A 已有下属 B，A 再被指为 C 的子 → 第三层，拒绝
-    clock.t += 1000;
-    expect(
-      (
-        await patch(`/api/v1/customers/${a.id}`, cookie, {
-          parentId: c.id,
-          updatedAt: a.updatedAt,
-        })
-      ).statusCode,
-    ).toBe(422);
-  });
-
-  it("指向软删客户 → 422；指向不存在客户 → 422", async () => {
-    const { cookie } = await loginAsRole("admin");
-    const parent = (await post("/api/v1/customers", cookie, { nickname: "父" })).json().data;
-    const { data: c } = await createCustomerAsAdmin();
-
-    expect((await del(`/api/v1/customers/${parent.id}`, cookie)).statusCode).toBe(204);
-
-    const r1 = await patch(`/api/v1/customers/${c.id}`, cookie, {
-      parentId: parent.id,
-      updatedAt: c.updatedAt,
-    });
-    expect(r1.statusCode).toBe(422);
-
-    const r2 = await patch(`/api/v1/customers/${c.id}`, cookie, {
-      parentId: 9999,
-      updatedAt: c.updatedAt,
-    });
-    expect(r2.statusCode).toBe(422);
-  });
-
-  it("PATCH parentId null → 清空允许（200）", async () => {
-    const { cookie } = await loginAsRole("admin");
-    const parent = (await post("/api/v1/customers", cookie, { nickname: "父" })).json().data;
-    const child = (
-      await post("/api/v1/customers", cookie, { nickname: "子", parentId: parent.id })
-    ).json().data;
-
-    clock.t += 1000;
-    const res = await patch(`/api/v1/customers/${child.id}`, cookie, {
-      parentId: null,
-      updatedAt: child.updatedAt,
-    });
-    expect(res.statusCode).toBe(200);
-    expect(res.json().data.parentId).toBeNull();
-    expect(res.json().data.parent).toBeNull();
-  });
-
-  it("create 时同样校验：自指不适用，但父不存在/深度受限 → 422", async () => {
-    const { cookie } = await loginAsRole("admin");
-    expect(
-      (await post("/api/v1/customers", cookie, { nickname: "x", parentId: 9999 })).statusCode,
-    ).toBe(422);
-
-    const a = (await post("/api/v1/customers", cookie, { nickname: "A" })).json().data;
-    const b = (
-      await post("/api/v1/customers", cookie, { nickname: "B", parentId: a.id })
-    ).json().data;
-    // B 已是 A 的子，再建 C 挂 B 下 → 深度 > 2
-    expect(
-      (await post("/api/v1/customers", cookie, { nickname: "C", parentId: b.id })).statusCode,
-    ).toBe(422);
   });
 });
 
@@ -692,20 +531,16 @@ describe("GET /api/v1/customers 列表", () => {
     expect((await get("/api/v1/customers?tag=bogus", cookie)).statusCode).toBe(422);
   });
 
-  it("过滤 channelId：来源渠道或所在社群任一命中即返回", async () => {
+  it("过滤 channelId：来源渠道包含该渠道即命中", async () => {
     const { cookie } = await loginAsRole("admin");
     const ch1 = seedChannel(tmp.db, "渠道一");
     const ch2 = seedChannel(tmp.db, "渠道二");
     await post("/api/v1/customers", cookie, { nickname: "来源客", sourceChannelIds: [ch1] });
-    await post("/api/v1/customers", cookie, { nickname: "社群客", communityChannelIds: [ch1] });
     await post("/api/v1/customers", cookie, { nickname: "其它客", sourceChannelIds: [ch2] });
 
     const res = await get(`/api/v1/customers?channelId=${ch1}`, cookie);
-    expect(res.json().meta.total).toBe(2);
-    expect(res.json().data.map((c: { nickname: string }) => c.nickname).sort()).toEqual([
-      "来源客",
-      "社群客",
-    ]);
+    expect(res.json().meta.total).toBe(1);
+    expect(res.json().data.map((c: { nickname: string }) => c.nickname)).toEqual(["来源客"]);
     expect((await get(`/api/v1/customers?channelId=${ch2}`, cookie)).json().meta.total).toBe(1);
   });
 
@@ -727,30 +562,23 @@ describe("GET /api/v1/customers 列表", () => {
     expect((await get("/api/v1/customers?sort=deletedAt", cookie)).statusCode).toBe(422);
   });
 
-  it("list 项带完整 expansions（owners/tags/channels/parent 形状正确），与 GET one 同形", async () => {
+  it("list 项带完整 expansions（owners/tags/sourceChannels 形状正确），与 GET one 同形", async () => {
     const { cookie } = await loginAsRole("admin");
     const u1 = await seedUser(tmp.db, { username: "o1", nickname: "一" });
     const ch1 = seedChannel(tmp.db, "渠道一");
-    const parent = (await post("/api/v1/customers", cookie, { nickname: "父" })).json().data;
     const created = await post("/api/v1/customers", cookie, {
       nickname: "全量客户",
-      parentId: parent.id,
       tagCodes: ["vip"],
       ownerIds: [u1],
-      upsellOwnerIds: [u1],
       sourceChannelIds: [ch1],
-      communityChannelIds: [ch1],
     });
     const c = created.json().data;
 
     const list = (await get("/api/v1/customers", cookie)).json();
     const item = list.data.find((x: { id: number }) => x.id === c.id);
     expect(item.owners).toEqual([{ id: u1, nickname: "一" }]);
-    expect(item.upsellOwners).toEqual([{ id: u1, nickname: "一" }]);
     expect(item.tagCodes).toEqual(["vip"]);
     expect(item.sourceChannels).toEqual([{ id: ch1, name: "渠道一" }]);
-    expect(item.communityChannels).toEqual([{ id: ch1, name: "渠道一" }]);
-    expect(item.parent).toEqual({ id: parent.id, nickname: "父" });
 
     const one = (await get(`/api/v1/customers/${c.id}`, cookie)).json().data;
     expect(one).toEqual(item);
@@ -770,7 +598,6 @@ describe("GET /api/v1/customers/:id", () => {
     expect(raw).not.toContain("real_name");
     expect(raw).not.toContain("wechat_openid");
     expect(raw).not.toContain("customer_type");
-    expect(raw).not.toContain("parent_id");
     expect(raw).not.toContain("created_at");
     expect(raw).not.toContain("deletedAt");
     expect(raw).not.toContain("deleted_at");

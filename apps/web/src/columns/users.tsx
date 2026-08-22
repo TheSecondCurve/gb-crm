@@ -72,7 +72,6 @@ export function userColumns(role: SystemRole | null): GridColumn<UserDto>[] {
     { key: "duties", label: "职责描述", editor: "textarea", editable: canEdit },
     { key: "notes", label: "其他备注", editor: "textarea", editable: canEdit },
     { key: "id", label: "ID", editable: false },
-    { key: "feishuRecordId", label: "飞书记录", editable: false },
     {
       key: "createdAt",
       label: "创建时间",

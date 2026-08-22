@@ -96,7 +96,6 @@ export function productColumns(role: SystemRole | null): GridColumn<ProductDto>[
     },
     { key: "notes", label: "备注", editor: "textarea", editable: canUpdate },
     { key: "id", label: "ID", editable: false },
-    { key: "feishuRecordId", label: "飞书记录", editable: false },
     {
       key: "createdAt",
       label: "创建时间",

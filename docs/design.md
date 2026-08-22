@@ -78,7 +78,7 @@ Phase 2 表（本设计不建表、不导入）：成交表 176、用户权益�
 - 登录会话、bootstrap 管理员、按 `system_role` 的 RBAC。
 - 四张主数据的分页列表、模糊搜索、单元格就地编辑、软删除。
 - 每张业务表具备 `created_at` / `updated_at` / `created_by` / `updated_by`。
-- 保留 `feishu_record_id`（历史列，v1 不做飞书导入）。
+- 飞书字段已由 K36–K38 移除（v1 不做飞书导入）。
 - 客户表预留可空唯一 `wechat_openid`。
 - 工程：npm workspaces monorepo、TypeScript strict、TDD。`apps/api` 覆盖率门禁覆盖 `src/modules/**`、`src/plugins/**`、`src/lib/**`、`src/db/**`，合计 ≥ 80%。Playwright 不挡功能合并（相对 `docs/dev.md` 的有意弱化，见 K28）。
 - Git：从 **已存在的** `dev` 拉 `feat/*` `fix/*`，PR 合入 `dev`，再定期 `dev` → `main`。
@@ -114,13 +114,13 @@ Phase 2 表（本设计不建表、不导入）：成交表 176、用户权益�
 | K6 | Bootstrap：**仅当需要创建或 reset 时才要求 `ADMIN_PASSWORD`**。已有 live admin 时密码可省略，进程仍启动。默认不覆盖已有密码。 | 避免 systemd 永远挂一份用不到的密码，又与「拒绝无密码启动」死锁。reset flag 缺密码则 **拒绝启动**。 |
 | K7 | API：**REST `/api/v1`**，信封 `{ data, meta }`，校验两端共用 Zod | 资源少、表格编辑是 PATCH；GraphQL 无收益。 |
 | K8 | 表格：TanStack Table；**双击进入编辑**（单击只选中）；**单格 PATCH** + 行级 `updatedAt` OCC；**每行一条 PATCH 队列**；文本 debounce 300ms；Tab/Enter **先 flush 再导航** | 单击即编会在 20+ 列 PII 表上误提交。无队列时 Tab 两格会用同一个 `updatedAt` 打出 409 并丢掉第二格。 |
-| K9 | 删除：软删除 `deleted_at`。**不**在软删时剥 join 行。GET 展开 **只 INNER 未删除** 的用户/渠道/父客户。产品锁死见 K33 | CASCADE/SET NULL 在 v1 不会触发。幽灵归属人不能 500，也不能冒充活人。 |
+| K9 | 删除：软删除 `deleted_at`。**不**在软删时剥 join 行。GET 展开 **只 INNER 未删除** 的用户/渠道。产品锁死见 K33 | CASCADE/SET NULL 在 v1 不会触发。幽灵归属人不能 500，也不能冒充活人。 |
 | K10 | 成员字段拆分：`job_title` × `system_role` × `employment_status` × `account_status`。无登录成员仍进 `users`。离职不自动改闸门 | 同时满足岗位与 core.md 登录权限。 |
 | K11 | 枚举：SQLite CHECK + shared Zod；库内存英文 code；**完整** label 表（Appendix A），禁止「节选」 | 关闭集合不需要枚举表。 |
-| K12 | 主键 INTEGER AUTOINCREMENT；`feishu_record_id` 另存 | 内部工具、行数少。 |
+| K12 | 主键 INTEGER AUTOINCREMENT | 内部工具、行数少。飞书 record id 另存已由 K37 移除 |
 | K13 | 金额 **`priceCents` integer 贯穿 DB 与 JSON**。UI 展示元。禁止 JS `yuan * 100` 不 round 就写入 | SQLite 无 DECIMAL；JSON number 元会把 K13 的意义打掉。 |
 | K14 | SQLite WAL + `busy_timeout=5000` + `foreign_keys=ON`，**全部在 `db/client.ts` 每条连接上执行**，不写进 migration。单进程。**handler 是同步 SQLite，会堵住 Fastify 事件循环**；v1 不上 worker pool | `foreign_keys`/`busy_timeout` 非文件持久化。393 行可接受阻塞。不要假装并发服务器。 |
-| K15 | M2M 同前。`parent_id`：**始终**拒绝自指、环、以及深度 > 2。UI 只有一列父客户，无树视图 | 「必要时」不是决策。 |
+| K15 | M2M 同前。~~`parent_id`：始终拒绝自指、环、深度 > 2，UI 一列父客户~~ **已由 K36 撤销（v1 移除父记录）** | 2026-08-22 产品决策撤销 |
 | K16 | v1 **不做**飞书 / CSV 导入。主数据在管理端维护 | 导入脚本与飞书 app 不是运行时依赖。 |
 | K17 | Git：使用 **已存在的 `origin/dev`**（与 `main` 同 SHA `df6b542`）。从 `dev` 拉功能分支。禁止创建 `dev` | 远程已在。 |
 | K18 | 无行级 ACL。权限是 `can(role, resource, action)` 一张表，放 `packages/shared`，单一 preHandler | 避免路由抄 `requireRole`、service 再漏 assistant 细项。 |
@@ -136,11 +136,14 @@ Phase 2 表（本设计不建表、不导入）：成交表 176、用户权益�
 | K28 | 覆盖率含 plugins/lib；e2e 不挡合并 = 对 `docs/dev.md` 的显式弱化，不是疏忽 | 401/403 路径必须被 80% 门禁罩住。 |
 | K29 | sqlite 文件创建后 `chmod 600`。备份 **只** 用 SQLite `.backup`（或 better-sqlite3 `backup()`）。过期 session 在 login 以及 1% 请求时 GC | 禁止 `cp` 正在 WAL 的库当发布步骤。 |
 | K30 | 单元格编辑深度 = 双击 + 键盘提交，不是完整 spreadsheet | 已关闭的原 Q6。 |
-| K31 | **兼职助手不能** `customers.create`，**不能** `customers.updateOwners`（归属人/升单人）。仍可 PATCH 客户其它标量。`can()` 此两格锁定，不是待改默认 | 2026-08-21 产品拍板（原 Q5）。PR 7 测试：assistant POST 403、PATCH ownerIds 403。 |
+| K31 | **兼职助手不能** `customers.create`，**不能** `customers.updateOwners`（归属人）。仍可 PATCH 客户其它标量。`can()` 此两格锁定，不是待改默认 | 2026-08-21 产品拍板（原 Q5）。PR 7 测试：assistant POST 403、PATCH ownerIds 403。 |
 | K32 | **内网 + Docker**。提供 `Dockerfile` 与 `docker-compose.yml`（PR 14 **必做**）。SQLite **volume 挂载**，不进镜像。可 `HOST=0.0.0.0` 跟在内网 Caddy 后；推荐 `COOKIE_SECURE=true` + HTTPS + `TRUST_PROXY=true`。非 loopback 且未 Secure 仍启动 warn。**不**暴露公网，不追加公网威胁加固 | 2026-08-21 产品/运维拍板（原 Q7）。 |
 | K33 | UI「删除」= 软删。v1 **无**回收站、**无**管理员硬删。`ON DELETE CASCADE`/`SET NULL` 仅 schema 预留，v1 路径永不触发 | 2026-08-21 产品拍板（原 Q9）。 |
 | K34 | 侧栏与登录标题品牌文案锁定为 **「闪光 · 客户运营」**。禁止「女商」 | 2026-08-21 产品拍板（原 Q13）。PR 8 用此常量。 |
 | K35 | Agent 访问：**PAT 与 cookie session 并行**，不做 JWT。已部署 CRM 托管 `GET /agent/login.sh`（`curl \| sh` 签发）；明文 token 只返回一次，本机 `~/.gb-crm/credentials.json`（目录 700 / 文件 600）。范围 `read`/`write`（REST 资源路由仍 **∩** `can()`）。Skill 包在仓库 `skills/gb-crm/` 备用（脚本发 Bearer，skill 不含密钥）。Agent 数据访问收敛为单一端点 **`POST /api/v1/agent/sql`**（自由 SQL，仅 Bearer PAT，cookie 403）：用 better-sqlite3 `stmt.readonly` 判读写——只读语句任意 scope / 角色放行（含渠道密钥列，产品接受）；写语句必须 `write` scope + admin。读上限 1000 行截断；单语句。REST 资源路由保留给 web 管理端 | Agent 用不了 HttpOnly cookie；JWT 难作废（K5）。**2026-08-21 产品拍板推翻旧决定「不开放任意 SQL」**：换 token 节省与取数灵活性；写 SQL 绕过 PATCH 内核 / OCC / 软删 / RBAC 的风险由「仅 admin+write 可写」与 SKILL.md 工作守则兜底 |
+| K36 | 客户表删除 父记录 / 档案页 / 所在社群 / 升单人 / 飞书记录（`parent_id` / `profile_url` / `feishu_record_id` 列 + `customer_upsell_owners` / `customer_community_channels` join 表） | 2026-08-22 产品决策。`0002_drop_customer_fields.sql` 迁移删除 |
+| K37 | users / channels / products 删除 飞书记录（`feishu_record_id` 列 + 各表 partial unique 索引） | 2026-08-22 产品决策。`0003_drop_feishu_record_ids.sql` 迁移删除 |
+| K38 | 清理最后三个飞书历史列：users.feishu_user_id / products.feishu_created_date / customers.feishu_created_date | 2026-08-22 产品决策。`0004_drop_feishu_remnants.sql` 迁移删除 |
 
 ---
 
@@ -494,7 +497,7 @@ export function can(role: SystemRole | null, resource: Resource, action: Action)
 | customers list/read/update | ✓ | ✓ | ✓ | 助手可改普通字段 |
 | customers create | ✓ | ✓ | **✗** | K31 锁定 |
 | customers delete | ✓ | ✓ | ✗ | K33 软删 |
-| customers updateOwners | ✓ | ✓ | **✗** | K31 锁定：不可改归属人/升单人 |
+| customers updateOwners | ✓ | ✓ | **✗** | K31 锁定：不可改归属人 |
 | channels list/read/update | ✓ | ✓ | ✓ | 密钥字段另算 |
 | channels create/delete | ✓ | ✓ | ✗ | |
 | channels readChannelSecrets / updateChannelSecrets | ✓ | ✓ | ✗ | GET 对助手返回 null |
@@ -504,7 +507,7 @@ export function can(role: SystemRole | null, resource: Resource, action: Action)
 | users create/update/delete/updateRole/setPassword | ✓ | ✗ | ✗ | |
 | auth 改自己密码 | ✓ | ✓ | ✓ | `PATCH /auth/password` |
 
-路由：`preHandler: requireCan('customers', 'update')`。PATCH customers 若 body **含** `ownerIds` 或 `upsellOwnerIds`，再加 `requireCan('customers','updateOwners')`。PATCH channels 若含密钥键，再加 `updateChannelSecrets`。测试必须锁住矩阵每一格，至少包括：
+路由：`preHandler: requireCan('customers', 'update')`。PATCH customers 若 body **含** `ownerIds`，再加 `requireCan('customers','updateOwners')`。PATCH channels 若含密钥键，再加 `updateChannelSecrets`。测试必须锁住矩阵每一格，至少包括：
 
 - assistant PATCH product → 403
 - assistant POST customer → 403（K31）
@@ -626,7 +629,7 @@ it("operator cannot create users", async () => {
 
 v1 **不提供**飞书 API / CSV 导入脚本。四张主数据在管理端维护。
 
-`feishu_record_id` 仍保留为可空列（unique **不含** `deleted_at` 谓词）。`username` / `wechat_openid` 的 unique 含 `deleted_at IS NULL`。
+飞书字段已全部移除（K36–K38）；`username` / `wechat_openid` 的 unique 含 `deleted_at IS NULL`。
 
 不在 v1 做：webhook、定时同步、写回飞书、一次性导入。
 
@@ -810,28 +813,23 @@ Zod：`customerPatchSchema = customerWriteSchema.partial().extend({ updatedAt: z
 
 1. `SELECT * FROM customers WHERE id IN (…) AND deleted_at IS NULL`
 2. `SELECT * FROM customer_tags WHERE customer_id IN (…)`
-3. 同样拉 owners / upsell / source / community join
+3. 同样拉 owners / source join
 4. `SELECT id, nickname FROM users WHERE id IN (…) AND deleted_at IS NULL`
 5. `SELECT id, name FROM channels WHERE id IN (…) AND deleted_at IS NULL`
-6. `SELECT id, nickname FROM customers WHERE id IN (parent_ids) AND deleted_at IS NULL`
 
 内存拼：
 
 ```ts
 {
   owners: { id, nickname }[];          // 只含 live
-  upsellOwners: { id, nickname }[];
   sourceChannels: { id, name }[];
-  communityChannels: { id, name }[];
   tagCodes: TagCode[];
-  parentId: number | null;             // 原始 FK，即使父已软删
-  parent: { id, nickname } | null;     // 父已删则为 null
   createdBy: { id, nickname } | null;  // live only
   updatedBy: { id, nickname } | null;
 }
 ```
 
-软删用户 **不** 删 `customer_owners` 行。GET 只是不把死人展开进去。列表测试：给客户一个 owner，软删该 user，GET customer → `owners: []`，join 表仍有行。父客户同理：`parentId` 仍在，`parent: null`。
+软删用户 **不** 删 `customer_owners` 行。GET 只是不把死人展开进去。列表测试：给客户一个 owner，软删该 user，GET customer → `owners: []`，join 表仍有行。
 
 渠道 GET：assistant 的 `accountId`/`registerPhone`/`registrant`/`realNamePerson`/`loginDevice` 为 `null`；operator/admin 原值。
 
@@ -865,13 +863,10 @@ export const customerListQuerySchema = pageQuerySchema.extend({
   realName?: string | null;
   /* 其余标量 … */
   customerType?: CustomerType;
-  parentId?: number | null;
   wechatOpenid?: string | null;
   tagCodes?: TagCode[];        // 缺席=不动；[]=清空
   ownerIds?: number[];
-  upsellOwnerIds?: number[];
   sourceChannelIds?: number[];
-  communityChannelIds?: number[];
   updatedAt: number;           // 必填
 }
 ```
@@ -880,7 +875,7 @@ export const customerListQuerySchema = pageQuerySchema.extend({
 
 ## Data Model Changes
 
-全新库。Drizzle schema 放 `apps/api/src/db/schema.ts`；SQL migration 放 `apps/api/drizzle/`（`0000_init.sql` 主数据，`0001_api_tokens.sql` 为 K35 PAT）。
+全新库。Drizzle schema 放 `apps/api/src/db/schema.ts`；SQL migration 放 `apps/api/drizzle/`（`0000_init.sql` 主数据，`0001_api_tokens.sql` 为 K35 PAT，`0002_drop_customer_fields.sql` 为 K36 客户字段删除，`0003_drop_feishu_record_ids.sql` 为 K37 三表飞书 id 删除，`0004_drop_feishu_remnants.sql` 为 K38 飞书历史列清理）。
 
 ### ER
 
@@ -891,16 +886,11 @@ erDiagram
   users ||--o{ channels : created
   users ||--o{ channel_owners : owns
   users ||--o{ customer_owners : owner
-  users ||--o{ customer_upsell_owners : upsell
   channels ||--o{ channel_owners : has
   channels ||--o{ customer_source_channels : source
-  channels ||--o{ customer_community_channels : community
   customers ||--o{ customer_tags : tagged
   customers ||--o{ customer_owners : has
-  customers ||--o{ customer_upsell_owners : has
   customers ||--o{ customer_source_channels : from
-  customers ||--o{ customer_community_channels : in
-  customers ||--o| customers : parent
 
   users {
     int id PK
@@ -925,7 +915,6 @@ erDiagram
   }
   customers {
     int id PK
-    int parent_id FK
     text nickname
     text wechat_openid
   }
@@ -954,7 +943,6 @@ deleted_at     INTEGER                    -- NULL = 活着
 
 CREATE TABLE users (
   id                INTEGER PRIMARY KEY AUTOINCREMENT,
-  feishu_record_id  TEXT,
   username          TEXT,
   password_hash     TEXT,
   nickname          TEXT NOT NULL,
@@ -973,7 +961,6 @@ CREATE TABLE users (
                     CHECK (account_status IN ('enabled','disabled')),
   duties            TEXT,
   notes             TEXT,
-  feishu_user_id    TEXT,
   created_at        INTEGER NOT NULL,
   updated_at        INTEGER NOT NULL,
   created_by        INTEGER REFERENCES users(id) ON DELETE SET NULL,
@@ -981,8 +968,6 @@ CREATE TABLE users (
   deleted_at        INTEGER
 );
 
-CREATE UNIQUE INDEX users_feishu_record_id_uq
-  ON users(feishu_record_id) WHERE feishu_record_id IS NOT NULL;
 CREATE UNIQUE INDEX users_username_live_uq
   ON users(username) WHERE username IS NOT NULL AND deleted_at IS NULL;
 
@@ -1017,7 +1002,6 @@ CREATE INDEX api_tokens_expires_at_idx ON api_tokens(expires_at);
 
 CREATE TABLE channels (
   id                INTEGER PRIMARY KEY AUTOINCREMENT,
-  feishu_record_id  TEXT,
   name              TEXT NOT NULL,
   description       TEXT,
   account_id        TEXT,
@@ -1050,8 +1034,6 @@ CREATE TABLE channels (
   updated_by        INTEGER REFERENCES users(id) ON DELETE SET NULL,
   deleted_at        INTEGER
 );
-CREATE UNIQUE INDEX channels_feishu_record_id_uq
-  ON channels(feishu_record_id) WHERE feishu_record_id IS NOT NULL;
 
 CREATE TABLE channel_owners (
   channel_id INTEGER NOT NULL REFERENCES channels(id) ON DELETE CASCADE,
@@ -1061,7 +1043,6 @@ CREATE TABLE channel_owners (
 
 CREATE TABLE products (
   id                INTEGER PRIMARY KEY AUTOINCREMENT,
-  feishu_record_id  TEXT,
   name              TEXT NOT NULL,
   notes             TEXT,
   sop_url           TEXT,
@@ -1076,19 +1057,15 @@ CREATE TABLE products (
   status            TEXT NOT NULL DEFAULT 'on_sale'
                     CHECK (status IN ('on_sale','off_sale','in_dev')),
   price_cents       INTEGER,                 -- NULL = 未定价
-  feishu_created_date INTEGER,
   created_at        INTEGER NOT NULL,
   updated_at        INTEGER NOT NULL,
   created_by        INTEGER REFERENCES users(id) ON DELETE SET NULL,
   updated_by        INTEGER REFERENCES users(id) ON DELETE SET NULL,
   deleted_at        INTEGER
 );
-CREATE UNIQUE INDEX products_feishu_record_id_uq
-  ON products(feishu_record_id) WHERE feishu_record_id IS NOT NULL;
 
 CREATE TABLE customers (
   id                    INTEGER PRIMARY KEY AUTOINCREMENT,
-  feishu_record_id      TEXT,
   nickname              TEXT NOT NULL,
   real_name             TEXT,
   title                 TEXT,
@@ -1104,26 +1081,20 @@ CREATE TABLE customers (
   city                  TEXT,
   origin_story          TEXT,
   notes                 TEXT,
-  profile_url           TEXT,
   customer_type         TEXT NOT NULL DEFAULT 'customer'
                         CHECK (customer_type IN (
                           'guest','customer','company','invite','partner'
                         )),
-  parent_id             INTEGER REFERENCES customers(id) ON DELETE SET NULL,
   wechat_openid         TEXT,
   last_followed_at      INTEGER,
-  feishu_created_date   INTEGER,
   created_at            INTEGER NOT NULL,
   updated_at            INTEGER NOT NULL,
   created_by            INTEGER REFERENCES users(id) ON DELETE SET NULL,
   updated_by            INTEGER REFERENCES users(id) ON DELETE SET NULL,
   deleted_at            INTEGER
 );
-CREATE UNIQUE INDEX customers_feishu_record_id_uq
-  ON customers(feishu_record_id) WHERE feishu_record_id IS NOT NULL;
 CREATE UNIQUE INDEX customers_wechat_openid_live_uq
   ON customers(wechat_openid) WHERE wechat_openid IS NOT NULL AND deleted_at IS NULL;
-CREATE INDEX customers_parent_id_idx ON customers(parent_id);
 CREATE INDEX customers_phone_idx ON customers(phone);
 
 CREATE TABLE customer_tags (
@@ -1141,26 +1112,14 @@ CREATE TABLE customer_owners (
   PRIMARY KEY (customer_id, user_id)
 );
 
-CREATE TABLE customer_upsell_owners (
-  customer_id INTEGER NOT NULL REFERENCES customers(id) ON DELETE CASCADE,
-  user_id     INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-  PRIMARY KEY (customer_id, user_id)
-);
-
 CREATE TABLE customer_source_channels (
-  customer_id INTEGER NOT NULL REFERENCES customers(id) ON DELETE CASCADE,
-  channel_id  INTEGER NOT NULL REFERENCES channels(id) ON DELETE CASCADE,
-  PRIMARY KEY (customer_id, channel_id)
-);
-
-CREATE TABLE customer_community_channels (
   customer_id INTEGER NOT NULL REFERENCES customers(id) ON DELETE CASCADE,
   channel_id  INTEGER NOT NULL REFERENCES channels(id) ON DELETE CASCADE,
   PRIMARY KEY (customer_id, channel_id)
 );
 ```
 
-`parent_id` 校验 **始终**（不是「必要时」）拒绝：指向自己、指向子孙造成的环、以及深度 > 2（只允许 企业 → 下属 一层）。v1 UI 一列父客户选择器，无树视图。JOIN `ON DELETE CASCADE` / `SET NULL` 在 v1 软删下不会触发（K33：无硬删路径）。
+父记录已移除（K36），不再有 parent_id 校验。
 
 ### 枚举 ↔ 飞书中文
 
@@ -1174,7 +1133,6 @@ import { sqliteTable, integer, text, primaryKey, uniqueIndex, index } from "driz
 
 export const users = sqliteTable("users", {
   id: integer("id").primaryKey({ autoIncrement: true }),
-  feishuRecordId: text("feishu_record_id"),
   username: text("username"),
   passwordHash: text("password_hash"),
   nickname: text("nickname").notNull(),
@@ -1386,13 +1344,13 @@ sqlite3 "$DATABASE_PATH" ".backup '${DATABASE_PATH}.bak-$(date +%F)'"
 
 | 原编号 | 决议 | Key Decision |
 | --- | --- | --- |
-| Q5 | 助手不能建客户、不能改归属人/升单人 | K31 |
+| Q5 | 助手不能建客户、不能改归属人 | K31 |
 | Q7 | 内网 + Docker（sqlite volume；非公网） | K32 |
 | Q9 | 只软删，无硬删/回收站 | K33 |
 | Q13 | 品牌文案「闪光 · 客户运营」 | K34 |
 | （后补） | Agent 用 PAT + 托管 `login.sh` + 仓库 `skills/gb-crm/`；不开 SQL | K35 |
 
-此前已关闭、不再提问：四张表（Goals/K19）、角色拆分（K10）、不做飞书导入（K16）、独立应用（K1）、Excel 深度（K8/K30）、父记录列（K15）、归属人 M2M（K15）、离职闸门（K10）、无登录成员进 users（K10）、`dev` 已存在（K17）。
+此前已关闭、不再提问：四张表（Goals/K19）、角色拆分（K10）、不做飞书导入（K16）、独立应用（K1）、Excel 深度（K8/K30）、父记录列（K15，2026-08-22 由 K36 撤销）、归属人 M2M（K15）、离职闸门（K10）、无登录成员进 users（K10）、`dev` 已存在（K17）。
 
 ---
 
@@ -1415,13 +1373,12 @@ Base 标题：团队核心数据库。摘录 `base_token=IWFEbuZcfalvQus6vkOcJXU
 | 客户跟进记录 | `tblI8KxzaJW7lXTL` | 0 | Phase 2 DROP |
 | 团队调休流水表 | `tbl3QdNXtm7EpbWP` | 48 | Phase 2 DROP |
 
-每行另存飞书 record id → `feishu_record_id`。
+每行另存飞书 record id → `feishu_record_id`（已由 K36/K37 移除）。
 
 ### A.1 团队成员 → `users`
 
 | 飞书字段 | 类型 | 选项/说明 | 列 | 变换 |
 | --- | --- | --- | --- | --- |
-| （record id） | — | | `feishu_record_id` | 原样 |
 | 昵称 | text | 对外/内部常用称呼 | `nickname` | 空 → `未命名成员` |
 | 真实姓名 | text | 身份证/合同 | `real_name` | 原样 |
 | 电话 | phone | | `phone` | 文本 |
@@ -1430,7 +1387,6 @@ Base 标题：团队核心数据库。摘录 `base_token=IWFEbuZcfalvQus6vkOcJXU
 | 状态 | select | 在职 / 交接中 / 已离职 | `employment_status` | 见枚举表；`left` 时 INSERT `account_status=disabled` |
 | 职责描述 | text | | `duties` | 原样 |
 | 其他备注 | text | | `notes` | 原样 |
-| 飞书用户 | user | | `feishu_user_id` | 取其 user id，失败则 NULL |
 | 调休余额 | formula | | DROP | |
 | 负责的渠道 | link → 渠道资产 | | `channel_owners` | 第二遍 |
 | 负责的客户 | link → 客户名单 | | `customer_owners` | 第二遍 |
@@ -1460,7 +1416,7 @@ Base 标题：团队核心数据库。摘录 `base_token=IWFEbuZcfalvQus6vkOcJXU
 | 粉丝/好友数 | number | | `follower_count` | |
 | 负责人 | link → 团队成员 | | `channel_owners` | 第二遍 |
 | 渠道来源的客户 | link | | inverse，不写出边 | |
-| 社群中的客户 | link | | inverse | |
+| 社群中的客户 | link | | DROP | |
 
 ### A.3 产品目录 → `products`
 
@@ -1475,7 +1431,6 @@ Base 标题：团队核心数据库。摘录 `base_token=IWFEbuZcfalvQus6vkOcJXU
 | 是否套餐 | select | 否 / 是 | `is_package` | 否=0 是=1 |
 | 状态 | select | 在售 / 停售 / 开发中 | `status` | |
 | 价格 | currency CNY 2dec | | `price_cents` | `Math.round(yuan * 100)`；非数 NULL |
-| 创建日期 | auto | | `feishu_created_date` | epoch ms |
 | 相关线索 | link → 成交 | | DROP | |
 | 产品交付记录 | link → 权益 | | DROP | |
 
@@ -1498,16 +1453,11 @@ Base 标题：团队核心数据库。摘录 `base_token=IWFEbuZcfalvQus6vkOcJXU
 | 城市 | text | | `city` | |
 | 3句话元故事 | text | | `origin_story` | |
 | 备注 | text | | `notes` | |
-| 档案页 | url | | `profile_url` | |
 | 客户类型 | select | 嘉宾 / 客户 / 企业 / 邀请 / 合作伙伴 | `customer_type` | |
 | 客户标签 | multi | 业务阶段 0-1 / 1-10 / 10-100 / VIP / IP / 副业 / 嘉宾 / 合作伙伴 | `customer_tags.tag` | |
-| 创建日期 | auto | | `feishu_created_date` | |
 | 最近跟进时间 | datetime | | `last_followed_at` | |
-| 父记录 | self-link | 企业-下属 | `parent_id` | 第二遍；环/深度>2 skip+warn |
-| 所在社群 | link → 渠道 | | `customer_community_channels` | |
 | 来源渠道 | link → 渠道 | | `customer_source_channels` | |
 | 归属人 | link → 成员 | | `customer_owners` | |
-| 升单人 | link → 成员 | | `customer_upsell_owners` | |
 | 归属人_飞书用户 | lookup | | DROP | |
 | 交付/线索成交/跟进 | link | | DROP | |
 | （本系统） | — | | `wechat_openid` | INSERT NULL |
@@ -1605,17 +1555,13 @@ Base 标题：团队核心数据库。摘录 `base_token=IWFEbuZcfalvQus6vkOcJXU
 | country | 国家 | text | Y | Y | 标量 |
 | originStory | 元故事 | textarea | Y | Y | 标量 |
 | notes | 备注 | textarea | Y | Y | 标量 |
-| profileUrl | 档案页 | text | Y | Y | 标量 |
-| parent | 父记录 | relation-one | Y | Y | expansion |
 | wechatOpenid | OpenID | text | Y | Y | 标量 |
 | lastFollowedAt | 最近跟进 | — | N | Y | 标量 |
 | 社交账号列 | 视频号等 | text | Y | Y | 标量 |
 | sourceChannels | 来源渠道 | relation | Y | Y | expansion |
-| communityChannels | 所在社群 | relation | Y | Y | expansion |
-| upsellOwners | 升单人 | relation | Y* | Y | expansion |
-| id / feishuRecordId / createdAt / createdBy / updatedBy | | — | N | Y | |
+| id / createdAt / createdBy / updatedBy | | — | N | Y | |
 
-\* assistant：`owners`/`upsellOwners` 只读（K31：`updateOwners` deny）。无「新增」按钮（K31：`create` deny）。删除按钮对助手隐藏（无 `delete`）。
+\* assistant：`owners` 只读（K31：`updateOwners` deny）。无「新增」按钮（K31：`create` deny）。删除按钮对助手隐藏（无 `delete`）。
 
 ### channels（冻结 `name`）
 
@@ -1649,7 +1595,7 @@ Base 标题：团队核心数据库。摘录 `base_token=IWFEbuZcfalvQus6vkOcJXU
 
 ## PR Plan
 
-原则：每个 PR 可独立审查、CI 绿才能合入 `dev`；功能分支从 **已存在的** `dev` 拉出，合入后删除。测试与实现同一 PR。PR 7（客户+五张 join+patch kernel）与 PR 9（DataGrid 队列）允许偏大——这才是风险点，不要把精力花在把 PR 6 拆成 6a/6b。
+原则：每个 PR 可独立审查、CI 绿才能合入 `dev`；功能分支从 **已存在的** `dev` 拉出，合入后删除。测试与实现同一 PR。PR 7（客户+三张 join+patch kernel）与 PR 9（DataGrid 队列）允许偏大——这才是风险点，不要把精力花在把 PR 6 拆成 6a/6b。
 
 ### PR 0 — `docs: 对齐 core/dev/style 与视觉样例`
 
@@ -1673,7 +1619,7 @@ Base 标题：团队核心数据库。摘录 `base_token=IWFEbuZcfalvQus6vkOcJXU
 
 - **依赖**：PR 2
 - **影响文件**：`apps/api/src/db/**`、`drizzle/0000_init.sql`（**无** PRAGMA）、`test/helpers/tmp-db.ts`、空壳 `app.ts`、`env.ts`
-- **说明**：四主表+join+`sessions.last_touched_at`。client.ts：PRAGMA + chmod 600。测试：CHECK、partial unique、username 软删后可复用、feishu_record_id 软删仍占用。
+- **说明**：四主表+join+`sessions.last_touched_at`。client.ts：PRAGMA + chmod 600。测试：CHECK、partial unique、username 软删后可复用。
 
 ### PR 4 — `feat(api): 签名 session、touch 节流、bootstrap`
 
@@ -1697,7 +1643,7 @@ Base 标题：团队核心数据库。摘录 `base_token=IWFEbuZcfalvQus6vkOcJXU
 
 - **依赖**：PR 6
 - **影响文件**：`modules/customers/**`、`lib/{patch-kernel,assemble}.ts`
-- **说明**：五张 join、`parent_id` 始终拒自指/环/深度>2、`wechatOpenid`。必测：partial PATCH、`ownerIds []` vs `{}`、双 PATCH 同 `updatedAt` 第二条 409、软删 owner 后 GET `owners:[]`、**assistant POST 403**、**assistant PATCH ownerIds 403**（K31 锁定策略，不是待改默认）、list 带 expansions。
+- **说明**：三张 join、`wechatOpenid`。必测：partial PATCH、`ownerIds []` vs `{}`、双 PATCH 同 `updatedAt` 第二条 409、软删 owner 后 GET `owners:[]`、**assistant POST 403**、**assistant PATCH ownerIds 403**（K31 锁定策略，不是待改默认）、list 带 expansions。
 
 ### PR 8 — `feat(web): 视觉壳、router、登录`
 

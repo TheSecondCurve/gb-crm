@@ -6,7 +6,6 @@ import type { CustomerDto } from "../src/api/types";
 
 const customer: CustomerDto = {
   id: 1,
-  feishuRecordId: null,
   nickname: "张三",
   realName: null,
   title: null,
@@ -22,18 +21,12 @@ const customer: CustomerDto = {
   city: "上海",
   originStory: null,
   notes: null,
-  profileUrl: null,
   customerType: "customer",
-  parentId: null,
   wechatOpenid: null,
   lastFollowedAt: null,
-  feishuCreatedDate: null,
   tagCodes: ["vip"],
   owners: [{ id: 1, nickname: "老王" }],
-  upsellOwners: [],
   sourceChannels: [],
-  communityChannels: [],
-  parent: null,
   createdAt: 1000,
   updatedAt: 2000,
   createdBy: null,
@@ -64,7 +57,7 @@ function mockCustomersApi(me: Me, rows: CustomerDto[] = [customer]) {
         },
       };
     }
-    // 表单弹窗的 relation 选项 loader（来源渠道/所在社群 = GET /channels?pageSize=100）
+    // 表单弹窗的 relation 选项 loader（来源渠道 = GET /channels?pageSize=100）
     if (url.startsWith("/api/v1/channels")) {
       return {
         status: 200,
@@ -226,7 +219,7 @@ describe("客户信息页", () => {
         updatedAt: 2000,
       });
     });
-    // 列表页用 pageSize=25（弹窗里父记录 loader 是 pageSize=100，区分开）
+    // 列表页刷新用 pageSize=25，与弹窗关系选项 loader 的 pageSize=100 区分开
     await waitFor(() =>
       expect(
         calls.filter(

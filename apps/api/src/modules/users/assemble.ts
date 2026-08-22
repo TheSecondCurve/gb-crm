@@ -1,6 +1,6 @@
 // users 序列化 assembler（K21：JSON 一律 camelCase；GET list 项 = GET one = PATCH 响应）。
 // 永不输出 passwordHash / deletedAt（deletedAt 在输出里只会是 null，无客户端用途）；
-// feishuUserId 允许输出。createdBy/updatedBy 展开为 { id, nickname } | null（live only，
+// createdBy/updatedBy 展开为 { id, nickname } | null（live only，
 // 软删用户为 null，K9）；批量展开避免 N+1（一页 ≤100 行）。
 import { and, inArray, isNull } from "drizzle-orm";
 
@@ -15,7 +15,6 @@ export interface UserRef {
 
 export interface UserDto {
   id: number;
-  feishuRecordId: string | null;
   username: string | null;
   nickname: string;
   realName: string | null;
@@ -27,7 +26,6 @@ export interface UserDto {
   accountStatus: string;
   duties: string | null;
   notes: string | null;
-  feishuUserId: string | null;
   createdAt: number;
   updatedAt: number;
   createdBy: UserRef | null;
@@ -38,7 +36,6 @@ function toDto(row: UserRow, refs: Map<number, UserRef>): UserDto {
   const ref = (id: number | null): UserRef | null => (id === null ? null : (refs.get(id) ?? null));
   return {
     id: row.id,
-    feishuRecordId: row.feishuRecordId,
     username: row.username,
     nickname: row.nickname,
     realName: row.realName,
@@ -50,7 +47,6 @@ function toDto(row: UserRow, refs: Map<number, UserRef>): UserDto {
     accountStatus: row.accountStatus,
     duties: row.duties,
     notes: row.notes,
-    feishuUserId: row.feishuUserId,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
     createdBy: ref(row.createdBy),

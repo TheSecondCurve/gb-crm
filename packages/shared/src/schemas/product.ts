@@ -17,7 +17,6 @@ export const productWriteSchema = z.object({
   isPackage: z.boolean().default(false),
   status: productStatusSchema.default("on_sale"),
   priceCents: z.number().int().nullable().optional(),
-  feishuCreatedDate: z.number().int().nullable().optional(),
 });
 export type ProductWrite = z.infer<typeof productWriteSchema>;
 

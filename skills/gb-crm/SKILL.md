@@ -55,7 +55,7 @@ curl -fsSL http://<crm-host>/agent/login.sh | sh
 
 ## 表结构
 
-真相源：`apps/api/drizzle/0000_init.sql`。列全部 snake_case（SQL 层没有 camelCase）。
+真相源：`apps/api/drizzle/` 迁移最终态（`0000_init.sql` 为历史；`0002`–`0004` 删除全部飞书字段与客户表部分字段）。列全部 snake_case（SQL 层没有 camelCase）。
 
 ### users（团队成员）
 
@@ -73,7 +73,6 @@ curl -fsSL http://<crm-host>/agent/login.sh | sh
 | created_at / updated_at | INTEGER | epoch 毫秒 |
 | created_by / updated_by | INTEGER | → users.id |
 | deleted_at | INTEGER | 软删 |
-| feishu_record_id / feishu_user_id | TEXT | 历史列，忽略 |
 
 ### customers（客户）
 
@@ -84,21 +83,17 @@ curl -fsSL http://<crm-host>/agent/login.sh | sh
 | phone / wechat / other_social | TEXT | |
 | wechat_channels_account / xiaoyuzhou_account / xiaohongshu_account / weibo_account / douyin_account | TEXT | 各平台账号 |
 | country / city | TEXT | |
-| origin_story / notes / profile_url | TEXT | 来历 / 备注 / 主页 |
+| origin_story / notes | TEXT | 来历 / 备注 |
 | customer_type | TEXT | 枚举见下，默认 `customer` |
-| parent_id | INTEGER | → customers.id（父客户，≤2 层） |
 | wechat_openid | TEXT | 预留，可空唯一（live 行内唯一） |
 | last_followed_at | INTEGER | 最近跟进，epoch 毫秒 |
 | created_at / updated_at / created_by / updated_by / deleted_at | | 同上 |
-| feishu_record_id / feishu_created_date | | 历史列，忽略 |
 
 关联（join 表，无主键以外的列，联合主键）：
 
 - `customer_tags(customer_id, tag)`：标签，tag 枚举见下。
 - `customer_owners(customer_id, user_id)`：归属人。
-- `customer_upsell_owners(customer_id, user_id)`：升单人。
 - `customer_source_channels(customer_id, channel_id)`：来源渠道。
-- `customer_community_channels(customer_id, channel_id)`：社群渠道。
 
 ### channels（渠道资产）
 

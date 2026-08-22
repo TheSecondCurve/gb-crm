@@ -124,7 +124,6 @@ export function channelColumns(role: SystemRole | null): GridColumn<ChannelDto>[
     secret("realNamePerson", "实名认证人"),
     secret("loginDevice", "登录设备"),
     { key: "id", label: "ID", editable: false },
-    { key: "feishuRecordId", label: "飞书记录", editable: false },
     {
       key: "createdAt",
       label: "创建时间",
