@@ -5,11 +5,13 @@ interface ModalProps {
   onClose: () => void;
   /** .modal-wide（560px），默认 420px */
   wide?: boolean;
+  /** .modal-form：近全屏宽（多列表单用，RecordFormModal） */
+  form?: boolean;
   children: ReactNode;
 }
 
 /** 白底、顶 3px --accent；点遮罩或按 Esc 关闭 */
-export function Modal({ title, onClose, wide, children }: ModalProps) {
+export function Modal({ title, onClose, wide, form, children }: ModalProps) {
   // Esc 全局取消
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -29,7 +31,11 @@ export function Modal({ title, onClose, wide, children }: ModalProps) {
         if (e.target === e.currentTarget) onClose();
       }}
     >
-      <div className={wide ? "modal modal-wide" : "modal"} role="dialog" aria-label={title}>
+      <div
+        className={form ? "modal modal-form" : wide ? "modal modal-wide" : "modal"}
+        role="dialog"
+        aria-label={title}
+      >
         <h2>{title}</h2>
         {children}
       </div>
