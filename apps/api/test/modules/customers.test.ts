@@ -618,8 +618,121 @@ describe("GET /api/v1/customers 列表", () => {
   });
 });
 
-describe("GET /api/v1/customers/:id", () => {
-  it("camelCase 完整行，无 snake_case 泄漏、无 deletedAt；软删/不存在 → 404；非法 id → 422", async () => {
+/** 按 name 取迁移种子标签 id（每测试库 1..13 确定性自增，但按 name 查更稳） */
+function tagIdByName(name: string): number {
+  const row = tmp.sqlite.prepare("SELECT id FROM tags WHERE name = ?").get(name) as
+    | { id: number }
+    | undefined;
+  if (!row) throw new Error(`seed tag not found: ${name}`);
+  return row.id;
+}
+
+describe("客户标签与行业（K45/K48）", () => {
+  it("create/PATCH 可带 industry；PATCH tagIds 替换、[] 清空；tags 按 sort,name 展开", async () => {
+    const { cookie } = await loginAsRole("admin");
+    const t1 = tagIdByName("创业者");
+    const t2 = tagIdByName("已成交");
+    const created = await post("/api/v1/customers", cookie, {
+      nickname: "带行业客户",
+      industry: "餐饮",
+      tagIds: [t1],
+    });
+    expect(created.statusCode).toBe(201);
+    const c = created.json().data;
+    expect(c.industry).toBe("餐饮");
+    expect(c.tags).toEqual([{ id: t1, name: "创业者", scope: "identity" }]);
+
+    // [值] → 整表替换；scope 不同 tag 也按 sort 排序
+    clock.t += 1000;
+    const r1 = await patch(`/api/v1/customers/${c.id}`, cookie, {
+      tagIds: [t2, t1],
+      updatedAt: c.updatedAt,
+    });
+    expect(r1.statusCode).toBe(200);
+    expect(r1.json().data.tags.map((t: { name: string }) => t.name)).toEqual(["创业者", "已成交"]);
+
+    // [] → 清空
+    clock.t += 1000;
+    const r2 = await patch(`/api/v1/customers/${c.id}`, cookie, {
+      tagIds: [],
+      updatedAt: r1.json().data.updatedAt,
+    });
+    expect(r2.json().data.tags).toEqual([]);
+    const joins = tmp.sqlite
+      .prepare("SELECT COUNT(*) AS c FROM customer_tags WHERE customer_id = ?")
+      .get(c.id) as { c: number };
+    expect(joins.c).toBe(0);
+
+    // 缺席 → 不动（PATCH 只改行业，标签不动）
+    clock.t += 1000;
+    const r3 = await patch(`/api/v1/customers/${c.id}`, cookie, {
+      industry: null,
+      updatedAt: r2.json().data.updatedAt,
+    });
+    expect(r3.json().data.industry).toBeNull();
+    expect(r3.json().data.tags).toEqual([]);
+  });
+
+  it("tagIds 引用不存在/已软删标签 → 422；soft 删标签后客户 tags 不展开（K9）", async () => {
+    const { cookie } = await loginAsRole("admin");
+    const t1 = tagIdByName("商学院");
+    const created = await post("/api/v1/customers", cookie, {
+      nickname: "c",
+      tagIds: [t1],
+    });
+    const c = created.json().data;
+
+    // 软删标签（走 tags API）
+    const delRes = await del(`/api/v1/tags/${t1}`, cookie);
+    expect(delRes.statusCode).toBe(204);
+
+    // 客户 tags 不再展开该标签，但 join 行保留
+    const res = await get(`/api/v1/customers/${c.id}`, cookie);
+    expect(res.json().data.tags).toEqual([]);
+    const joins = tmp.sqlite
+      .prepare("SELECT COUNT(*) AS c FROM customer_tags WHERE customer_id = ? AND tag_id = ?")
+      .get(c.id, t1) as { c: number };
+    expect(joins.c).toBe(1);
+
+    // PATCH 引用软删标签 → 422
+    clock.t += 1000;
+    const bad = await patch(`/api/v1/customers/${c.id}`, cookie, {
+      tagIds: [t1],
+      updatedAt: c.updatedAt,
+    });
+    expect(bad.statusCode).toBe(422);
+  });
+
+  it("列表按 tagId 过滤：含该标签即命中；无标签客户不命中", async () => {
+    const { cookie } = await loginAsRole("admin");
+    const t1 = tagIdByName("咨询中");
+    const t2 = tagIdByName("沉睡");
+    await post("/api/v1/customers", cookie, { nickname: "打标客", tagIds: [t1, t2] });
+    await post("/api/v1/customers", cookie, { nickname: "无标客" });
+
+    const res = await get(`/api/v1/customers?tagId=${t1}`, cookie);
+    expect(res.json().meta.total).toBe(1);
+    expect(res.json().data.map((c: { nickname: string }) => c.nickname)).toEqual(["打标客"]);
+
+    expect((await get(`/api/v1/customers?tagId=9999`, cookie)).json().meta.total).toBe(0);
+  });
+
+  it("assistant PATCH 普通字段含 tagIds → 200（标签与标量同属 customers.update）", async () => {
+    const { cookie } = await loginAsRole("assistant");
+    const t1 = tagIdByName("已联系");
+    const { data: c } = await createCustomerAsAdmin();
+
+    clock.t += 1000;
+    const res = await patch(`/api/v1/customers/${c.id}`, cookie, {
+      tagIds: [t1],
+      updatedAt: c.updatedAt,
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.json().data.tags.map((t: { name: string }) => t.name)).toEqual(["已联系"]);
+  });
+});
+
+describe("GET /api/v1/customers/:id", () => {  it("camelCase 完整行，无 snake_case 泄漏、无 deletedAt；软删/不存在 → 404；非法 id → 422", async () => {
     const { cookie, data: c } = await createCustomerAsAdmin({
       phone: "1",
       wechatOpenid: "openid-x",

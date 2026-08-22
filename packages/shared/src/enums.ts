@@ -109,3 +109,7 @@ export type DeliveryTypeKind = z.infer<typeof deliveryTypeKindSchema>;
 /** 交付类型状态（K44：有效 / 失效） */
 export const deliveryTypeStatusSchema = z.enum(["active", "inactive"]);
 export type DeliveryTypeStatus = z.infer<typeof deliveryTypeStatusSchema>;
+
+/** 标签分类（K45：身份 / 阶段 / 兴趣 / 其它） */
+export const tagScopeSchema = z.enum(["identity", "stage", "interest", "other"]);
+export type TagScope = z.infer<typeof tagScopeSchema>;

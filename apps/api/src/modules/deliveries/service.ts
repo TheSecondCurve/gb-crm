@@ -21,6 +21,7 @@ import type { Db } from "../../db/client.js";
 import { createAudit, updateAudit, type AuditContext } from "../../lib/audit.js";
 import { applyScalarPatch } from "../../lib/patch-kernel.js";
 import { conflict, notFound, unprocessable } from "../../plugins/error-handler.js";
+import { assembleCustomers, type CustomerDto } from "../customers/assemble.js";
 import {
   assembleDeliverable,
   assembleDeliverables,
@@ -52,6 +53,7 @@ import {
   insertTask,
   listDeliverablesByDeliveryIds,
   listDeliveries,
+  listDeliveryCustomerRowsById,
   listDeliveryTypes,
   occUpdateDeliverable,
   occUpdateDelivery,
@@ -157,6 +159,13 @@ export function getDeliveryResult(db: Db, id: number): DeliveryDto {
   const row = getDeliveryByIdAny(db, id);
   if (!row || row.deletedAt !== null) throw notFound("交付记录不存在");
   return assembleDelivery(db, row);
+}
+
+/** 交付单关联客户全量（圈子工作台：客户表 + Excel 导出） */
+export function listDeliveryCustomersResult(db: Db, deliveryId: number): CustomerDto[] {
+  const row = getDeliveryByIdAny(db, deliveryId);
+  if (!row || row.deletedAt !== null) throw notFound("交付记录不存在");
+  return assembleCustomers(db, listDeliveryCustomerRowsById(db, deliveryId));
 }
 
 export function createDelivery(db: Db, body: DeliveryWrite, ctx: AuditContext): DeliveryDto {

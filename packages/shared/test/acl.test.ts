@@ -27,6 +27,8 @@ const EXPECTED: Record<SystemRole, Partial<Record<Resource, readonly Action[]>>>
     customers: ["list", "read", "create", "update", "delete", "updateOwners"],
     deals: ["list", "read", "create", "update", "delete"],
     deliveries: ["list", "read", "create", "update", "delete"],
+    tags: ["list", "read", "create", "update", "delete"],
+    system: ["read", "update"],
     auth: ["setPassword"],
   },
   operator: {
@@ -44,6 +46,7 @@ const EXPECTED: Record<SystemRole, Partial<Record<Resource, readonly Action[]>>>
     customers: ["list", "read", "create", "update", "delete", "updateOwners"],
     deals: ["list", "read", "create", "update", "delete"],
     deliveries: ["list", "read", "create", "update", "delete"],
+    tags: ["list", "read"],
     auth: ["setPassword"],
   },
   assistant: {
@@ -52,6 +55,7 @@ const EXPECTED: Record<SystemRole, Partial<Record<Resource, readonly Action[]>>>
     products: ["list", "read"],
     deals: ["list", "read"],
     deliveries: ["list", "read"],
+    tags: ["list", "read"],
     auth: ["setPassword"],
   },
 };
@@ -142,6 +146,27 @@ describe("§6 必测场景", () => {
       expect(can("assistant", "deliveries", action)).toBe(false);
       expect(can("admin", "deliveries", action)).toBe(true);
       expect(can("operator", "deliveries", action)).toBe(true);
+    }
+  });
+
+  it("tags 词表：admin 全量，operator/assistant 只读（K45）", () => {
+    expect(can("admin", "tags", "create")).toBe(true);
+    expect(can("admin", "tags", "delete")).toBe(true);
+    for (const role of ["operator", "assistant"] as const) {
+      expect(can(role, "tags", "list")).toBe(true);
+      expect(can(role, "tags", "read")).toBe(true);
+      for (const action of ["create", "update", "delete"] as const) {
+        expect(can(role, "tags", action)).toBe(false);
+      }
+    }
+  });
+
+  it("system 配置：仅 admin（K46）", () => {
+    expect(can("admin", "system", "read")).toBe(true);
+    expect(can("admin", "system", "update")).toBe(true);
+    for (const role of ["operator", "assistant", null] as const) {
+      expect(can(role, "system", "read")).toBe(false);
+      expect(can(role, "system", "update")).toBe(false);
     }
   });
 });

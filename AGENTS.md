@@ -36,6 +36,8 @@ v1 **不抽** `packages/ui`。视觉 token 在 `apps/web/src/styles/tokens.css`�
 
 例外：`modules/agent/routes.ts` 是单文件模块（K35 Agent SQL 端点），直接用 `db.$client` 原生 better-sqlite3，不走三层。
 
+K45/K46 补充：`modules/tags` 词表三层（admin 写、其余只读）；`modules/system` 仅 ai-config 单行配置（GET 掩码 / PATCH，admin only，有意不做 OCC）；AI 打标 `lib/llm.ts`（OpenAI 兼容 `chat/completions`，零新依赖，`buildApp({ llmFetch })` 注入测试 mock）。
+
 公共能力：
 
 - `src/lib/patch-kernel.ts` — PATCH 标量内核（键存在才 SET）
@@ -48,7 +50,7 @@ v1 **不抽** `packages/ui`。视觉 token 在 `apps/web/src/styles/tokens.css`�
 
 ### Web
 
-- 路由：`/login` `/customers` `/channels` `/products` `/users`（默认进客户）
+- 路由：`/login` `/my/customers` `/my/deals` `/customers` `/customers/:id`（总览）`/channels` `/products` `/deals` `/deliveries` `/deliveries/:id` `/deliveries/:id/circle` `/deliveries/:id/gantt` `/deliveries/:id/matrix` `/delivery-types` `/users` `/settings`（系统设置，admin）（默认进客户）
 - 表格：`components/DataGrid/`（双击编辑 + 行内 PATCH 队列）
 - 列定义：`src/columns/`；列表页：`src/pages/` + `useResourceList.ts`
 - 开发：Vite `:5173`，`server.proxy."/api"` → `:3001`
@@ -98,7 +100,7 @@ Workspace 依赖写法：`"@gb-crm/shared": "*"`（npm 不支持 `workspace:*`�
 - JSON **一律 camelCase**（含 `sort=updatedAt`）。禁止 snake_case query 混 camelCase body。
 - 时间戳：**epoch 毫秒 UTC**。Cookie `maxAge` 例外（秒）。
 - 金额：`priceCents` 整数贯穿 DB 与 JSON；UI 展示元。禁止 `yuan * 100` 不 round 就写入。
-- PATCH 内核：JSON **键存在** → SET（`null` 清空可空列）；**键缺席** → 不动。关系数组同理：缺席不动，`[]` 清空。客户归属人 `ownerId` 单值（K39）：缺席不动、`null` 清空；社交账号 `socialAccounts` 值数组 `{ platform, account }`（K41）。行级 OCC 用 `updatedAt`；客户端每行一条队列、串行、每次带上一次 200 的 `updatedAt`。
+- PATCH 内核：JSON **键存在** → SET（`null` 清空可空列）；**键缺席** → 不动。关系数组同理：缺席不动，`[]` 清空（`socialAccounts`、`sourceChannelIds`、`tagIds` 同规则）。客户归属人 `ownerId` 单值（K39）：缺席不动、`null` 清空；社交账号 `socialAccounts` 值数组 `{ platform, account }`（K41）。行级 OCC 用 `updatedAt`；客户端每行一条队列、串行、每次带上一次 200 的 `updatedAt`。
 - 删除 = 软删 `deleted_at`。v1 **无**回收站、**无**硬删。软删时 **不剥** join 行。GET 展开只 INNER **未删除** 的用户/渠道。
 - SQLite PRAGMA（WAL / busy_timeout=5000 / foreign_keys=ON）只在 `db/client.ts` 每条连接上执行，**不写进 migration**。库文件创建后 `chmod 600`。备份只用 `.backup`，禁止 `cp` 热库。
 - handler 是同步 SQLite，会堵住事件循环。v1 不上 worker pool / Redis / Postgres。
@@ -111,7 +113,7 @@ Workspace 依赖写法：`"@gb-crm/shared": "*"`（npm 不支持 `workspace:*`�
 - Agent PAT（K35）与 cookie **并行**：`Authorization: Bearer`；有 Bearer 不回落 cookie。签发：`curl -fsSL http://<host>/agent/login.sh | sh` → `~/.gb-crm/credentials.json`。REST 资源路由 `read`/`write` ∩ `can()`。Skill 在 `skills/gb-crm/`，**不含**密钥。Agent 数据访问走单一自由 SQL 端点 `POST /api/v1/agent/sql`（仅 Bearer PAT，cookie 403）：better-sqlite3 `stmt.readonly` 判读写——只读语句任意 scope/角色放行（含渠道密钥列），写语句必须 write scope + admin；单语句；读上限 1000 行截断。
 - 登录限流 10 次/分钟/IP；仅 `TRUST_PROXY=true` 时才信 `X-Forwarded-For`。
 - 权限唯一来源：`packages/shared` 的 `can(role, resource, action)`。缺席 = deny。`role===null` → false。路由用 `requireCan`，不要在 service 再抄一套角色判断。
-- **无行级 ACL**（没有「只看我的客户」）。
+- **无行级 ACL**（没有「只看我的客户」的权限收紧；「我的运营」`/my/customers` `/my/deals` 只是 ownerId 固定过滤的列表页，不限制数据可见性）。
 - Bootstrap：零 live admin 时要 `ADMIN_USERNAME` + `ADMIN_PASSWORD`。已有 live admin 可省略密码。`ADMIN_BOOTSTRAP_RESET_PASSWORD=true` 且无密码 → **拒绝启动**。
 
 角色能力摘要：
@@ -124,6 +126,8 @@ Workspace 依赖写法：`"@gb-crm/shared": "*"`（npm 不支持 `workspace:*`�
 | customers.create / updateOwners（ownerId 键，K39 单值） | ✓ | ✓ | ✗（仍可 PATCH 其它标量） |
 | deals（成交表，K42） | ✓ | ✓ | list/read only |
 | deliveries（交付单/类型/交付项/动作，K44） | ✓ | ✓ | list/read only |
+| tags 词表（K45，写=增删改词表） | ✓ | list/read only | list/read only |
+| system 配置（K46，LLM 打标） | ✓ | ✗ | ✗ |
 
 渠道密钥字段：`accountId` / `registerPhone` / `registrant` / `realNamePerson` / `loginDevice`。
 
@@ -133,7 +137,7 @@ Workspace 依赖写法：`"@gb-crm/shared": "*"`（npm 不支持 `workspace:*`�
 
 - 主底永远冷灰 `#F1F1EF`，禁整页铺玄黑。冷漆红 `#CE1432` 只点睛（面积 ≤5%）。玄黑底上的字用奶白 `#EDEAE3`，别用纯白。
 - 表格：**双击**进入编辑（单击只选中）；文本 debounce 300ms；Tab/Enter **先 flush 再导航**。不是完整 spreadsheet，不要上 AG Grid Enterprise。
-- 列表页：`q` + pageSize 25/50/100 + 至多一个类型/状态下拉。API 上的 `ownerId`/`channelId` 过滤可以有，**UI 不做**。
+- 列表页：`q` + pageSize 25/50/100 + 至多一个类型/状态下拉。API 上的 `ownerId`/`channelId` 过滤可以有，**UI 不做**（例外：「我的运营」`/my/customers`、`/my/deals` 以当前用户为固定 ownerId 等值过滤，不加下拉控件；客户页 K45 加一个标签下拉——`useResourceList` 的 `secondaryFilterKey`，仅客户页用）。
 
 ### 环境变量
 
@@ -153,9 +157,11 @@ Workspace 依赖写法：`"@gb-crm/shared": "*"`（npm 不支持 `workspace:*`�
 4. **产品目录 `/products`**：类型/状态/是否套餐/价格（分）。
 5. **客户信息 `/customers`**：分页、模糊搜索、来源渠道、归属人（单值 `owner_id`，K39）、社交账号独立表（`customer_social_accounts`，K41，列表页/导出不展示）；预留可空唯一 `wechat_openid`（不接小程序）。导出 Excel：`GET /api/v1/customers/export.xlsx`（exceljs 服务端生成，复用列表同一 WHERE，跟随 q/类型筛选，不分页）。
 6. **成交记录 `/deals`**（K42）：客户（单值 FK 必填）、意向产品、负责人（单值 FK 可空）、阶段（赠送/已付款/退款/已关闭）、订单号、交付日期、支付信息备注；客户城市只读列。assistant 只读。
-7. **交付管理 `/deliveries` + 交付类型 `/delivery-types`**（K44）：交付单（类型 + 起止日期（epoch ms，日历输入）+ 客户集合（**可不选**，空交付单）+ 备注，与成交弱关联；客户可手动多选或按意向产品从成交 merge，`/deals` 按 `productId` 过滤）；交付项（项目维度 / 客户维度——客户维度按客户分组分别打勾 + 备注）；交付类型配置表（名称 + 类型 kind 咨询/活动/圈子/其他 + 状态 status 有效/失效 + 说明/默认动作模板，创建交付项时预填）。打勾记完成人/时间，行级 OCC。assistant 只读。
-8. 每张业务表有 `created_at` / `updated_at` / `created_by` / `updated_by`。
-9. **Agent 令牌**：已有用户本机签发 PAT，skill 走单一 SQL 端点 `/api/v1/agent/sql`（K35）。
+7. **客户画像（标签 + AI 打标 + 总览）**（K45–K48）：标签词表 `tags`（身份/阶段/兴趣/其它，设置页 `/settings` 维护，admin only，AI 只能从词表选词）+ 客户标签 M2M（PATCH `tagIds` 关系数组）+ 客户列表标签筛选下拉 + 只读标签徽章列；`customers.industry`（行业）列；AI 一键打标 `POST /customers/:id/tags/generate`（`ai_config` 单行配置 OpenAI 兼容接口，并集合并直接保存，`LLM_ERROR` 502）；客户总览页 `/customers/:id`（基本信息 + AI 打标 + 统计（成交笔数/累计实付/最近成交/圈子数）+ 消费记录 + 当前有效交付圈子，`GET /customers/:id/overview`）。
+8. **交付管理 `/deliveries` + 交付类型 `/delivery-types`**（K44）：交付单（类型 + 起止日期（epoch ms，日历输入）+ 客户集合（**可不选**，空交付单）+ 备注，与成交弱关联；客户可手动多选或按意向产品从成交 merge，`/deals` 按 `productId` 过滤）；交付项（项目维度 / 客户维度——客户维度按客户分组分别打勾 + 备注）；交付类型配置表（名称 + 类型 kind 咨询/活动/圈子/其他 + 状态 status 有效/失效 + 说明/默认动作模板，创建交付项时预填）。打勾记完成人/时间，行级 OCC。assistant 只读。圈子类（`kind=circle`）交付有专项工作台页 `/deliveries/:id/circle`（列表/详情页按 kind 提供入口）：圈子基本信息（类型/起止日期/人数/周期状态 badge）+ 客户全量表（`GET /api/v1/deliveries/:id/customers`，含导出 Excel `/customers/export.xlsx`，添加/移除客户走 delivery PATCH `customerIds`）+ 交付项快速维护（新增/动作/修改/删除，复用 `components/ItemFormModal` `ItemEditModal` `ItemModal`）+ 甘特图与时序 todo（复用 `components/DeliveryGantt`，`DeliveryGanttPage` 为薄壳）。`DeliveryDto.deliveryType` 携带 `kind`。
+9. **我的运营**（一级菜单）：`/my/customers` 我的客户（归属人 = 当前用户）、`/my/deals` 我的成交（负责人 = 当前用户）。复用对应列表页的列定义/搜索/筛选/行内编辑/导出，固定 `ownerId` 等值过滤，不加下拉控件；不提供「新增」（新建行不会归属当前用户）。
+10. 每张业务表有 `created_at` / `updated_at` / `created_by` / `updated_by`。
+11. **Agent 令牌**：已有用户本机签发 PAT，skill 走单一 SQL 端点 `/api/v1/agent/sql`（K35）。
 
 飞书字段已全部移除（四张主表均无任何 `feishu_*` 列）。**v1 不做飞书 / CSV 导入**，不要加回 `import-feishu` 或 `FEISHU_*` 环境变量。主数据在管理端维护。
 

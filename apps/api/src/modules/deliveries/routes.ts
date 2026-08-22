@@ -18,6 +18,7 @@ import { z } from "zod";
 import type { Db } from "../../db/client.js";
 import { listMeta } from "../../lib/pagination.js";
 import { requireCan } from "../../plugins/rbac.js";
+import { buildCustomersXlsx } from "../customers/export.js";
 import {
   createDeliverable,
   createDelivery,
@@ -31,6 +32,7 @@ import {
   getDeliveryTypeResult,
   listDeliverablesResult,
   listDeliveriesResult,
+  listDeliveryCustomersResult,
   listDeliveryTypesResult,
   patchDeliverable,
   patchDelivery,
@@ -124,6 +126,39 @@ export function deliveriesRoutes(app: FastifyInstance, opts: DeliveriesRoutesOpt
     const { id } = idParamSchema.parse(req.params);
     return { data: getDeliveryResult(db, id) };
   });
+
+  // ---- deliveries/:id/customers（圈子工作台：客户全量表 + Excel 导出） ----
+
+  app.get(
+    "/api/v1/deliveries/:id/customers",
+    { preHandler: requireCan("deliveries", "read") },
+    async (req) => {
+      const { id } = idParamSchema.parse(req.params);
+      return { data: listDeliveryCustomersResult(db, id) };
+    },
+  );
+
+  app.get(
+    "/api/v1/deliveries/:id/customers/export.xlsx",
+    { preHandler: requireCan("deliveries", "read") },
+    async (req, reply) => {
+      const { id } = idParamSchema.parse(req.params);
+      const buf = await buildCustomersXlsx(listDeliveryCustomersResult(db, id));
+      const d = new Date(now());
+      const pad = (n: number) => String(n).padStart(2, "0");
+      const filename = `圈子客户-${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}.xlsx`;
+      return reply
+        .header(
+          "Content-Type",
+          "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        )
+        .header(
+          "Content-Disposition",
+          `attachment; filename="circle-customers.xlsx"; filename*=UTF-8''${encodeURIComponent(filename)}`,
+        )
+        .send(buf);
+    },
+  );
 
   app.patch(
     "/api/v1/deliveries/:id",

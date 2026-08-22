@@ -9,6 +9,7 @@ const NAV_LINK_CLASS = ({ isActive }: { isActive: boolean }) => (isActive ? "act
 export function Sidebar({ hidden }: { hidden: boolean }) {
   const { me } = useAuth();
   const canListUsers = can(me?.systemRole ?? null, "users", "list");
+  const canSystem = can(me?.systemRole ?? null, "system", "read");
 
   return (
     <aside className={hidden ? "sidebar sidebar-hidden" : "sidebar"}>
@@ -17,6 +18,19 @@ export function Sidebar({ hidden }: { hidden: boolean }) {
         {BRAND_NAME}
       </div>
       <nav className="sidebar-nav">
+        <div className="nav-group">
+          <div className="nav-group-title">我的运营</div>
+          <div className="nav-group-items">
+            <div className="nav-group-inner">
+              <NavLink to="/my/customers" className={NAV_LINK_CLASS}>
+                我的客户
+              </NavLink>
+              <NavLink to="/my/deals" className={NAV_LINK_CLASS}>
+                我的成交
+              </NavLink>
+            </div>
+          </div>
+        </div>
         <div className="nav-group">
           <div className="nav-group-title">主数据</div>
           <div className="nav-group-items">
@@ -57,6 +71,11 @@ export function Sidebar({ hidden }: { hidden: boolean }) {
                 <NavLink to="/users" className={NAV_LINK_CLASS}>
                   团队成员
                 </NavLink>
+                {canSystem && (
+                  <NavLink to="/settings" className={NAV_LINK_CLASS}>
+                    系统设置
+                  </NavLink>
+                )}
               </div>
             </div>
           </div>

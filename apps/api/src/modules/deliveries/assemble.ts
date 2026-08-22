@@ -71,7 +71,8 @@ export function assembleDeliveryType(db: Db, row: DeliveryTypeRow): DeliveryType
 export interface DeliveryDto {
   id: number;
   deliveryTypeId: number;
-  deliveryType: { id: number; name: string } | null;
+  /** kind 供前端判断圈子类交付（圈子工作台入口） */
+  deliveryType: { id: number; name: string; kind: string } | null;
   customers: CustomerRef[];
   startsAt: number | null;
   endsAt: number | null;
@@ -88,14 +89,14 @@ export function assembleDeliveries(db: Db, rows: readonly DeliveryRow[]): Delive
   // 类型 refs
   const typeIds = new Set<number>();
   for (const row of rows) typeIds.add(row.deliveryTypeId);
-  const typeRefs = new Map<number, { id: number; name: string }>();
+  const typeRefs = new Map<number, { id: number; name: string; kind: string }>();
   if (typeIds.size > 0) {
     const found = db
-      .select({ id: deliveryTypes.id, name: deliveryTypes.name })
+      .select({ id: deliveryTypes.id, name: deliveryTypes.name, kind: deliveryTypes.kind })
       .from(deliveryTypes)
       .where(and(inArray(deliveryTypes.id, [...typeIds]), isNull(deliveryTypes.deletedAt)))
       .all();
-    for (const t of found) typeRefs.set(t.id, { id: t.id, name: t.name });
+    for (const t of found) typeRefs.set(t.id, { id: t.id, name: t.name, kind: t.kind });
   }
 
   // 客户 join + refs

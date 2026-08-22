@@ -20,18 +20,62 @@ export interface CustomerDto {
   wechat: string | null;
   country: string | null;
   city: string | null;
+  /** K48：行业 */
+  industry: string | null;
   originStory: string | null;
   notes: string | null;
   customerType: string;
   wechatOpenid: string | null;
   lastFollowedAt: number | null;
   socialAccounts: { platform: string; account: string }[];
+  /** K45：标签展开（按 sort,name 排序） */
+  tags: TagRefDto[];
   owner: UserRefDto | null;
   sourceChannels: ChannelRefDto[];
   createdAt: number;
   updatedAt: number;
   createdBy: UserRefDto | null;
   updatedBy: UserRefDto | null;
+}
+
+/** K45 客户标签 ref */
+export interface TagRefDto {
+  id: number;
+  name: string;
+  scope: string;
+}
+
+/** K45 标签词表项（设置页 CRUD） */
+export interface TagDto extends TagRefDto {
+  sort: number;
+  enabled: boolean;
+  createdAt: number;
+  updatedAt: number;
+  createdBy: UserRefDto | null;
+  updatedBy: UserRefDto | null;
+}
+
+/** K46 LLM 打标配置（apiKey 只回掩码） */
+export interface AiConfigDto {
+  provider: string | null;
+  baseUrl: string | null;
+  model: string | null;
+  apiKeySet: boolean;
+  apiKeyMasked: string | null;
+}
+
+/** K47 客户总览 */
+export interface CustomerStatsDto {
+  dealCount: number;
+  paidTotalCents: number;
+  lastDealAt: number | null;
+}
+
+export interface CustomerOverviewDto {
+  customer: CustomerDto;
+  stats: CustomerStatsDto;
+  deals: DealDto[];
+  circles: DeliveryDto[];
 }
 
 export interface ChannelDto {
@@ -131,7 +175,8 @@ export interface DeliveryTypeDto {
 export interface DeliveryDto {
   id: number;
   deliveryTypeId: number;
-  deliveryType: { id: number; name: string } | null;
+  /** kind 供圈子工作台入口判断 */
+  deliveryType: { id: number; name: string; kind: string } | null;
   customers: { id: number; nickname: string }[];
   /** epoch ms（本地时区当天零点），可空 */
   startsAt: number | null;
