@@ -99,7 +99,7 @@ test("admin：圈子类交付 → 圈子工作台页（基本信息/客户表/�
   await expect(page.getByRole("table").locator("tbody tr")).toHaveCount(2);
 
   // 交付项 + 甘特 + 时序 todo（在「交付工作项」tab 下）
-  await page.getByRole("button", { name: /交付工作项/ }).click();
+  await page.getByRole("tab", { name: /交付工作项/ }).click();
   await expect(page.getByText("e2e拉群")).toBeVisible();
   await expect(page.getByText(/项目交付项甘特/)).toBeVisible();
   await expect(page.getByText(/时序 todo/)).toBeVisible();
