@@ -36,7 +36,7 @@ v1 **不抽** `packages/ui`。视觉 token 在 `apps/web/src/styles/tokens.css`�
 
 例外：`modules/agent/routes.ts` 是单文件模块（K35 Agent SQL 端点），直接用 `db.$client` 原生 better-sqlite3，不走三层。
 
-K45/K46/K50/K51 补充：`modules/tags` 词表三层（admin 写、其余只读，维护入口「业务设置」页 `/business-settings`）；`modules/system` 走通用 `system_configs` 表（code='llm' 存 LLM 打标配置，GET 掩码 / PATCH，admin only，有意不做 OCC；未来新配置直接加 code 行不建表）；后台任务 `modules/jobs`（表 `background_jobs`，执行器 `runner.ts` 进程内**串行**消费 queued，生产 `index.ts` `start()`、测试 `pumpOnce()`；状态机 queued→running→succeeded|partial|failed|cancelled，重启 `recover()` 把残留 running 标 failed；API：POST/GET `background-jobs`、`GET :id`、`POST :id/cancel`（仅 queued/running 可取消，非本人需 `jobs.cancelAny`）；任务类型注册表 `registry.ts` 驱动（未知 422、按 type 校验业务权限、创建时预检 LLM 就绪 422）；批量打标 = type `customer-tags-generate-all`，前端在系统设置页「后台任务」tab 查看/取消（全角色），有活跃任务 3s 轮询；未来定时任务只插 `trigger='scheduled'` 行，执行器无感知）；AI 打标 `lib/llm.ts`（OpenAI 兼容 `chat/completions`，零新依赖，`buildApp({ llmFetch })` 注入测试 mock）。
+K45/K46/K50/K51 补充：`modules/tags` 词表三层（admin 写、其余只读，维护入口「业务设置」页 `/business-settings`）；`modules/system` 走通用 `system_configs` 表（code='llm' 存 LLM 打标配置，GET 掩码 / PATCH，admin only，有意不做 OCC；code='pageAccess' 存角色→页面权限——前端功能级配置，admin only，`GET/PATCH /system/page-access`，只在 can() 允许集内收缩，admin 固定全量不参与配置；未来新配置直接加 code 行不建表）；后台任务 `modules/jobs`（表 `background_jobs`，执行器 `runner.ts` 进程内**串行**消费 queued，生产 `index.ts` `start()`、测试 `pumpOnce()`；状态机 queued→running→succeeded|partial|failed|cancelled，重启 `recover()` 把残留 running 标 failed；API：POST/GET `background-jobs`、`GET :id`、`POST :id/cancel`（仅 queued/running 可取消，非本人需 `jobs.cancelAny`）；任务类型注册表 `registry.ts` 驱动（未知 422、按 type 校验业务权限、创建时预检 LLM 就绪 422）；批量打标 = type `customer-tags-generate-all`，前端在系统设置页「后台任务」tab 查看/取消（全角色），有活跃任务 3s 轮询；未来定时任务只插 `trigger='scheduled'` 行，执行器无感知）；AI 打标 `lib/llm.ts`（OpenAI 兼容 `chat/completions`，零新依赖，`buildApp({ llmFetch })` 注入测试 mock）。
 
 公共能力：
 
@@ -50,7 +50,8 @@ K45/K46/K50/K51 补充：`modules/tags` 词表三层（admin 写、其余只读�
 
 ### Web
 
-- 路由：`/login` `/my/customers` `/my/deals` `/customers` `/customers/:id`（总览）`/channels` `/products` `/deals` `/deliveries` `/deliveries/:id` `/deliveries/:id/circle` `/deliveries/:id/gantt` `/deliveries/:id/matrix` `/delivery-types` `/users` `/settings`（系统设置，tab：LLM 打标配置 admin + 后台任务全角色）`/business-settings`（业务设置，客户标签词表）（默认进客户）
+- 路由：`/login` `/my/customers` `/my/deals` `/customers` `/customers/:id`（总览）`/channels` `/products` `/deals` `/deliveries` `/deliveries/:id` `/deliveries/:id/circle` `/deliveries/:id/gantt` `/deliveries/:id/matrix` `/delivery-types` `/users` `/settings`（系统设置，tab：LLM 打标配置 admin + 角色权限 admin + 后台任务全角色）`/business-settings`（业务设置，客户标签词表）（默认进客户）
+- 页面权限：菜单/路由统一由 `packages/shared/src/pages.ts` 的 `PAGE_REGISTRY` + `/auth/me.pages` 驱动（安全层 can() ∩ 配置允许集）；无权访问的路由被 `PageGuard` 重定向到该角色第一张可看菜单页；详情型页面（`/customers/:id`、`/deliveries/:id/*`）不单独配，跟随父页面。改菜单/新增页只改注册表，不要再在 Sidebar/App 手写显隐。
 - 表格：`components/DataGrid/`（双击编辑 + 行内 PATCH 队列）
 - 列定义：`src/columns/`；列表页：`src/pages/` + `useResourceList.ts`
 - 开发：Vite `:5173`，`server.proxy."/api"` → `:3001`

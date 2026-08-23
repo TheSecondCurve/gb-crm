@@ -2,6 +2,7 @@ import type { ReactElement } from "react";
 import { render } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { canAllowedPageKeys } from "@gb-crm/shared";
 import { vi } from "vitest";
 
 import App from "../src/App";
@@ -15,6 +16,7 @@ export const adminMe: Me = {
   nickname: "管理员",
   systemRole: "admin",
   impersonatedBy: null,
+  pages: canAllowedPageKeys("admin") as string[],
 };
 export const assistantMe: Me = {
   id: 2,
@@ -22,6 +24,7 @@ export const assistantMe: Me = {
   nickname: "兼职助手",
   systemRole: "assistant",
   impersonatedBy: null,
+  pages: canAllowedPageKeys("assistant") as string[],
 };
 export const operatorMe: Me = {
   id: 3,
@@ -29,6 +32,7 @@ export const operatorMe: Me = {
   nickname: "团队运营",
   systemRole: "operator",
   impersonatedBy: null,
+  pages: canAllowedPageKeys("operator") as string[],
 };
 
 /** K49：扮演中的 me（真实身份是 admin，当前以 target 身份操作） */
@@ -38,6 +42,7 @@ export const impersonatingMe: Me = {
   nickname: "兼职助手",
   systemRole: "assistant",
   impersonatedBy: { id: 1, nickname: "管理员" },
+  pages: canAllowedPageKeys("assistant") as string[],
 };
 
 /** 空列表响应（落在列表页但本测试不关心列表数据时用） */

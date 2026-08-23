@@ -1,4 +1,5 @@
 // system ai-config（K46）：GET 掩码返回；PATCH 单管理员；apiKey 空/缺席保留旧值。
+import { canAllowedPageKeys } from "@gb-crm/shared";
 import type { FastifyInstance } from "fastify";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
@@ -108,5 +109,58 @@ describe("PATCH /api/v1/system/ai-config", () => {
   it("body 非对象/字段非法 → 422", async () => {
     const cookie = await loginAsRole("admin");
     expect((await patch("/api/v1/system/ai-config", cookie, { model: 123 })).statusCode).toBe(422);
+  });
+});
+
+describe("角色→页面权限（GET/PATCH /api/v1/system/page-access）", () => {
+  it("未登录 401；operator/assistant → 403（仅 admin，K46 同 system）", async () => {
+    expect((await app.inject({ method: "GET", url: "/api/v1/system/page-access" })).statusCode).toBe(401);
+    for (const role of ["operator", "assistant"] as const) {
+      const cookie = await loginAsRole(role);
+      expect((await get("/api/v1/system/page-access", cookie)).statusCode).toBe(403);
+      expect(
+        (await patch("/api/v1/system/page-access", cookie, { roles: { operator: [] } }))
+          .statusCode,
+      ).toBe(403);
+    }
+  });
+
+  it("默认无配置：enabled = can() 允许集（不收缩）；assistant 不含 users", async () => {
+    const cookie = await loginAsRole("admin");
+    const res = await get("/api/v1/system/page-access", cookie);
+    expect(res.statusCode).toBe(200);
+    const roles = res.json().data.roles;
+    expect(roles.operator).toEqual({
+      allowed: canAllowedPageKeys("operator"),
+      enabled: canAllowedPageKeys("operator"),
+    });
+    expect(roles.assistant).toEqual({
+      allowed: canAllowedPageKeys("assistant"),
+      enabled: canAllowedPageKeys("assistant"),
+    });
+    expect(roles.assistant.enabled).not.toContain("users");
+  });
+
+  it("PATCH 收缩 operator；缺失的 role 保持不变；/auth/me.pages 同步生效", async () => {
+    const adminCookie = await loginAsRole("admin");
+    const res = await patch("/api/v1/system/page-access", adminCookie, {
+      roles: { operator: ["my-customers"] },
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.json().data.roles.operator.enabled).toEqual(["my-customers"]);
+    expect(res.json().data.roles.assistant.enabled).toEqual(canAllowedPageKeys("assistant"));
+
+    const opCookie = await loginAsRole("operator");
+    const me = await app.inject({ method: "GET", url: "/api/v1/auth/me", headers: { cookie: opCookie } });
+    expect(me.json().data.pages).toEqual(["my-customers"]);
+  });
+
+  it("PATCH 越权（assistant 配 users，用户不在其 can() 允许集内）→ 422", async () => {
+    const cookie = await loginAsRole("admin");
+    const res = await patch("/api/v1/system/page-access", cookie, {
+      roles: { assistant: ["users"] },
+    });
+    expect(res.statusCode).toBe(422);
+    expect(res.json().error.code).toBe("VALIDATION");
   });
 });

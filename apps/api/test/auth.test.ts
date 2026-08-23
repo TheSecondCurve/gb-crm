@@ -1,3 +1,4 @@
+import { canAllowedPageKeys } from "@gb-crm/shared";
 import type { FastifyInstance } from "fastify";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
@@ -113,13 +114,20 @@ describe("POST /api/v1/auth/login", () => {
 });
 
 describe("GET /api/v1/auth/me", () => {
-  it("带 cookie → 200 { id, username, nickname, systemRole, impersonatedBy: null }，无 passwordHash", async () => {
+  it("带 cookie → 200 { id, username, nickname, systemRole, impersonatedBy: null, pages }，无 passwordHash", async () => {
     const id = await seedUser(tmp.db);
     const cookie = await loginAs(app, "alice", "password123");
     const res = await app.inject({ method: "GET", url: "/api/v1/auth/me", headers: { cookie } });
     expect(res.statusCode).toBe(200);
     expect(res.json()).toEqual({
-      data: { id, username: "alice", nickname: "爱丽丝", systemRole: "admin", impersonatedBy: null },
+      data: {
+        id,
+        username: "alice",
+        nickname: "爱丽丝",
+        systemRole: "admin",
+        impersonatedBy: null,
+        pages: canAllowedPageKeys("admin"),
+      },
     });
     expect(JSON.stringify(res.json())).not.toContain("passwordHash");
   });

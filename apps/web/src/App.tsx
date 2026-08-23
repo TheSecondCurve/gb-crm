@@ -1,7 +1,9 @@
 import { Navigate, Route, Routes } from "react-router-dom";
+import { menuPagesSorted, type PageKey } from "@gb-crm/shared";
 
 import { useAuth } from "./auth/AuthProvider";
 import { AppLayout } from "./layout/AppLayout";
+import { PageGuard } from "./components/PageGuard";
 import { LoginPage } from "./pages/LoginPage";
 import { CustomersPage } from "./pages/CustomersPage";
 import { CustomerOverviewPage } from "./pages/CustomerOverviewPage";
@@ -28,29 +30,152 @@ function RequireAuth() {
   return <AppLayout />;
 }
 
+/** 落地页：优先客户信息（保留原行为），不可用时取该角色第一张可看菜单页 */
+function HomeRedirect() {
+  const { me } = useAuth();
+  const pages = (me?.pages ?? []) as PageKey[];
+  const byMenu = menuPagesSorted(pages);
+  const target = pages.includes("customers")
+    ? "/customers"
+    : (byMenu[0]?.path ?? "/login");
+  return <Navigate to={target} replace />;
+}
+
 export default function App() {
   return (
     <Routes>
       <Route path="/login" element={<LoginPage />} />
       <Route element={<RequireAuth />}>
-        <Route path="/" element={<Navigate to="/customers" replace />} />
-        <Route path="/my/customers" element={<MyCustomersPage />} />
-        <Route path="/my/deals" element={<MyDealsPage />} />
-        <Route path="/customers" element={<CustomersPage />} />
-        <Route path="/customers/:id" element={<CustomerOverviewPage />} />
-        <Route path="/settings" element={<SettingsPage />} />
-        <Route path="/business-settings" element={<BusinessSettingsPage />} />
-        <Route path="/channels" element={<ChannelsPage />} />
-        <Route path="/products" element={<ProductsPage />} />
-        <Route path="/deals" element={<DealsPage />} />
-        <Route path="/deliveries" element={<DeliveriesPage />} />
-        <Route path="/deliveries/:id" element={<DeliveryDetailPage />} />
-        <Route path="/deliveries/:id/circle" element={<DeliveryCirclePage />} />
-        <Route path="/deliveries/:id/gantt" element={<DeliveryGanttPage />} />
-        <Route path="/deliveries/:id/matrix" element={<DeliveryMatrixPage />} />
-        <Route path="/delivery-types" element={<DeliveryTypesPage />} />
-        <Route path="/users" element={<UsersPage />} />
-        <Route path="*" element={<Navigate to="/customers" replace />} />
+        <Route path="/" element={<HomeRedirect />} />
+        <Route
+          path="/my/customers"
+          element={
+            <PageGuard pageKey="my-customers">
+              <MyCustomersPage />
+            </PageGuard>
+          }
+        />
+        <Route
+          path="/my/deals"
+          element={
+            <PageGuard pageKey="my-deals">
+              <MyDealsPage />
+            </PageGuard>
+          }
+        />
+        <Route
+          path="/customers"
+          element={
+            <PageGuard pageKey="customers">
+              <CustomersPage />
+            </PageGuard>
+          }
+        />
+        <Route
+          path="/customers/:id"
+          element={
+            <PageGuard pageKey="customer-overview">
+              <CustomerOverviewPage />
+            </PageGuard>
+          }
+        />
+        <Route
+          path="/settings"
+          element={
+            <PageGuard pageKey="settings">
+              <SettingsPage />
+            </PageGuard>
+          }
+        />
+        <Route
+          path="/business-settings"
+          element={
+            <PageGuard pageKey="business-settings">
+              <BusinessSettingsPage />
+            </PageGuard>
+          }
+        />
+        <Route
+          path="/channels"
+          element={
+            <PageGuard pageKey="channels">
+              <ChannelsPage />
+            </PageGuard>
+          }
+        />
+        <Route
+          path="/products"
+          element={
+            <PageGuard pageKey="products">
+              <ProductsPage />
+            </PageGuard>
+          }
+        />
+        <Route
+          path="/deals"
+          element={
+            <PageGuard pageKey="deals">
+              <DealsPage />
+            </PageGuard>
+          }
+        />
+        <Route
+          path="/deliveries"
+          element={
+            <PageGuard pageKey="deliveries">
+              <DeliveriesPage />
+            </PageGuard>
+          }
+        />
+        <Route
+          path="/deliveries/:id"
+          element={
+            <PageGuard pageKey="delivery-detail">
+              <DeliveryDetailPage />
+            </PageGuard>
+          }
+        />
+        <Route
+          path="/deliveries/:id/circle"
+          element={
+            <PageGuard pageKey="delivery-circle">
+              <DeliveryCirclePage />
+            </PageGuard>
+          }
+        />
+        <Route
+          path="/deliveries/:id/gantt"
+          element={
+            <PageGuard pageKey="delivery-gantt">
+              <DeliveryGanttPage />
+            </PageGuard>
+          }
+        />
+        <Route
+          path="/deliveries/:id/matrix"
+          element={
+            <PageGuard pageKey="delivery-matrix">
+              <DeliveryMatrixPage />
+            </PageGuard>
+          }
+        />
+        <Route
+          path="/delivery-types"
+          element={
+            <PageGuard pageKey="delivery-types">
+              <DeliveryTypesPage />
+            </PageGuard>
+          }
+        />
+        <Route
+          path="/users"
+          element={
+            <PageGuard pageKey="users">
+              <UsersPage />
+            </PageGuard>
+          }
+        />
+        <Route path="*" element={<HomeRedirect />} />
       </Route>
     </Routes>
   );
