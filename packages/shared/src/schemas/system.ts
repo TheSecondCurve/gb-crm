@@ -21,3 +21,32 @@ export const aiConfigPatchSchema = z.object({
   apiKey: z.string().trim().min(1).max(500).optional(),
 });
 export type AiConfigPatch = z.infer<typeof aiConfigPatchSchema>;
+
+// ── 角色→页面权限（配置层：前端功能级权限；安全层仍为 can()）──
+// 存储为 system_configs code='pageAccess'（value = { operator: string[], assistant: string[] }）。
+// admin 固定全量，不参与配置（防锁死管理页）。配置只能在各角色 can() 允许集内收缩。
+
+const pageAccessKeySchema = z.string().min(1).max(64);
+
+export const pageAccessPatchSchema = z.object({
+  roles: z.object({
+    operator: z.array(pageAccessKeySchema).optional(),
+    assistant: z.array(pageAccessKeySchema).optional(),
+  }),
+});
+export type PageAccessPatch = z.infer<typeof pageAccessPatchSchema>;
+
+const rolePageStateSchema = z.object({
+  /** can() 硬下限允许的菜单页 */
+  allowed: z.array(pageAccessKeySchema),
+  /** 配置后实际生效的菜单页（⊆ allowed） */
+  enabled: z.array(pageAccessKeySchema),
+});
+
+export const pageAccessGetSchema = z.object({
+  roles: z.object({
+    operator: rolePageStateSchema,
+    assistant: rolePageStateSchema,
+  }),
+});
+export type PageAccessGet = z.infer<typeof pageAccessGetSchema>;

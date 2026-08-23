@@ -26,6 +26,7 @@ import {
   stopImpersonation,
   verifyLogin,
 } from "./service.js";
+import { getEffectivePages } from "../system/service.js";
 import { listOwnTokens, mintToken, revokeOwnToken } from "./token-service.js";
 
 const tokenIdParamSchema = z.object({ id: z.coerce.number().int().positive() });
@@ -94,6 +95,8 @@ export function authRoutes(app: FastifyInstance, opts: AuthRoutesOptions): void 
         nickname: user.nickname,
         systemRole: user.systemRole,
         impersonatedBy,
+        /** 当前角色实际可见的菜单页（安全层 can() ∩ 配置允许集） */
+        pages: getEffectivePages(db, user.systemRole),
       },
     };
   });

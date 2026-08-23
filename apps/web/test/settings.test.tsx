@@ -1,5 +1,6 @@
 // 系统设置页（K46/K50/K51）：LLM 打标配置（仅 admin）+ 后台任务 tab（全角色，?tab=jobs）。
 // 标签词表在「业务设置」页（/business-settings，K50）。
+import { canAllowedPageKeys } from "@gb-crm/shared";
 import { describe, expect, it, vi } from "vitest";
 import { act, fireEvent, screen, waitFor, within } from "@testing-library/react";
 
@@ -157,6 +158,49 @@ describe("系统设置页", () => {
     await waitFor(() =>
       expect(calls.some((c) => c.method === "POST" && c.url === "/api/v1/background-jobs/1/cancel")).toBe(true),
     );
+  });
+
+  it("admin：角色权限 tab 可勾选收缩并保存（operator 允许集内）", async () => {
+    const calls: Call[] = [];
+    mockFetch((url, init) => {
+      const method = init?.method ?? "GET";
+      calls.push({ url, method, body: init?.body });
+      if (url === "/api/v1/auth/me") return { status: 200, body: { data: adminMe } };
+      if (url === "/api/v1/system/page-access") {
+        return {
+          status: 200,
+          body: {
+            data: {
+              roles: {
+                operator: {
+                  allowed: canAllowedPageKeys("operator"),
+                  enabled: ["my-customers", "customers"],
+                },
+                assistant: {
+                  allowed: canAllowedPageKeys("assistant"),
+                  enabled: canAllowedPageKeys("assistant"),
+                },
+              },
+            },
+          },
+        };
+      }
+      throw new Error(`unexpected fetch: ${method} ${url}`);
+    });
+
+    renderApp("/settings?tab=roles");
+    const cb = await screen.findByRole("checkbox", { name: "团队运营可访问客户信息" });
+    expect(cb).toBeTruthy();
+    fireEvent.click(cb); // 取消勾选客户信息
+
+    fireEvent.click(screen.getByRole("button", { name: "保存" }));
+    await waitFor(() => {
+      const p = calls.find((c) => c.method === "PATCH" && c.url === "/api/v1/system/page-access");
+      expect(p).toBeTruthy();
+      expect(JSON.parse(String(p?.body))).toEqual({
+        roles: { operator: ["my-customers"], assistant: canAllowedPageKeys("assistant") },
+      });
+    });
   });
 
   it("有执行中任务时自动轮询（3s 内再次请求列表）", async () => {

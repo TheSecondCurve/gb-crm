@@ -2,6 +2,7 @@
 // 机制：改写当前 cookie session 行（user_id → 目标，impersonated_by → 原 admin），退出时恢复。
 // 覆盖：401/403（角色、Bearer PAT）、目标列表闸门、扮演后身份与权限生效、409 冲突、
 // 目标不可用 422、退出恢复、「我的运营」按 ownerId 过滤端到端。
+import { canAllowedPageKeys } from "@gb-crm/shared";
 import type { FastifyInstance } from "fastify";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
@@ -178,6 +179,7 @@ describe("POST /api/v1/auth/impersonate/:id", () => {
         nickname: "兼职助手",
         systemRole: "assistant",
         impersonatedBy: { id: ids.adminId, nickname: "管理员" },
+        pages: canAllowedPageKeys("assistant"),
       },
     });
 
@@ -278,6 +280,7 @@ describe("POST /api/v1/auth/impersonate/stop", () => {
         nickname: "管理员",
         systemRole: "admin",
         impersonatedBy: null,
+        pages: canAllowedPageKeys("admin"),
       },
     });
 
