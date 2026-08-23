@@ -6,6 +6,7 @@ import { promisify } from "node:util";
 
 const execFileAsync = promisify(execFile);
 
+import { canAllowedPageKeys } from "@gb-crm/shared";
 import type { FastifyInstance } from "fastify";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
@@ -142,7 +143,14 @@ describe("Bearer 认证", () => {
     const res = await app.inject({ method: "GET", url: "/api/v1/auth/me", headers: bearer(token) });
     expect(res.statusCode).toBe(200);
     expect(res.json()).toEqual({
-      data: { id, username: "alice", nickname: "爱丽丝", systemRole: "admin", impersonatedBy: null },
+      data: {
+        id,
+        username: "alice",
+        nickname: "爱丽丝",
+        systemRole: "admin",
+        impersonatedBy: null,
+        pages: canAllowedPageKeys("admin"),
+      },
     });
     expect(res.headers["set-cookie"]).toBeUndefined();
   });

@@ -1,15 +1,36 @@
 import { NavLink } from "react-router-dom";
-import { can } from "@gb-crm/shared";
+import { menuPagesSorted, PAGE_GROUPS, type PageDef, type PageKey } from "@gb-crm/shared";
 
 import { useAuth } from "../auth/AuthProvider";
 import { BRAND_NAME } from "../brand";
 
 const NAV_LINK_CLASS = ({ isActive }: { isActive: boolean }) => (isActive ? "active" : "");
 
+/** 按侧栏分组渲染用户实际可见的菜单（安全层 can() ∩ 配置允许集，由 /auth/me.pages 下发） */
+function NavGroup({ group, items }: { group: string; items: PageDef[] }) {
+  return (
+    <div className="nav-group">
+      <div className="nav-group-title">{group}</div>
+      <div className="nav-group-items">
+        <div className="nav-group-inner">
+          {items.map((p) => (
+            <NavLink key={p.key} to={p.path} className={NAV_LINK_CLASS}>
+              {p.label}
+            </NavLink>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export function Sidebar({ hidden }: { hidden: boolean }) {
   const { me } = useAuth();
-  const canListUsers = can(me?.systemRole ?? null, "users", "list");
-  const canBusinessSettings = can(me?.systemRole ?? null, "tags", "read");
+  const visible = menuPagesSorted((me?.pages ?? []) as PageKey[]);
+  const byGroup = PAGE_GROUPS.map((group) => ({
+    group,
+    items: visible.filter((p) => p.group === group),
+  })).filter((g) => g.items.length > 0);
 
   return (
     <aside className={hidden ? "sidebar sidebar-hidden" : "sidebar"}>
@@ -18,78 +39,9 @@ export function Sidebar({ hidden }: { hidden: boolean }) {
         {BRAND_NAME}
       </div>
       <nav className="sidebar-nav">
-        <div className="nav-group">
-          <div className="nav-group-title">我的运营</div>
-          <div className="nav-group-items">
-            <div className="nav-group-inner">
-              <NavLink to="/my/customers" className={NAV_LINK_CLASS}>
-                我的客户
-              </NavLink>
-              <NavLink to="/my/deals" className={NAV_LINK_CLASS}>
-                我的成交
-              </NavLink>
-            </div>
-          </div>
-        </div>
-        <div className="nav-group">
-          <div className="nav-group-title">主数据</div>
-          <div className="nav-group-items">
-            <div className="nav-group-inner">
-              <NavLink to="/customers" className={NAV_LINK_CLASS}>
-                客户信息
-              </NavLink>
-              <NavLink to="/channels" className={NAV_LINK_CLASS}>
-                渠道资产
-              </NavLink>
-              <NavLink to="/products" className={NAV_LINK_CLASS}>
-                产品目录
-              </NavLink>
-              <NavLink to="/deals" className={NAV_LINK_CLASS}>
-                成交记录
-              </NavLink>
-            </div>
-          </div>
-        </div>
-        <div className="nav-group">
-          <div className="nav-group-title">运营流程</div>
-          <div className="nav-group-items">
-            <div className="nav-group-inner">
-              <NavLink to="/deliveries" className={NAV_LINK_CLASS}>
-                交付管理
-              </NavLink>
-              <NavLink to="/delivery-types" className={NAV_LINK_CLASS}>
-                交付类型
-              </NavLink>
-            </div>
-          </div>
-        </div>
-        <div className="nav-group">
-          <div className="nav-group-title">系统</div>
-          <div className="nav-group-items">
-            <div className="nav-group-inner">
-              {canListUsers && (
-                <NavLink to="/users" className={NAV_LINK_CLASS}>
-                  团队成员
-                </NavLink>
-              )}
-              <NavLink to="/settings" className={NAV_LINK_CLASS}>
-                系统设置
-              </NavLink>
-            </div>
-          </div>
-        </div>
-        {canBusinessSettings && (
-          <div className="nav-group">
-            <div className="nav-group-title">业务设置</div>
-            <div className="nav-group-items">
-              <div className="nav-group-inner">
-                <NavLink to="/business-settings" className={NAV_LINK_CLASS}>
-                  客户标签词表
-                </NavLink>
-              </div>
-            </div>
-          </div>
-        )}
+        {byGroup.map((g) => (
+          <NavGroup key={g.group} group={g.group} items={g.items} />
+        ))}
       </nav>
     </aside>
   );

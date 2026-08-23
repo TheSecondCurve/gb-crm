@@ -12,6 +12,8 @@ export interface Me {
   systemRole: SystemRole | null;
   /** K49：扮演发起人（原 admin）。非空 = 当前正以 me 的身份扮演中 */
   impersonatedBy: { id: number; nickname: string } | null;
+  /** 当前角色实际可见的菜单页 key（安全层 can() ∩ 配置允许集） */
+  pages: string[];
 }
 
 interface AuthContextValue {

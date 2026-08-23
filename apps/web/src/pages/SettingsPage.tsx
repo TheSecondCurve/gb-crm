@@ -11,6 +11,7 @@ import { api, ApiError } from "../api/client";
 import type { AiConfigDto } from "../api/types";
 import { useAuth } from "../auth/AuthProvider";
 import { JobsTab } from "../components/JobsTab";
+import { RolesTab } from "../components/RolesTab";
 import { useToast } from "../components/Toast";
 
 export function SettingsPage() {
@@ -20,9 +21,12 @@ export function SettingsPage() {
   const queryClient = useQueryClient();
   const [searchParams, setSearchParams] = useSearchParams();
   const requestedTab = searchParams.get("tab");
-  // LLM tab 仅 admin；其余（jobs/缺失/越权）→ jobs。非 admin 固定 jobs。
+  // LLM 与「角色权限」tab 仅 admin；后台任务全角色。非 admin 固定 jobs。
   const canSystem = can(role, "system", "read");
-  const tab = canSystem ? (requestedTab === "jobs" ? "jobs" : "llm") : "jobs";
+  const tabKeys = canSystem ? (["llm", "roles", "jobs"] as const) : (["jobs"] as const);
+  const tab = (tabKeys as readonly string[]).includes(requestedTab ?? "")
+    ? (requestedTab ?? "")
+    : tabKeys[0];
 
   const { data: aiConfig } = useQuery({
     queryKey: ["system", "ai-config"],
@@ -82,9 +86,14 @@ export function SettingsPage() {
 
       <div className="tabs" role="tablist" aria-label="系统设置">
         {canSystem && (
-          <button type="button" role="tab" aria-selected={tab === "llm"} onClick={() => setSearchParams({ tab: "llm" })}>
-            LLM 打标配置
-          </button>
+          <>
+            <button type="button" role="tab" aria-selected={tab === "llm"} onClick={() => setSearchParams({ tab: "llm" })}>
+              LLM 打标配置
+            </button>
+            <button type="button" role="tab" aria-selected={tab === "roles"} onClick={() => setSearchParams({ tab: "roles" })}>
+              角色权限
+            </button>
+          </>
         )}
         <button type="button" role="tab" aria-selected={tab === "jobs"} onClick={() => setSearchParams({ tab: "jobs" })}>
           后台任务
@@ -93,6 +102,8 @@ export function SettingsPage() {
 
       {tab === "jobs" ? (
         <JobsTab />
+      ) : tab === "roles" ? (
+        <RolesTab />
       ) : (
         <div className="settings-section">
           <div className="card">
