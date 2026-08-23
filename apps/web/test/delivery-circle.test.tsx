@@ -1,7 +1,9 @@
 // 圈子类交付专项工作台页测试（/deliveries/:id/circle）：
-// - 渲染：基本信息（人数/周期状态/动作进度）+ 客户全量表 + 甘特/时序 todo；assistant 只读；
+// - 渲染：基本信息（人数/周期状态/动作进度）+ Tab 分区（圈子客户 / 交付工作项）；
+//   客户全量表在「圈子客户」tab；交付项列表 + 甘特/时序 todo 在「交付工作项」tab；
 // - 非圈子类守卫；添加客户（PATCH customerIds 并集 + OCC）；移除客户（PATCH 差集）；
-// - 列设置：客户表字段自由显隐（localStorage 持久化），导出 Excel 跟随所选字段。
+// - 列设置：客户表字段自由显隐（localStorage 持久化），导出 Excel 跟随所选字段；
+// - 客户维度交付项「动作」→ 弹出状态矩阵弹窗（格内打勾即改）；项目维度仍是动作清单弹窗。
 import { describe, expect, it, vi } from "vitest";
 import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 
@@ -130,6 +132,9 @@ function mockCircleApi(me: Me, d: DeliveryDto = delivery, items: DeliverableDto[
     if (url === "/api/v1/deliveries/1/items") {
       return { status: 200, body: { data: items } };
     }
+    if (/^\/api\/v1\/deliveries\/1\/items\/\d+\/tasks\/\d+$/.test(url)) {
+      if (method === "PATCH") return { status: 200, body: { data: {} } };
+    }
     if (url === "/api/v1/deliveries/1/customers") {
       return { status: 200, body: { data: customers } };
     }
@@ -147,8 +152,15 @@ function mockCircleApi(me: Me, d: DeliveryDto = delivery, items: DeliverableDto[
   return calls;
 }
 
+/** 「交付工作项」tab 里按标题定位交付项行（甘特/todo 可能出现同名文本，取最近 .item-row） */
+function itemRowOf(content: string): HTMLElement {
+  const el = screen.getAllByText(content).find((n) => n.closest(".item-row"));
+  if (!el) throw new Error(`no item-row for ${content}`);
+  return el.closest(".item-row") as HTMLElement;
+}
+
 describe("圈子工作台页（/deliveries/:id/circle）", () => {
-  it("渲染：基本信息/客户全量表/甘特与时序 todo；assistant 只读", async () => {
+  it("渲染：基本信息 + Tab 分区；客户表在圈子客户 tab、甘特/todo 在交付工作项 tab；assistant 只读", async () => {
     mockCircleApi(assistantMe);
     renderApp("/deliveries/1/circle");
     await screen.findByText("圈子工作台 · 圈子全年交付");
@@ -160,7 +172,13 @@ describe("圈子工作台页（/deliveries/:id/circle）", () => {
     expect(screen.getByText("2/6")).toBeTruthy(); // 动作进度（全部交付项：6 任务中 2 完成）
     expect(screen.getByText("年度陪跑圈子")).toBeTruthy();
 
-    // 客户全量表：完整信息列
+    // Tab 结构：默认「圈子客户」
+    const customersTab = screen.getByRole("tab", { name: /圈子客户/ });
+    const workTab = screen.getByRole("tab", { name: /交付工作项/ });
+    expect(customersTab.getAttribute("aria-selected")).toBe("true");
+    expect(workTab.getAttribute("aria-selected")).toBe("false");
+
+    // 圈子客户 tab：完整信息列
     expect(screen.getByText("张三")).toBeTruthy();
     expect(screen.getByText("张伟")).toBeTruthy();
     expect(screen.getByText("13800000001")).toBeTruthy();
@@ -170,17 +188,28 @@ describe("圈子工作台页（/deliveries/:id/circle）", () => {
     expect(screen.getByText("运营-甲")).toBeTruthy();
     expect(screen.getByText("小红书")).toBeTruthy();
 
-    // 甘特 + 时序 todo（项目维度交付项；甘特行/条块/todo 多处出现）
+    // 甘特 / 时序 todo / 交付项列表随 tab 隐藏
+    expect(screen.queryByText(/项目交付项甘特/)).toBeNull();
+    expect(screen.queryByText(/时序 todo/)).toBeNull();
+    expect(screen.queryByText(/当前交付项/)).toBeNull();
+
+    // 切到「交付工作项」：交付项列表 + 甘特 + 时序 todo；客户表隐藏
+    fireEvent.click(workTab);
+    expect(workTab.getAttribute("aria-selected")).toBe("true");
+    expect(customersTab.getAttribute("aria-selected")).toBe("false");
+    expect(screen.getByText(/当前交付项/)).toBeTruthy();
     expect(screen.getAllByText("开营仪式").length).toBeGreaterThan(0);
     expect(screen.getByText(/项目交付项甘特/)).toBeTruthy();
     expect(screen.getByText(/时序 todo/)).toBeTruthy();
+    expect(screen.queryByText("张伟")).toBeNull();
 
-    // assistant 只读：无添加/移除/新增/修改交付按钮；导出 Excel 仍可读
-    expect(screen.getByRole("button", { name: "导出 Excel" })).toBeTruthy();
-    expect(screen.queryByRole("button", { name: "添加客户" })).toBeNull();
-    expect(screen.queryByRole("button", { name: "移除" })).toBeNull();
+    // assistant 只读：无写操作按钮（修改交付在页头常驻，其余分属两个 tab）
     expect(screen.queryByRole("button", { name: "新增交付项" })).toBeNull();
     expect(screen.queryByRole("button", { name: "修改交付" })).toBeNull();
+    fireEvent.click(customersTab);
+    expect(screen.queryByRole("button", { name: "添加客户" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "移除" })).toBeNull();
+    expect(screen.getByRole("button", { name: "导出 Excel" })).toBeTruthy();
   });
 
   it("守卫：非圈子类交付直达 → 提示不可用", async () => {
@@ -229,6 +258,43 @@ describe("圈子工作台页（/deliveries/:id/circle）", () => {
       expect(body.customerIds).toEqual([102]);
       expect(body.updatedAt).toBe(2000);
     });
+  });
+
+  it("客户维度交付项「动作」→ 弹出状态矩阵弹窗，格内单击打勾即改（PATCH task done）", async () => {
+    const calls = mockCircleApi(adminMe);
+    renderApp("/deliveries/1/circle");
+    await screen.findByText("圈子工作台 · 圈子全年交付");
+
+    fireEvent.click(screen.getByRole("tab", { name: /交付工作项/ }));
+    fireEvent.click(within(itemRowOf("拉群")).getByRole("button", { name: "动作" }));
+
+    // 状态矩阵弹窗：行 = 客户，列 = 客户维度交付项
+    const dialog = screen.getByRole("dialog", { name: "状态矩阵：拉群" });
+    expect(within(dialog).getByLabelText("张三 · 拉群").textContent).toContain("✓ 完成");
+    const liCell = within(dialog).getByLabelText("李四 · 拉群");
+    expect(liCell.textContent).toContain("未完成");
+
+    // 不是旧的动作清单弹窗
+    expect(screen.queryByRole("dialog", { name: "动作清单：拉群" })).toBeNull();
+
+    // 格内单击打勾 → PATCH task done 带 updatedAt（OCC）
+    fireEvent.click(liCell);
+    await waitFor(() => {
+      const patch = calls.find((c) => c.method === "PATCH" && c.url === "/api/v1/deliveries/1/items/21/tasks/3");
+      expect(patch).toBeTruthy();
+      expect(JSON.parse(String(patch?.body))).toEqual({ done: true, updatedAt: 1500 });
+    });
+  });
+
+  it("项目维度交付项「动作」→ 仍是动作清单弹窗", async () => {
+    mockCircleApi(adminMe);
+    renderApp("/deliveries/1/circle");
+    await screen.findByText("圈子工作台 · 圈子全年交付");
+
+    fireEvent.click(screen.getByRole("tab", { name: /交付工作项/ }));
+    fireEvent.click(within(itemRowOf("开营仪式")).getByRole("button", { name: "动作" }));
+
+    expect(screen.getByRole("dialog", { name: "动作清单：开营仪式" })).toBeTruthy();
   });
 
   it("列设置：客户表字段自由显隐 + localStorage 持久化；导出 Excel 跟随所选字段", async () => {

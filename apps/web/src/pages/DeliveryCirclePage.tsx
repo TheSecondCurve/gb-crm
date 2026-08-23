@@ -1,6 +1,9 @@
 // 圈子类交付专项工作台（/deliveries/:id/circle）：
-// - 以单个圈子类交付单为单位：基本信息（类型/起止日期/人数/周期状态/进度）+ 客户全量表（导出 Excel、
-//   添加/移除快速维护）+ 交付项维护（新增/动作打勾/修改/删除）+ 甘特图与时序 todo（复用 DeliveryGantt）；
+// - 以单个圈子类交付单为单位：基本信息（类型/起止日期/人数/周期状态/进度）+ Tab 分区：
+//   「圈子客户」（全量客户表：导出 Excel、添加/移除快速维护）与「交付工作项」
+//   （交付项维护 + 甘特图与时序 todo，复用 DeliveryGantt）；
+// - 客户维度交付项「动作」→ 弹出状态矩阵弹窗（components/DeliveryMatrix，格内打勾即改）；
+//   项目维度仍是动作清单弹窗（ItemModal）；
 // - 仅 deliveryType.kind === "circle" 有入口；直接访问非圈子类 → 提示守卫；
 // - assistant 只读（canUpdate 门控全部写操作）。
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
@@ -23,6 +26,7 @@ import { storageKeyOf, type RelationOption } from "../components/DataGrid/DataGr
 import { ConfirmDialog } from "../components/ConfirmDialog";
 import { DeliveryFormModal } from "../components/DeliveryFormModal";
 import { DeliveryGantt } from "../components/DeliveryGantt";
+import { DeliveryMatrix } from "../components/DeliveryMatrix";
 import { ItemEditModal } from "../components/ItemEditModal";
 import { ItemFormModal } from "../components/ItemFormModal";
 import { ItemModal } from "../components/ItemModal";
@@ -153,9 +157,13 @@ export function DeliveryCirclePage() {
   const [editingItem, setEditingItem] = useState<DeliverableDto | null>(null);
   const [deletingItem, setDeletingItem] = useState<DeliverableDto | null>(null);
   const [itemsOf, setItemsOf] = useState<DeliverableDto | null>(null);
+  /** 客户维度交付项「动作」→ 状态矩阵弹窗 */
+  const [matrixOf, setMatrixOf] = useState<DeliverableDto | null>(null);
   const [addingCustomers, setAddingCustomers] = useState(false);
   const [removingCustomer, setRemovingCustomer] = useState<CustomerDto | null>(null);
   const [busy, setBusy] = useState(false);
+  /** Tab 分区：圈子客户 / 交付工作项 */
+  const [tab, setTab] = useState<"customers" | "work">("customers");
 
   // 客户表字段显隐（自由选择展示字段；导出 Excel 按所选字段导出）
   const [visibleFieldKeys, setVisibleFieldKeys] = useState<string[]>(() =>
@@ -424,71 +432,97 @@ export function DeliveryCirclePage() {
         </div>
       </div>
 
-      {/* 圈子客户：全量信息 + 导出 Excel + 添加/移除 */}
-      <div className="card">
-        <div className="card-head">
-          <h2>圈子客户（{customerCount} 人）</h2>
-          <div className="search-bar">
-            <ColumnPicker
-              columns={circleCustomerFields.map(({ key, label, locked }) => ({ key, label, locked }))}
-              visibleKeys={visibleFieldKeys}
-              onChange={changeVisibleFieldKeys}
-            />
-            <button type="button" onClick={exportXlsx}>
-              导出 Excel
-            </button>
-            {canUpdate && (
-              <button type="button" className="btn-primary" onClick={() => setAddingCustomers(true)}>
-                添加客户
-              </button>
-            )}
-          </div>
-        </div>
-        <div className="card-body-flush">
-          {customers && customers.length === 0 ? (
-            <div className="task-empty">暂无客户，点击「添加客户」拉人进圈</div>
-          ) : (
-            <div className="matrix-scroll">
-              <table className="matrix-table circle-customer-table">
-                <thead>
-                  <tr>
-                    {visibleFields.map((f) => (
-                      <th key={f.key} className={f.locked ? "matrix-corner" : undefined}>
-                        {f.label}
-                      </th>
-                    ))}
-                    {canUpdate && <th className="matrix-corner">操作</th>}
-                  </tr>
-                </thead>
-                <tbody>
-                  {customers?.map((c) => (
-                    <tr key={c.id}>
-                      {visibleFields.map((f) =>
-                        f.key === "nickname" ? (
-                          <th key={f.key} className="matrix-row-head">
-                            {f.render(c)}
-                          </th>
-                        ) : (
-                          <td key={f.key}>{f.render(c)}</td>
-                        ),
-                      )}
-                      {canUpdate && (
-                        <td>
-                          <button type="button" className="btn-danger" onClick={() => setRemovingCustomer(c)}>
-                            移除
-                          </button>
-                        </td>
-                      )}
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </div>
+      {/* Tab 分区：圈子客户 / 交付工作项 */}
+      <div className="tabs" role="tablist" aria-label="圈子工作台">
+        <button
+          type="button"
+          role="tab"
+          aria-selected={tab === "customers"}
+          onClick={() => setTab("customers")}
+        >
+          圈子客户（{customerCount}）
+        </button>
+        <button
+          type="button"
+          role="tab"
+          aria-selected={tab === "work"}
+          onClick={() => setTab("work")}
+        >
+          交付工作项（{items?.length ?? 0}）
+        </button>
       </div>
 
-      {/* 当前交付项 + 快速维护 */}
+      {tab === "customers" && (
+        <>
+          {/* 圈子客户：全量信息 + 导出 Excel + 添加/移除 */}
+          <div className="card">
+            <div className="card-head">
+              <h2>圈子客户（{customerCount} 人）</h2>
+              <div className="search-bar">
+                <ColumnPicker
+                  columns={circleCustomerFields.map(({ key, label, locked }) => ({ key, label, locked }))}
+                  visibleKeys={visibleFieldKeys}
+                  onChange={changeVisibleFieldKeys}
+                />
+                <button type="button" onClick={exportXlsx}>
+                  导出 Excel
+                </button>
+                {canUpdate && (
+                  <button type="button" className="btn-primary" onClick={() => setAddingCustomers(true)}>
+                    添加客户
+                  </button>
+                )}
+              </div>
+            </div>
+            <div className="card-body-flush">
+              {customers && customers.length === 0 ? (
+                <div className="task-empty">暂无客户，点击「添加客户」拉人进圈</div>
+              ) : (
+                <div className="matrix-scroll">
+                  <table className="matrix-table circle-customer-table">
+                    <thead>
+                      <tr>
+                        {visibleFields.map((f) => (
+                          <th key={f.key} className={f.locked ? "matrix-corner" : undefined}>
+                            {f.label}
+                          </th>
+                        ))}
+                        {canUpdate && <th className="matrix-corner">操作</th>}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {customers?.map((c) => (
+                        <tr key={c.id}>
+                          {visibleFields.map((f) =>
+                            f.key === "nickname" ? (
+                              <th key={f.key} className="matrix-row-head">
+                                {f.render(c)}
+                              </th>
+                            ) : (
+                              <td key={f.key}>{f.render(c)}</td>
+                            ),
+                          )}
+                          {canUpdate && (
+                            <td>
+                              <button type="button" className="btn-danger" onClick={() => setRemovingCustomer(c)}>
+                                移除
+                              </button>
+                            </td>
+                          )}
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          </div>
+        </>
+      )}
+
+      {tab === "work" && (
+        <>
+          {/* 当前交付项 + 快速维护 */}
       <div className="card">
         <div className="card-head">
           <h2>当前交付项（{items?.length ?? 0}）</h2>
@@ -522,7 +556,12 @@ export function DeliveryCirclePage() {
                   </div>
                 </div>
                 <div className="row-actions">
-                  <button type="button" onClick={() => setItemsOf(item)}>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      item.dimension === "customer" ? setMatrixOf(item) : setItemsOf(item)
+                    }
+                  >
                     动作
                   </button>
                   {canUpdate && (
@@ -550,6 +589,8 @@ export function DeliveryCirclePage() {
         canUpdate={canUpdate}
         onItemsChanged={() => void refetchItems()}
       />
+        </>
+      )}
 
       {addingCustomers && delivery && (
         <AddCustomerModal
@@ -584,6 +625,17 @@ export function DeliveryCirclePage() {
       )}
       {itemsOf && (
         <ItemModal deliveryId={deliveryId} item={itemsOf} onClose={() => setItemsOf(null)} onChange={() => void refetchItems()} />
+      )}
+      {matrixOf && delivery && (
+        <Modal title={`状态矩阵：${matrixOf.content}`} form onClose={() => setMatrixOf(null)}>
+          <DeliveryMatrix
+            deliveryId={deliveryId}
+            customers={delivery.customers}
+            items={items}
+            canUpdate={canUpdate}
+            onChanged={() => void refetchItems()}
+          />
+        </Modal>
       )}
       {deletingItem && (
         <ConfirmDialog
