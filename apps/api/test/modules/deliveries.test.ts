@@ -1,5 +1,6 @@
 // deliveries 域测试（K44）：类型配置表 / 交付单（客户集合）/ 交付项（双维度模板预填）/ 动作任务。
 // inject + loginAs，假时钟控 updatedAt；PATCH 走 lib/patch-kernel.ts。
+import ExcelJS from "exceljs";
 import type { FastifyInstance } from "fastify";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
@@ -78,6 +79,17 @@ const tasksOf = (itemId: number): { customer_id: number | null; content: string;
   tmp.sqlite
     .prepare("SELECT customer_id, content, done FROM delivery_tasks WHERE deliverable_id = ? ORDER BY id")
     .all(itemId) as { customer_id: number | null; content: string; done: number }[];
+
+async function loadSheet(buf: Buffer): Promise<ExcelJS.Worksheet> {
+  const wb = new ExcelJS.Workbook();
+  await wb.xlsx.load(buf as unknown as Parameters<ExcelJS.Workbook["xlsx"]["load"]>[0]);
+  const ws = wb.getWorksheet("客户");
+  expect(ws).toBeDefined();
+  return ws!;
+}
+
+const headerOf = (ws: ExcelJS.Worksheet): ExcelJS.CellValue[] =>
+  (ws.getRow(1).values as ExcelJS.CellValue[]).slice(1);
 
 /** 建一个带模板的类型 + 含 N 个客户的交付单；返回 id 集合 */
 let adminSeq = 0;
@@ -352,6 +364,51 @@ describe("deliveries/:id/customers（圈子工作台：客户全量 + Excel 导�
     expect(
       (await get(`/api/v1/deliveries/${delivery.id}/customers/export.xlsx`, aCookie)).statusCode,
     ).toBe(200);
+  });
+
+  it("导出 xlsx 按 fields 选列：缺省全列；指定字段只含所选（昵称可省，顺序稳定）；未知字段 422", async () => {
+    const { cookie, delivery, customerIds } = await seedTypeAndDelivery(1);
+    tmp.sqlite
+      .prepare(
+        "UPDATE customers SET phone = ?, wechat = ?, industry = ?, customer_type = 'partner' WHERE id = ?",
+      )
+      .run("13900000001", "wx_field", "教育", customerIds[0]!);
+
+    // 缺省 fields → 全列（含 行业/标签）
+    const allRes = await get(`/api/v1/deliveries/${delivery.id}/customers/export.xlsx`, cookie);
+    expect(allRes.statusCode).toBe(200);
+    const allHeader = headerOf(await loadSheet(allRes.rawPayload));
+    expect(allHeader).toContain("手机号");
+    expect(allHeader).toContain("行业");
+    expect(allHeader).toContain("标签");
+
+    // 指定字段：只含所选列（顺序按导出定义稳定），值正确
+    const selUrl = `/api/v1/deliveries/${delivery.id}/customers/export.xlsx?fields=${encodeURIComponent("phone,nickname,wechat")}`;
+    const selRes = await get(selUrl, cookie);
+    expect(selRes.statusCode).toBe(200);
+    const ws = await loadSheet(selRes.rawPayload);
+    const header = headerOf(ws);
+    expect(header).toEqual(["昵称", "手机号", "微信号"]);
+    const row2 = ws.getRow(2);
+    expect(row2.getCell(1).value).toBe("客户1");
+    expect(row2.getCell(2).value).toBe("13900000001");
+    expect(row2.getCell(3).value).toBe("wx_field");
+
+    // 空串 fields= → 视为未选择，回退全列
+    const emptyRes = await get(
+      `/api/v1/deliveries/${delivery.id}/customers/export.xlsx?fields=`,
+      cookie,
+    );
+    expect(emptyRes.statusCode).toBe(200);
+    expect(headerOf(await loadSheet(emptyRes.rawPayload))).toContain("行业");
+
+    // 未知字段 → 422 VALIDATION
+    const badRes = await get(
+      `/api/v1/deliveries/${delivery.id}/customers/export.xlsx?fields=${encodeURIComponent("nickname,hack")}`,
+      cookie,
+    );
+    expect(badRes.statusCode).toBe(422);
+    expect(badRes.json().error.code).toBe("VALIDATION");
   });
 });
 

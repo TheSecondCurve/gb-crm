@@ -62,7 +62,8 @@ function mapRowInQueries<Row extends GridRow>(
   });
 }
 
-function storageKeyOf(gridId: string): string {
+/** localStorage 列显隐 key 规范（DataGrid 与自定义表格共用，如圈子工作台客户表） */
+export function storageKeyOf(gridId: string): string {
   return `gb-crm:datagrid:${gridId}:columns`;
 }
 

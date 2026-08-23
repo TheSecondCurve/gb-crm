@@ -18,7 +18,7 @@ import { z } from "zod";
 import type { Db } from "../../db/client.js";
 import { listMeta } from "../../lib/pagination.js";
 import { requireCan } from "../../plugins/rbac.js";
-import { buildCustomersXlsx } from "../customers/export.js";
+import { buildCustomersXlsx, CUSTOMER_EXPORT_KEYS } from "../customers/export.js";
 import {
   createDeliverable,
   createDelivery,
@@ -52,6 +52,22 @@ const taskParamSchema = z.object({
   id: z.coerce.number().int().positive(),
   itemId: z.coerce.number().int().positive(),
   taskId: z.coerce.number().int().positive(),
+});
+
+// 圈子客户导出按所选字段选列：逗号分隔 key（与 web 字段选择器对齐）；空串 = 全列
+const circleCustomerExportQuerySchema = z.object({
+  fields: z
+    .string()
+    .optional()
+    .transform((v) =>
+      (v ?? "")
+        .split(",")
+        .map((s) => s.trim())
+        .filter(Boolean),
+    )
+    .refine((keys) => keys.every((k) => CUSTOMER_EXPORT_KEYS.includes(k)), {
+      message: "包含未知的导出字段",
+    }),
 });
 
 export function deliveriesRoutes(app: FastifyInstance, opts: DeliveriesRoutesOptions): void {
@@ -143,7 +159,8 @@ export function deliveriesRoutes(app: FastifyInstance, opts: DeliveriesRoutesOpt
     { preHandler: requireCan("deliveries", "read") },
     async (req, reply) => {
       const { id } = idParamSchema.parse(req.params);
-      const buf = await buildCustomersXlsx(listDeliveryCustomersResult(db, id));
+      const { fields } = circleCustomerExportQuerySchema.parse(req.query ?? {});
+      const buf = await buildCustomersXlsx(listDeliveryCustomersResult(db, id), fields);
       const d = new Date(now());
       const pad = (n: number) => String(n).padStart(2, "0");
       const filename = `圈子客户-${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}.xlsx`;

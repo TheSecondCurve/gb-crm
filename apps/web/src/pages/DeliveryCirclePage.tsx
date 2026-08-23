@@ -5,15 +5,21 @@
 // - assistant 只读（canUpdate 门控全部写操作）。
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { can, customerTypeLabels, deliverableDimensionLabels, deliveryTypeKindLabels, type CustomerType } from "@gb-crm/shared";
+import { can, deliverableDimensionLabels, deliveryTypeKindLabels } from "@gb-crm/shared";
 import { useNavigate, useParams } from "react-router-dom";
 
 import { api, ApiError } from "../api/client";
 import type { CustomerDto, DeliverableDto, DeliveryDto } from "../api/types";
 import { useAuth } from "../auth/AuthProvider";
-import { badge, enumBadge, epochMsToDate, formatDateTime, optionsOf, type BadgeTone } from "../columns/common";
+import { badge, enumBadge, epochMsToDate, optionsOf, type BadgeTone } from "../columns/common";
+import {
+  circleCustomerFields,
+  loadCircleCustomerVisibleKeys,
+  saveCircleCustomerVisibleKeys,
+} from "../columns/circleCustomerFields";
 import { customerOptionsLoader } from "../columns/relation";
-import type { RelationOption } from "../components/DataGrid/DataGrid";
+import { ColumnPicker } from "../components/DataGrid/ColumnPicker";
+import { storageKeyOf, type RelationOption } from "../components/DataGrid/DataGrid";
 import { ConfirmDialog } from "../components/ConfirmDialog";
 import { DeliveryFormModal } from "../components/DeliveryFormModal";
 import { DeliveryGantt } from "../components/DeliveryGantt";
@@ -24,6 +30,9 @@ import { Modal } from "../components/Modal";
 import { useToast } from "../components/Toast";
 
 const DIM_TONES: Record<string, BadgeTone> = { customer: "accent" };
+
+/** 客户表字段显隐持久化 key（DataGrid 同款规范） */
+const FIELDS_STORAGE_KEY = storageKeyOf("delivery-circle-customers");
 
 /** 周期状态（由起止日期 vs now 派生）：未排期 / 未开始 / 进行中 / 已结束 */
 function cycleStatus(d: DeliveryDto, nowMs: number): { label: string; tone: BadgeTone } {
@@ -147,6 +156,19 @@ export function DeliveryCirclePage() {
   const [addingCustomers, setAddingCustomers] = useState(false);
   const [removingCustomer, setRemovingCustomer] = useState<CustomerDto | null>(null);
   const [busy, setBusy] = useState(false);
+
+  // 客户表字段显隐（自由选择展示字段；导出 Excel 按所选字段导出）
+  const [visibleFieldKeys, setVisibleFieldKeys] = useState<string[]>(() =>
+    loadCircleCustomerVisibleKeys(FIELDS_STORAGE_KEY),
+  );
+  const changeVisibleFieldKeys = useCallback((next: string[]) => {
+    setVisibleFieldKeys(next);
+    saveCircleCustomerVisibleKeys(FIELDS_STORAGE_KEY, next);
+  }, []);
+  const visibleFields = useMemo(
+    () => circleCustomerFields.filter((f) => f.locked || visibleFieldKeys.includes(f.key)),
+    [visibleFieldKeys],
+  );
 
   const refreshAll = useCallback(async () => {
     await Promise.all([refetchDelivery(), refetchItems(), refetchCustomers()]);
@@ -290,7 +312,8 @@ export function DeliveryCirclePage() {
   };
 
   const exportXlsx = () => {
-    const href = `/api/v1/deliveries/${deliveryId}/customers/export.xlsx`;
+    const params = new URLSearchParams({ fields: visibleFieldKeys.join(",") });
+    const href = `/api/v1/deliveries/${deliveryId}/customers/export.xlsx?${params.toString()}`;
     const a = document.createElement("a");
     a.href = href;
     a.download = "";
@@ -406,6 +429,11 @@ export function DeliveryCirclePage() {
         <div className="card-head">
           <h2>圈子客户（{customerCount} 人）</h2>
           <div className="search-bar">
+            <ColumnPicker
+              columns={circleCustomerFields.map(({ key, label, locked }) => ({ key, label, locked }))}
+              visibleKeys={visibleFieldKeys}
+              onChange={changeVisibleFieldKeys}
+            />
             <button type="button" onClick={exportXlsx}>
               导出 Excel
             </button>
@@ -424,32 +452,26 @@ export function DeliveryCirclePage() {
               <table className="matrix-table circle-customer-table">
                 <thead>
                   <tr>
-                    <th className="matrix-corner">客户</th>
-                    <th>真实姓名</th>
-                    <th>称谓</th>
-                    <th>手机号</th>
-                    <th>微信号</th>
-                    <th>城市</th>
-                    <th>类型</th>
-                    <th>归属人</th>
-                    <th>来源渠道</th>
-                    <th>最近跟进</th>
+                    {visibleFields.map((f) => (
+                      <th key={f.key} className={f.locked ? "matrix-corner" : undefined}>
+                        {f.label}
+                      </th>
+                    ))}
                     {canUpdate && <th className="matrix-corner">操作</th>}
                   </tr>
                 </thead>
                 <tbody>
                   {customers?.map((c) => (
                     <tr key={c.id}>
-                      <th className="matrix-row-head">{c.nickname}</th>
-                      <td>{c.realName || "—"}</td>
-                      <td>{c.title || "—"}</td>
-                      <td>{c.phone || "—"}</td>
-                      <td>{c.wechat || "—"}</td>
-                      <td>{c.city || "—"}</td>
-                      <td>{enumBadge(customerTypeLabels)(c.customerType as CustomerType)}</td>
-                      <td>{c.owner?.nickname ?? "—"}</td>
-                      <td>{c.sourceChannels.map((ch) => ch.name).join("、") || "—"}</td>
-                      <td>{c.lastFollowedAt ? formatDateTime(c.lastFollowedAt) : "—"}</td>
+                      {visibleFields.map((f) =>
+                        f.key === "nickname" ? (
+                          <th key={f.key} className="matrix-row-head">
+                            {f.render(c)}
+                          </th>
+                        ) : (
+                          <td key={f.key}>{f.render(c)}</td>
+                        ),
+                      )}
                       {canUpdate && (
                         <td>
                           <button type="button" className="btn-danger" onClick={() => setRemovingCustomer(c)}>
