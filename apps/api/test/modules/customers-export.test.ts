@@ -90,7 +90,9 @@ describe("GET /api/v1/customers/export.xlsx", () => {
     expect(header).toContain("昵称");
     expect(header).toContain("归属人");
     expect(header).toContain("来源渠道");
-    expect(header).not.toContain("标签");
+    // 列与 web 列定义 label 对齐：含 行业/标签
+    expect(header).toContain("行业");
+    expect(header).toContain("标签");
     expect(ws.rowCount).toBe(3); // 表头 + 2 行
 
     // 找「客户甲」行（导出顺序 updatedAt desc，两行 clock 相同，按 id desc → 乙在前）
