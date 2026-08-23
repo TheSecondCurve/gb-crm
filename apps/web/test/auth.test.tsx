@@ -9,7 +9,7 @@ describe("认证与路由", () => {
       if (url === "/api/v1/auth/me") return unauthorized();
     });
     renderApp("/customers");
-    expect(await screen.findByRole("heading", { name: "闪光 · 客户运营" })).toBeTruthy();
+    expect(await screen.findByRole("heading", { name: "女商 私域运营管理端" })).toBeTruthy();
     expect(screen.queryByRole("link", { name: "客户信息" })).toBeNull();
   });
 
@@ -58,7 +58,7 @@ describe("认证与路由", () => {
 
     expect(await screen.findByText("用户名或密码错误")).toBeTruthy();
     // 仍在登录页
-    expect(screen.getByRole("heading", { name: "闪光 · 客户运营" })).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "女商 私域运营管理端" })).toBeTruthy();
   });
 
   it("已登录访问 /login → 跳 /customers", async () => {
@@ -86,6 +86,6 @@ describe("认证与路由", () => {
 
     fireEvent.click(await screen.findByRole("button", { name: "退出" }));
 
-    expect(await screen.findByRole("heading", { name: "闪光 · 客户运营" })).toBeTruthy();
+    expect(await screen.findByRole("heading", { name: "女商 私域运营管理端" })).toBeTruthy();
   });
 });

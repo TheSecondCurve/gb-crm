@@ -1,10 +1,10 @@
 ---
 name: gb-crm
 description: >
-  闪光 · 客户运营（gb-crm）本机 HTTP 客户端。用 ~/.gb-crm/credentials.json 的 PAT
+  女商 私域运营管理端（gb-crm）本机 HTTP 客户端。用 ~/.gb-crm/credentials.json 的 PAT
   通过单一 SQL 端点查询或维护客户、渠道、产品、团队成员、成交记录、交付管理。
   当用户提到 CRM、客户名单、渠道资产、产品目录、团队成员、成交、交付、gb-crm、
-  闪光客户运营，或要查/改客户时使用。
+  女商私域运营管理端，或要查/改客户时使用。
   Use when the user runs /gb-crm.
 metadata:
   short-description: 用本机 PAT 对 gb-crm 跑 SQL
@@ -13,7 +13,7 @@ metadata:
 
 # gb-crm
 
-品牌文案锁定 **「闪光 · 客户运营」**，禁止「女商」。
+品牌文案 **「女商 私域运营管理端」**。
 
 `SKILL_DIR` = 本文件所在目录。所有 HTTP **只**走脚本，不要自己拼 `Authorization`，不要 Read `~/.gb-crm/credentials.json`，不要把 token / 密码写进对话或命令行。
 
