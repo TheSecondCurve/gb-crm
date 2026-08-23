@@ -1,4 +1,4 @@
-# gb-crm — 闪光 · 客户运营
+# gb-crm — 女商 私域运营管理端
 
 闪光团队客户信息管理系统。npm workspaces + TypeScript monorepo：
 

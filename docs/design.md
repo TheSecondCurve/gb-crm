@@ -141,7 +141,7 @@ Phase 2 表（本设计不建表、不导入）：活动交付 12、内容资产
 | K31 | **兼职助手不能** `customers.create`，**不能** `customers.updateOwners`（归属人）。仍可 PATCH 客户其它标量。`can()` 此两格锁定，不是待改默认 | 2026-08-21 产品拍板（原 Q5）。PR 7 测试：assistant POST 403、PATCH ownerIds 403。 |
 | K32 | **内网 + Docker**。提供 `Dockerfile` 与 `docker-compose.yml`（PR 14 **必做**）。SQLite **volume 挂载**，不进镜像。可 `HOST=0.0.0.0` 跟在内网 Caddy 后；推荐 `COOKIE_SECURE=true` + HTTPS + `TRUST_PROXY=true`。非 loopback 且未 Secure 仍启动 warn。**不**暴露公网，不追加公网威胁加固 | 2026-08-21 产品/运维拍板（原 Q7）。 |
 | K33 | UI「删除」= 软删。v1 **无**回收站、**无**管理员硬删。`ON DELETE CASCADE`/`SET NULL` 仅 schema 预留，v1 路径永不触发 | 2026-08-21 产品拍板（原 Q9）。 |
-| K34 | 侧栏与登录标题品牌文案锁定为 **「闪光 · 客户运营」**。禁止「女商」 | 2026-08-21 产品拍板（原 Q13）。PR 8 用此常量。 |
+| K34 | 侧栏与登录标题品牌文案锁定为 **「女商 私域运营管理端」** | 2026-08-21 产品拍板（原 Q13）。2026-08-23 品牌改文案；PR 8 曾用「闪光 · 客户运营」。 |
 | K35 | Agent 访问：**PAT 与 cookie session 并行**，不做 JWT。已部署 CRM 托管 `GET /agent/login.sh`（`curl \| sh` 签发）；明文 token 只返回一次，本机 `~/.gb-crm/credentials.json`（目录 700 / 文件 600）。范围 `read`/`write`（REST 资源路由仍 **∩** `can()`）。Skill 包在仓库 `skills/gb-crm/` 备用（脚本发 Bearer，skill 不含密钥）。Agent 数据访问收敛为单一端点 **`POST /api/v1/agent/sql`**（自由 SQL，仅 Bearer PAT，cookie 403）：用 better-sqlite3 `stmt.readonly` 判读写——只读语句任意 scope / 角色放行（含渠道密钥列，产品接受）；写语句必须 `write` scope + admin。读上限 1000 行截断；单语句。REST 资源路由保留给 web 管理端 | Agent 用不了 HttpOnly cookie；JWT 难作废（K5）。**2026-08-21 产品拍板推翻旧决定「不开放任意 SQL」**：换 token 节省与取数灵活性；写 SQL 绕过 PATCH 内核 / OCC / 软删 / RBAC 的风险由「仅 admin+write 可写」与 SKILL.md 工作守则兜底 |
 | K36 | 客户表删除 父记录 / 档案页 / 所在社群 / 升单人 / 飞书记录（`parent_id` / `profile_url` / `feishu_record_id` 列 + `customer_upsell_owners` / `customer_community_channels` join 表） | 2026-08-22 产品决策。`0002_drop_customer_fields.sql` 迁移删除 |
 | K37 | users / channels / products 删除 飞书记录（`feishu_record_id` 列 + 各表 partial unique 索引） | 2026-08-22 产品决策。`0003_drop_feishu_record_ids.sql` 迁移删除 |
@@ -328,7 +328,7 @@ flowchart TB
 
 ### 4. 视觉与信息架构
 
-**结论：独立 Admin，设计语言 1:1 复用女商。** 侧栏与登录标题锁定 **「闪光 · 客户运营」**（K34），**不要**出现「女商」。
+**结论：独立 Admin，设计语言 1:1 复用女商。** 侧栏与登录标题锁定 **「女商 私域运营管理端」**（K34）。
 
 PR 8 **几乎原文**拷贝 mhtml 里的 CSS（layout / sidebar-toggle / `.sidebar-hidden` / sticky header / card / table / `.empty` / `.row-disabled` / `.badge*` / login-card / modal / pagination / tabs）。不要重写一套。token 与快照一致（小写 hex）。`--on-ink: #dcd7ce` 可加（style.md 有、mhtml `:root` 无）。
 
@@ -373,7 +373,7 @@ PR 8 **几乎原文**拷贝 mhtml 里的 CSS（layout / sidebar-toggle / `.sideb
 v1 导航（管理员）：
 
 ```
-闪光 · 客户运营
+女商 私域运营管理端
   主数据
     客户信息      /customers
     渠道资产      /channels
@@ -1372,7 +1372,7 @@ sqlite3 "$DATABASE_PATH" ".backup '${DATABASE_PATH}.bak-$(date +%F)'"
 | Q5 | 助手不能建客户、不能改归属人 | K31 |
 | Q7 | 内网 + Docker（sqlite volume；非公网） | K32 |
 | Q9 | 只软删，无硬删/回收站 | K33 |
-| Q13 | 品牌文案「闪光 · 客户运营」 | K34 |
+| Q13 | 品牌文案「女商 私域运营管理端」 | K34 |
 | （后补） | Agent 用 PAT + 托管 `login.sh` + 仓库 `skills/gb-crm/`；不开 SQL | K35 |
 
 此前已关闭、不再提问：四张表（Goals/K19）、角色拆分（K10）、不做飞书导入（K16）、独立应用（K1）、Excel 深度（K8/K30）、父记录列（K15，2026-08-22 由 K36 撤销）、归属人 M2M（K15，2026-08-22 由 K39 撤销为单值）、离职闸门（K10）、无登录成员进 users（K10）、`dev` 已存在（K17）。
@@ -1715,7 +1715,7 @@ assistant 全域只读（无新增/修改/删除/动作按钮；甘特/矩阵仅
 
 - **依赖**：PR 4；可与 5–7 并行
 - **影响文件**：`styles/*`（mhtml CSS 几乎原文，含 collapse/empty/disabled/sticky/badge）、`main.tsx`（BrowserRouter + QueryClientProvider）、`App.tsx` 路由、layout、LoginPage
-- **说明**：品牌常量锁定 `闪光 · 客户运营`（K34），登录标题与侧栏共用，禁止「女商」。
+- **说明**：品牌常量锁定 `女商 私域运营管理端`（K34），登录标题与侧栏共用。
 
 ### PR 9 — `feat(web): DataGrid 内核`
 

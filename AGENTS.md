@@ -1,6 +1,6 @@
 # AGENTS.md — gb-crm
 
-闪光团队客户信息管理系统（品牌文案锁定 **「闪光 · 客户运营」**，禁止「女商」）。内网单进程：Vite + React 管理端 + Fastify REST + SQLite。
+闪光团队客户信息管理系统（品牌文案 **「女商 私域运营管理端」**）。内网单进程：Vite + React 管理端 + Fastify REST + SQLite。
 
 完整架构与编号决策见 `docs/design.md`（K1–K35）。需求原文 `docs/core.md`，视觉 `docs/style.md`，Agent 签发与 Skill 用法 `docs/dev.md`。本文件是给编码代理的工作契约：改代码前先对照这里，再对照 design。
 
