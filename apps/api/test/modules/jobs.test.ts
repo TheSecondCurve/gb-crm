@@ -100,7 +100,7 @@ describe("创建任务", () => {
     expect(
       (await post("/api/v1/background-jobs", admin, { type: "nope", params: {} })).statusCode,
     ).toBe(422);
-    expect((await post("/api/v1/background-jobs", admin, { type: "customer-tags-generate-all", params: { q: 1 } })).statusCode).toBe(201); // params 宽容（执行时按列表 WHERE 使用）
+    expect((await post("/api/v1/background-jobs", admin, { type: "customer-tags-generate-all", params: { q: "关键词" } })).statusCode).toBe(201); // 合法筛选参数直接入队（非法 params 见「任务参数校验」）
     expect((await app.inject({ method: "POST", url: "/api/v1/background-jobs", payload: { type: "customer-tags-generate-all" } })).statusCode).toBe(401);
   });
 
@@ -244,7 +244,7 @@ describe("执行器（pumpOnce）", () => {
     const mockFetch = llmOk({ identity: ["创业者"], stage: [], interest: [] });
     const result = await runBulkTaggingJob(
       tmp.db,
-      { page: 1, pageSize: 25 },
+      {},
       { now: clock.t, userId: 1 },
       { fetchFn: mockFetch, isCancelled: () => ++n > 1, onProgress: () => {} },
     );
@@ -281,7 +281,7 @@ describe("执行器（pumpOnce）", () => {
 
     const result = await runBulkTaggingJob(
       tmp.db,
-      { page: 1, pageSize: 25 },
+      {},
       { now: clock.t, userId: 1 },
       { fetchFn: mockFetch, newTagBudget: { used: 0, max: 4 } },
     );
@@ -336,6 +336,118 @@ describe("取消任务", () => {
 
     const admin = await loginAsRole("admin");
     expect((await post(`/api/v1/background-jobs/${job.id}/cancel`, admin)).statusCode).toBe(200);
+  });
+});
+
+describe("取消终态不可覆盖（H3）", () => {
+  const CANCEL_SQL =
+    "UPDATE background_jobs SET status='cancelled', finished_at=? WHERE id=? AND status IN ('queued','running')";
+  const rowOf = (id: number) =>
+    tmp.sqlite.prepare("SELECT status, error, finished_at FROM background_jobs WHERE id = ?").get(id) as {
+      status: string;
+      error: string | null;
+      finished_at: number;
+    };
+
+  afterEach(() => {
+    delete JOB_TYPES["test-cancel-boom"];
+  });
+
+  it("最后一个客户的 LLM await 窗口内被取消：循环走完仍保持 cancelled，finishedAt 不被改写", async () => {
+    seedAiConfigRow();
+    const cookie = await loginAsRole("admin");
+    await createCustomer(cookie, "尾窗取消客户");
+    const job = await createJob(cookie);
+    clock.t += 1;
+    const cancelledAt = clock.t;
+
+    // fetch 触发时才取消：模拟取消落在最后一次 isCancelled 检查之后的 LLM await 窗口内
+    const runner = createJobRunner({
+      db: tmp.db,
+      now: () => clock.t,
+      fetchFn: vi.fn(async () => {
+        tmp.sqlite.prepare(CANCEL_SQL).run(cancelledAt, job.id);
+        clock.t += 60_000; // 若终态被正常收尾覆盖，finished_at 会变成更大的值而暴露
+        return new Response(JSON.stringify({ choices: [{ message: { content: "{}" } }] }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }) as unknown as typeof fetch,
+    });
+    await runner.pumpOnce();
+
+    expect(rowOf(job.id)).toEqual({ status: "cancelled", error: null, finished_at: cancelledAt });
+  });
+
+  it("兜底 failed 不覆盖 cancelled（handler 取消后抛错 / 未 finish）", async () => {
+    const admin = await loginAsRole("admin");
+    expect(admin).toBeTruthy();
+    clock.t += 1;
+    const cancelledAt = clock.t;
+    JOB_TYPES["test-cancel-boom"] = {
+      label: "测试-取消后抛错",
+      requiredPermission: { resource: "customers", action: "update" },
+      run: async (ctx) => {
+        tmp.sqlite.prepare(CANCEL_SQL).run(cancelledAt, ctx.jobId);
+        throw new Error("boom");
+      },
+    };
+    const jobId = Number(
+      tmp.sqlite
+        .prepare("INSERT INTO background_jobs (type, params, status, progress, trigger, created_at, created_by) VALUES ('test-cancel-boom','{}','queued','{}','manual',?,1)")
+        .run(clock.t).lastInsertRowid,
+    );
+
+    const runner = createJobRunner({ db: tmp.db, now: () => clock.t });
+    await runner.pumpOnce(); // catch 兜底 + 未 finish 兜底都不得覆盖 cancelled
+
+    expect(rowOf(jobId)).toEqual({ status: "cancelled", error: null, finished_at: cancelledAt });
+  });
+});
+
+describe("任务参数校验（M11）", () => {
+  it("非法 params → 创建 422 VALIDATION（q 类型错 / sort 非法枚举 / 未知键 / 分页键）", async () => {
+    seedAiConfigRow();
+    const cookie = await loginAsRole("admin");
+    for (const params of [{ q: 123 }, { sort: "x" }, { foo: 1 }, { page: 2 }]) {
+      const res = await post("/api/v1/background-jobs", cookie, { type: "customer-tags-generate-all", params });
+      expect(res.statusCode, JSON.stringify(params)).toBe(422);
+      expect(res.json().error.code).toBe("VALIDATION");
+      expect(typeof res.json().error.message).toBe("string");
+    }
+  });
+
+  it("合法筛选参数创建成功并按筛选执行（不回归）", async () => {
+    seedAiConfigRow();
+    const cookie = await loginAsRole("admin");
+    const hit = await createCustomer(cookie, "筛选命中客户");
+    await createCustomer(cookie, "其它客户甲");
+    const job = await createJob(cookie, "customer-tags-generate-all", { q: "筛选命中" });
+
+    const runner = createJobRunner({ db: tmp.db, now: () => clock.t, fetchFn: llmOk({ identity: ["创业者"], stage: [], interest: [] }) });
+    await runner.pumpOnce();
+
+    const dto = (await get(`/api/v1/background-jobs/${job.id}`, cookie)).json().data;
+    expect(dto.status).toBe("succeeded");
+    expect(dto.progress).toEqual({ processed: 1, total: 1, succeeded: 1, failed: 0 });
+    const genTag = (tmp.sqlite.prepare("SELECT id FROM tags WHERE name = '创业者'").get() as { id: number }).id;
+    const linked = tmp.sqlite.prepare("SELECT customer_id FROM customer_tags WHERE tag_id = ?").all(genTag) as { customer_id: number }[];
+    expect(linked.map((r) => r.customer_id)).toEqual([hit.id]);
+  });
+
+  it("执行侧复验：历史脏 params 执行 → failed 且中文提示（不再裸 cast 进 SQL）", async () => {
+    seedAiConfigRow();
+    await loginAsRole("admin"); // 种子用户 id=1，满足 created_by 外键
+    tmp.sqlite
+      .prepare("INSERT INTO background_jobs (type, params, status, progress, trigger, created_at, created_by) VALUES ('customer-tags-generate-all','{\"q\":123}','queued','{}','manual',?,1)")
+      .run(clock.t);
+
+    const runner = createJobRunner({ db: tmp.db, now: () => clock.t, fetchFn: llmOk({ identity: [], stage: [], interest: [] }) });
+    await runner.pumpOnce();
+
+    const row = tmp.sqlite.prepare("SELECT status, error FROM background_jobs WHERE type = 'customer-tags-generate-all'").get() as { status: string; error: string };
+    expect(row.status).toBe("failed");
+    expect(row.error).toContain("参数不合法");
   });
 });
 

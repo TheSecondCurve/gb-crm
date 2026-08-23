@@ -1,9 +1,15 @@
 // POST /api/v1/agent/sql：Agent 单一自由 SQL 端点（K35；2026-08-21 产品拍板，
 // 推翻旧决定「不开放任意 SQL」）。
 // - 仅 Bearer PAT（req.tokenScope !== null）；cookie session 一律 403。
-// - 读写判定用 better-sqlite3 原生 prepare 后的 stmt.readonly：
-//   SELECT/WITH/PRAGMA 等 readonly=true → 任意 scope、任意角色放行（含渠道密钥列，产品接受）；
-//   readonly=false（含 INSERT...RETURNING）→ 必须 write scope + systemRole=admin。
+// - 读写判定（H1 双条件版）：读路径必须同时满足
+//   (1) stmt.readonly === true 且 (2) SQL 以 SELECT / WITH / VALUES 开头。
+//   sqlite3_stmt_readonly 对 PRAGMA / BEGIN 等也返回 true，而它们能改连接级状态
+//   （locking_mode / busy_timeout / foreign_keys…），会卡死备份与第二连接，
+//   故任一条件不满足即落写分支（write scope + admin）。
+//   注意：better-sqlite3 的 prepare() 会立即执行 PRAGMA（实测），所以非查询词形的
+//   SQL 必须先过写门、再 prepare，否则 read 令牌会在「被拒绝前」已改掉连接状态。
+// - 读路径凭据黑名单（M2）：结果列含 password_hash / token_hash，或 SQL 引用
+//   sessions 表 → 403。渠道密钥列的产品豁免覆盖不了凭据哈希与裸 session id。
 // - 单语句：prepare 抛 SqliteError（多语句/语法错误）→ 422 SQL_ERROR，message 用 sqlite 原文。
 // - 读：stmt.raw() 逐行取，上限 1000 行，超出 truncated=true；rows 为数组省 token。
 // - 写：包事务 stmt.run()，返回 changes / lastInsertRowid；约束冲突等 SqliteError → 422。
@@ -19,6 +25,14 @@ import { ApiError, forbidden } from "../../plugins/error-handler.js";
 export const AGENT_SQL_MAX_ROWS = 1000;
 
 const sqlBodySchema = z.object({ sql: z.string().min(1) });
+
+// H1：只读语句的词形白名单。\b 防止 SELECTX 这类前缀误判；大小写不敏感。
+const READ_ONLY_SQL_RE = /^\s*(select|with|values)\b/i;
+// 非查询词形里「readonly=true 但改连接状态」的常见开头，用于给更准确的拒绝提示
+const CONNECTION_STATE_RE = /^\s*(pragma|begin|savepoint)\b/i;
+// M2：凭据材料黑名单——密码哈希 / PAT 哈希列，与会话表（裸 session id 即凭据）。
+const CREDENTIAL_COLUMN_RE = /^(password_hash|token_hash)$/;
+const SESSIONS_TABLE_RE = /\bsessions\b/i;
 
 function toSqlError(err: unknown): ApiError {
   if (err instanceof Database.SqliteError) return new ApiError(422, "SQL_ERROR", err.message);
@@ -45,6 +59,17 @@ export function agentRoutes(app: FastifyInstance, opts: AgentRoutesOptions): voi
       throw forbidden("此接口仅限 Agent 令牌（Bearer PAT）调用");
     }
     const { sql } = sqlBodySchema.parse(req.body ?? {});
+    const looksLikeRead = READ_ONLY_SQL_RE.test(sql);
+
+    // H1：词形不是 SELECT/WITH/VALUES 的 SQL 先过写门再 prepare——
+    // prepare() 会立即执行 PRAGMA，鉴权放后面就拦不住了。
+    if (!looksLikeRead && (req.tokenScope !== "write" || req.user!.systemRole !== "admin")) {
+      throw forbidden(
+        CONNECTION_STATE_RE.test(sql)
+          ? "只读令牌仅允许执行 SELECT / WITH / VALUES 查询"
+          : "仅管理员可执行写 SQL",
+      );
+    }
 
     let stmt: Database.Statement;
     try {
@@ -53,8 +78,21 @@ export function agentRoutes(app: FastifyInstance, opts: AgentRoutesOptions): voi
       throw prepareError(err);
     }
 
-    if (stmt.readonly) {
-      const columns = stmt.columns().map((c) => c.name);
+    if (looksLikeRead && stmt.readonly) {
+      // columns() 移进 try：零列语句等场景防御性按 422 SQL_ERROR 处理
+      let columns: string[];
+      try {
+        columns = stmt.columns().map((c) => c.name);
+      } catch (err) {
+        throw prepareError(err);
+      }
+      // M2 凭据黑名单：SELECT * FROM users 由列名兜住，sessions 表由词边界兜住
+      if (columns.some((c) => CREDENTIAL_COLUMN_RE.test(c))) {
+        throw forbidden("查询涉及凭据字段（password_hash / token_hash），已拒绝");
+      }
+      if (SESSIONS_TABLE_RE.test(sql)) {
+        throw forbidden("禁止读取 sessions 表（会话凭据数据）");
+      }
       const rows: unknown[][] = [];
       let truncated = false;
       try {
@@ -71,6 +109,8 @@ export function agentRoutes(app: FastifyInstance, opts: AgentRoutesOptions): voi
       return { data: { columns, rows, rowCount: rows.length, truncated } };
     }
 
+    // 词形像查询但 readonly=false（如 WITH...DELETE），落到写分支；
+    // 上面的前置写门只挡了非查询词形，这里仍要完整校验 scope + admin。
     if (req.tokenScope !== "write" || req.user!.systemRole !== "admin") {
       throw forbidden("仅管理员可执行写 SQL");
     }

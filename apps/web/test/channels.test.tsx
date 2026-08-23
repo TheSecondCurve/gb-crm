@@ -75,6 +75,12 @@ function mockChannelsApi(me: Me, rows: ChannelDto[] = channels) {
 const headerTexts = () =>
   [...document.querySelectorAll(".data-grid-table th")].map((th) => th.textContent);
 
+function cell(rowId: number, colKey: string): HTMLElement {
+  const el = document.querySelector(`[data-cell="${rowId}:${colKey}"]`);
+  if (!el) throw new Error(`cell ${rowId}:${colKey} not found`);
+  return el as HTMLElement;
+}
+
 describe("渠道资产页", () => {
   it("渲染列表：名称/枚举 badge/粉丝数；暂停行 .row-disabled", async () => {
     mockChannelsApi(adminMe);
@@ -171,6 +177,21 @@ describe("渠道资产页", () => {
     const dialog2 = screen.getByRole("dialog", { name: "新增渠道" });
     fireEvent.keyDown(dialog2, { key: "Escape" });
     expect(screen.queryByRole("dialog", { name: "新增渠道" })).toBeNull();
+  });
+
+  it("粉丝数非法输入：toast 报错、不发 PATCH 且不清空（M6）", async () => {
+    const calls = mockChannelsApi(adminMe);
+    renderApp("/channels");
+    await screen.findByText("公众号A");
+
+    fireEvent.doubleClick(cell(1, "followerCount"));
+    const input = cell(1, "followerCount").querySelector("input")!;
+    expect(input.value).toBe("1200");
+    fireEvent.change(input, { target: { value: "12a" } });
+    fireEvent.keyDown(input, { key: "Tab" });
+
+    await waitFor(() => expect(screen.getByText("粉丝/好友数需为数字")).toBeTruthy());
+    expect(calls.some((c) => c.method === "PATCH")).toBe(false);
   });
 
   it("删除：ConfirmDialog → DELETE → 列表刷新", async () => {

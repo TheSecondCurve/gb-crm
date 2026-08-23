@@ -143,8 +143,11 @@ export function DataGrid<Row extends GridRow>({
           mapRowInQueries(queryClient, queryKeyRef.current, id, () => fresh);
         },
         onConflict: () => showToastRef.current("该行已被他人更新"),
-        onError: (err) =>
-          showToastRef.current(err instanceof Error ? err.message : "保存失败，请稍后重试"),
+        onError: (err) => {
+          showToastRef.current(err instanceof Error ? err.message : "保存失败，请稍后重试");
+          // 非 409 失败：乐观写入的缓存不可信（界面会假显「已保存」），invalidate 让列表重新拉取回滚
+          void queryClient.invalidateQueries({ queryKey: [...queryKeyRef.current] });
+        },
       });
       queuesRef.current.set(id, q);
     }

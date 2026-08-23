@@ -86,9 +86,13 @@ function mockDealsApi(me: Me, rows: DealDto[] = [deal]) {
   const calls: Call[] = [];
   mockFetch((url, init) => {
     const method = init?.method ?? "GET";
-    calls.push({ url, method });
+    calls.push({ url, method, body: init?.body });
     if (url === "/api/v1/auth/me") return { status: 200, body: { data: me } };
     if (url.startsWith("/api/v1/deals")) {
+      if (method === "PATCH") {
+        const patch = JSON.parse(String(init?.body)) as Record<string, unknown>;
+        return { status: 200, body: { data: { ...deal, ...patch, updatedAt: 2001 } } };
+      }
       return {
         status: 200,
         body: { data: rows, meta: { page: 1, pageSize: 25, total: rows.length } },
@@ -96,6 +100,12 @@ function mockDealsApi(me: Me, rows: DealDto[] = [deal]) {
     }
   });
   return calls;
+}
+
+function cell(rowId: number, colKey: string): HTMLElement {
+  const el = document.querySelector(`[data-cell="${rowId}:${colKey}"]`);
+  if (!el) throw new Error(`cell ${rowId}:${colKey} not found`);
+  return el as HTMLElement;
 }
 
 describe("我的运营菜单", () => {
@@ -194,5 +204,23 @@ describe("我的运营菜单", () => {
     expect(await screen.findByText("D-001")).toBeTruthy();
     expect(calls.some((c) => c.method === "GET" && c.url.includes("ownerId=3"))).toBe(true);
     expect(screen.queryByRole("button", { name: "新增" })).toBeNull();
+  });
+
+  it("我的成交：行内编辑金额 → PATCH 提交分整数（number，K13）", async () => {
+    const calls = mockDealsApi(operatorMe);
+    renderApp("/my/deals");
+    await screen.findByRole("heading", { name: "我的成交" });
+    await screen.findByText("D-001");
+
+    fireEvent.doubleClick(cell(1, "amountCents"));
+    const input = cell(1, "amountCents").querySelector("input")!;
+    fireEvent.change(input, { target: { value: "500.6" } });
+    fireEvent.keyDown(input, { key: "Tab" });
+
+    await waitFor(() => {
+      const patch = calls.find((c) => c.method === "PATCH" && c.url === "/api/v1/deals/1");
+      expect(patch).toBeTruthy();
+      expect(JSON.parse(String(patch?.body))).toEqual({ amountCents: 50060, updatedAt: 2000 });
+    });
   });
 });

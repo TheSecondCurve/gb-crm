@@ -7,6 +7,7 @@ import { vi } from "vitest";
 
 import App from "../src/App";
 import { AuthProvider, type Me } from "../src/auth/AuthProvider";
+import { ToastProvider } from "../src/components/Toast";
 
 export type { Me };
 
@@ -87,7 +88,9 @@ export function renderApp(initialPath = "/"): ReturnType<typeof render> {
     <QueryClientProvider client={queryClient}>
       <MemoryRouter initialEntries={[initialPath]}>
         <AuthProvider>
-          <App />
+          <ToastProvider>
+            <App />
+          </ToastProvider>
         </AuthProvider>
       </MemoryRouter>
     </QueryClientProvider>

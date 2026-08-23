@@ -1,6 +1,7 @@
 // channels 表 Drizzle 查询（§3：repo 层，路由/服务不写 SQL）。
 // list 排除软删；COUNT 与列表同一 WHERE（§9）。channel_owners 的读取与整表替换也在本层。
 import { and, asc, count, desc, eq, inArray, isNull, type SQL } from "drizzle-orm";
+import type { AnySQLiteColumn } from "drizzle-orm/sqlite-core";
 
 import type { ChannelListQuery } from "@gb-crm/shared";
 
@@ -12,12 +13,19 @@ import { toOffset } from "../../lib/pagination.js";
 export type ChannelRow = typeof channels.$inferSelect;
 
 /** q 搜索列（§9，SQL 列名）：name,account_id,register_phone,notes */
-const SEARCH_COLUMNS = [
-  channels.name,
+const SEARCH_BASE_COLUMNS: AnySQLiteColumn[] = [channels.name, channels.notes];
+// M1：密钥列（account_id/register_phone）只在能看密钥时参与搜索，
+// 否则 assistant 可借「命中与否」神谕探测其无权读取的字段内容
+const SECRET_SEARCH_COLUMNS: AnySQLiteColumn[] = [
   channels.accountId,
   channels.registerPhone,
-  channels.notes,
 ];
+
+function searchColumns(canSeeSecrets: boolean): AnySQLiteColumn[] {
+  return canSeeSecrets
+    ? [...SEARCH_BASE_COLUMNS, ...SECRET_SEARCH_COLUMNS]
+    : SEARCH_BASE_COLUMNS;
+}
 
 // 每资源独立 sort enum（K21）；channels: updatedAt | createdAt | name
 const SORT_COLUMNS = {
@@ -26,9 +34,9 @@ const SORT_COLUMNS = {
   name: channels.name,
 } as const;
 
-function listWhere(query: ChannelListQuery): SQL | undefined {
+function listWhere(query: ChannelListQuery, canSeeSecrets: boolean): SQL | undefined {
   const conditions: SQL[] = [isNull(channels.deletedAt)];
-  const fuzzy = fuzzyWhere(query.q ?? "", SEARCH_COLUMNS);
+  const fuzzy = fuzzyWhere(query.q ?? "", searchColumns(canSeeSecrets));
   if (fuzzy) conditions.push(fuzzy);
   if (query.platform !== undefined) conditions.push(eq(channels.platform, query.platform));
   if (query.channelType !== undefined) conditions.push(eq(channels.channelType, query.channelType));
@@ -40,8 +48,9 @@ function listWhere(query: ChannelListQuery): SQL | undefined {
 export function listChannels(
   db: Db,
   query: ChannelListQuery,
+  canSeeSecrets: boolean,
 ): { rows: ChannelRow[]; total: number } {
-  const where = listWhere(query);
+  const where = listWhere(query, canSeeSecrets);
   // 默认 sort=updatedAt&order=desc，并列 id DESC（§9）
   const sortCol = SORT_COLUMNS[query.sort ?? "updatedAt"];
   const dir = query.order === "asc" ? asc : desc;

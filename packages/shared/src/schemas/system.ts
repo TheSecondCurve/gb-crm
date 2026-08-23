@@ -30,8 +30,9 @@ const pageAccessKeySchema = z.string().min(1).max(64);
 
 export const pageAccessPatchSchema = z.object({
   roles: z.object({
-    operator: z.array(pageAccessKeySchema).optional(),
-    assistant: z.array(pageAccessKeySchema).optional(),
+    // H5：至少保留一个页面，防止把角色配成空集导致该角色登录后无处可去
+    operator: z.array(pageAccessKeySchema).min(1).optional(),
+    assistant: z.array(pageAccessKeySchema).min(1).optional(),
   }),
 });
 export type PageAccessPatch = z.infer<typeof pageAccessPatchSchema>;

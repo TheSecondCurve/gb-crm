@@ -57,7 +57,8 @@ export function listChannelsResult(
   query: ChannelListQuery,
   canSeeSecrets: boolean,
 ): { data: ChannelDto[]; total: number } {
-  const { rows, total } = listChannels(db, query);
+  // M1：能否看密钥同时决定密钥列是否参与 q 搜索（防搜索命中神谕）
+  const { rows, total } = listChannels(db, query, canSeeSecrets);
   const data = assembleChannels(db, rows);
   return { data: canSeeSecrets ? data : data.map(maskSecrets), total };
 }

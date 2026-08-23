@@ -1,6 +1,7 @@
 // background_jobs 表 Drizzle 查询（§3：repo 层）。
 // K51 状态机：queued → running → succeeded|partial|failed|cancelled；
-// 队列领取用 CAS（UPDATE ... WHERE status='queued'，changes=1 才算领取成功），进程内串行 + 未来多实例安全。
+// 队列领取用 CAS（UPDATE ... WHERE status='queued'，changes=1 才算领取成功），进程内串行 + 未来多实例安全；
+// 落终态也用 CAS（仅 running 可落），cancelled 一旦写入即不可被任何终态覆盖。
 import { and, asc, count, desc, eq, inArray, type SQL } from "drizzle-orm";
 
 import type { JobListQuery } from "@gb-crm/shared";
@@ -64,6 +65,13 @@ export function updateJobProgress(db: Db, id: number, progressJson: string): voi
   db.update(backgroundJobs).set({ progress: progressJson }).where(eq(backgroundJobs.id, id)).run();
 }
 
+/**
+ * 落终态（CAS，H3）：仅当任务仍处于 running 时生效。
+ * 返回受影响行数；0 = 任务已被取消/结束，调用方静默跳过（不得报错）——
+ * 防止取消落在最后一次取消检查之后时，succeeded/partial/failed 兜底无条件覆盖
+ * 用户已确认的 cancelled（cancelled 从此是不可覆盖的终态，finishedAt 不被改写）。
+ * queued → running 的领取迁移在 claimNextJob（自己的 CAS），与本守卫互不影响。
+ */
 export function finishJob(
   db: Db,
   id: number,
@@ -73,8 +81,12 @@ export function finishJob(
     error?: string | null;
     finishedAt: number;
   },
-): void {
-  db.update(backgroundJobs).set(set).where(eq(backgroundJobs.id, id)).run();
+): number {
+  return db
+    .update(backgroundJobs)
+    .set(set)
+    .where(and(eq(backgroundJobs.id, id), eq(backgroundJobs.status, "running")))
+    .run().changes;
 }
 
 /** 取消：仅 queued/running 可取消（结束态 changes=0，由 service 转 409）；running 中由执行器下一迭代感知 */

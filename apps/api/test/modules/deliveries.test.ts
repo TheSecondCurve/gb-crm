@@ -638,6 +638,35 @@ describe("delivery_tasks 动作清单", () => {
   });
 });
 
+describe("软删交付单后子资源写入口", () => {
+  it("父单软删后：PATCH/DELETE 交付项、CREATE/PATCH/DELETE 任务均 404", async () => {
+    const { cookie, delivery } = await seedTypeAndDelivery();
+    const item = (
+      await post(`/api/v1/deliveries/${delivery.id}/items`, cookie, { content: "P" })
+    ).json().data;
+    const task = (
+      await post(`/api/v1/deliveries/${delivery.id}/items/${item.id}/tasks`, cookie, { content: "T" })
+    ).json().data;
+
+    expect((await del(`/api/v1/deliveries/${delivery.id}`, cookie)).statusCode).toBe(204);
+
+    // 读面已 404（GET /items），写面必须一致
+    expect((await get(`/api/v1/deliveries/${delivery.id}/items`, cookie)).statusCode).toBe(404);
+
+    const base = `/api/v1/deliveries/${delivery.id}/items/${item.id}`;
+    expect(
+      (await patch(base, cookie, { content: "x", updatedAt: item.updatedAt })).statusCode,
+    ).toBe(404);
+    expect((await del(base, cookie)).statusCode).toBe(404);
+    expect((await post(`${base}/tasks`, cookie, { content: "x" })).statusCode).toBe(404);
+    expect(
+      (await patch(`${base}/tasks/${task.id}`, cookie, { content: "x", updatedAt: task.updatedAt }))
+        .statusCode,
+    ).toBe(404);
+    expect((await del(`${base}/tasks/${task.id}`, cookie)).statusCode).toBe(404);
+  });
+});
+
 describe("deals productId/productType 过滤（K44 按意向产品 merge 客户依赖）", () => {
   it("productType=knowledge 只返回该类型产品的成交", async () => {
     const { cookie } = await loginAsRole("admin");

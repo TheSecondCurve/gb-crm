@@ -35,7 +35,7 @@ interface Call {
   body?: string;
 }
 
-function mockCustomersApi(me: Me, rows: CustomerDto[] = [customer]) {
+function mockCustomersApi(me: Me, rows: CustomerDto[] = [customer], failDelete = false) {
   const calls: Call[] = [];
   mockFetch((url, init) => {
     const method = init?.method ?? "GET";
@@ -87,7 +87,11 @@ function mockCustomersApi(me: Me, rows: CustomerDto[] = [customer]) {
         return { status: 201, body: { data: { ...customer, id: 99, nickname: "未命名客户" } } };
       }
       if (method === "PATCH") return { status: 200, body: { data: { ...customer, updatedAt: 2001 } } };
-      if (method === "DELETE") return { status: 204 };
+      if (method === "DELETE") {
+        return failDelete
+          ? { status: 500, body: { error: { code: "INTERNAL", message: "服务器错误" } } }
+          : { status: 204 };
+      }
     }
     // K51：创建后台任务（POST）+ 跳转后任务列表（GET）
     if (url.startsWith("/api/v1/background-jobs")) {
@@ -298,6 +302,12 @@ describe("客户信息页", () => {
       const href = decodeURIComponent(hrefs.at(-1) ?? "");
       expect(href).toContain("q=张");
       expect(href).toContain("customerType=company");
+
+      // M7：标签筛选也要跟随（导出复用列表同一 WHERE）
+      fireEvent.change(screen.getByLabelText("标签筛选"), { target: { value: "2" } });
+      await waitFor(() => expect(calls.some((c) => c.url.includes("tagId=2"))).toBe(true));
+      fireEvent.click(screen.getByRole("button", { name: "导出 Excel" }));
+      expect(decodeURIComponent(hrefs.at(-1) ?? "")).toContain("tagId=2");
     } finally {
       spy.mockRestore();
     }
@@ -322,6 +332,19 @@ describe("客户信息页", () => {
         calls.filter((c) => c.method === "GET" && c.url.startsWith("/api/v1/customers")).length,
       ).toBeGreaterThanOrEqual(2),
     );
+  });
+
+  it("删除失败：toast 提示错误信息，确认框不卡死（M13）", async () => {
+    const calls = mockCustomersApi(adminMe, [customer], true);
+    renderApp("/customers");
+    await screen.findByText("张三");
+
+    fireEvent.click(screen.getByRole("button", { name: "删除" }));
+    const dialog = screen.getByRole("dialog", { name: "删除客户" });
+    fireEvent.click(within(dialog).getByRole("button", { name: "删除" }));
+    await waitFor(() => expect(screen.getByText("服务器错误")).toBeTruthy());
+    expect(screen.getByRole("dialog", { name: "删除客户" })).toBeTruthy();
+    expect(calls.some((c) => c.method === "DELETE" && c.url === "/api/v1/customers/1")).toBe(true);
   });
 
   it("全量生成标签：确认后创建后台任务（POST /background-jobs，无筛选 params={}）并跳转后台任务 tab", async () => {

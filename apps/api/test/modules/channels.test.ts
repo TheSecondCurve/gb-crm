@@ -175,6 +175,34 @@ describe("POST /api/v1/channels 创建", () => {
 });
 
 describe("GET /api/v1/channels 列表", () => {
+  it("密钥列搜索神谕（M1）：assistant 搜仅存在于密钥列的子串不命中，admin 照常命中", async () => {
+    await createChannelAsAdmin(); // accountId=gh_abc123, registerPhone=13800001234
+
+    const { cookie: adminCookie } = await loginAsRole("admin", "m1-admin");
+    // admin 可搜密钥列
+    expect((await get("/api/v1/channels?q=gh_abc123", adminCookie)).json().meta.total).toBe(1);
+    expect((await get("/api/v1/channels?q=13800001234", adminCookie)).json().meta.total).toBe(1);
+
+    // assistant 密钥字段被掩码，搜索也不得经密钥列命中
+    const { cookie: asCookie } = await loginAsRole("assistant", "m1-assistant");
+    expect((await get("/api/v1/channels?q=gh_abc123", asCookie)).json().meta.total).toBe(0);
+    expect((await get("/api/v1/channels?q=13800001234", asCookie)).json().meta.total).toBe(0);
+    // 普通列搜索不回归
+    expect((await get("/api/v1/channels?q=" + encodeURIComponent("主渠道"), asCookie)).json().meta.total).toBe(1);
+
+    // operator 与 admin 一致
+    const { cookie: opCookie } = await loginAsRole("operator", "m1-operator");
+    expect((await get("/api/v1/channels?q=gh_abc123", opCookie)).json().meta.total).toBe(1);
+  });
+
+  it("掩码行为不回归（M1）：assistant 响应中密钥字段仍为 null", async () => {
+    const { data: ch } = await createChannelAsAdmin();
+    const { cookie } = await loginAsRole("assistant");
+    const list = (await get("/api/v1/channels", cookie)).json();
+    const item = list.data.find((c: { id: number }) => c.id === ch.id);
+    for (const f of SECRET_FIELDS) expect(item[f]).toBeNull();
+  });
+
   it("分页 meta 正确；list 不含软删行", async () => {
     const { cookie, data: ch } = await createChannelAsAdmin();
     await post("/api/v1/channels", cookie, { name: "渠道二" });

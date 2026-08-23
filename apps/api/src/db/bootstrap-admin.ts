@@ -6,6 +6,7 @@ import { and, eq, isNull } from "drizzle-orm";
 import type { Db } from "./client.js";
 import { users } from "./schema.js";
 import { deleteSessionsByUserId } from "../modules/auth/session-repo.js";
+import { revokeAllTokensByUserId } from "../modules/auth/token-repo.js";
 import { hashPassword } from "../modules/auth/service.js";
 
 export type BootstrapResult = "created" | "skipped" | "reset" | "refused";
@@ -93,6 +94,7 @@ export async function bootstrapAdmin(
       .where(eq(users.id, target.id))
       .run();
     deleteSessionsByUserId(db, target.id); // reset 后踢掉其全部 session
+    revokeAllTokensByUserId(db, target.id, now()); // 同步撤销其 PAT（与禁用账户的惯例成对）
     return finish("reset");
   }
 

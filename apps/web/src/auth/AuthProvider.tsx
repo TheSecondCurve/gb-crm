@@ -1,8 +1,8 @@
-import { createContext, useCallback, useContext, type ReactNode } from "react";
+import { createContext, useCallback, useContext, useEffect, type ReactNode } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import type { SystemRole } from "@gb-crm/shared";
 
-import { api, ApiError } from "../api/client";
+import { api, ApiError, setUnauthorizedHandler } from "../api/client";
 
 /** GET /api/v1/auth/me 的响应形状（无 passwordHash） */
 export interface Me {
@@ -51,6 +51,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     staleTime: Infinity,
     retry: false,
   });
+
+  // H4：会话失效分流——任意请求收到 401（登录接口除外）时清空 me，RequireAuth 自动跳登录页
+  useEffect(() => {
+    setUnauthorizedHandler(() => queryClient.setQueryData(ME_QUERY_KEY, null));
+    return () => setUnauthorizedHandler(null);
+  }, [queryClient]);
 
   const login = useCallback(
     async (username: string, password: string) => {
