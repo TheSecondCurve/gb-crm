@@ -1,7 +1,8 @@
 // 圈子类交付专项工作台页测试（/deliveries/:id/circle）：
 // - 渲染：基本信息（人数/周期状态/动作进度）+ 客户全量表 + 甘特/时序 todo；assistant 只读；
-// - 非圈子类守卫；添加客户（PATCH customerIds 并集 + OCC）；移除客户（PATCH 差集）。
-import { describe, expect, it } from "vitest";
+// - 非圈子类守卫；添加客户（PATCH customerIds 并集 + OCC）；移除客户（PATCH 差集）；
+// - 列设置：客户表字段自由显隐（localStorage 持久化），导出 Excel 跟随所选字段。
+import { describe, expect, it, vi } from "vitest";
 import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 
 import { adminMe, assistantMe, mockFetch, renderApp, type Me } from "./helpers";
@@ -58,6 +59,7 @@ const customers: CustomerDto[] = [
     phone: "13800000001",
     wechat: "wx_zhangsan",
     customerType: "partner",
+    industry: "教育",
     owner: { id: 1, nickname: "运营-甲" },
     sourceChannels: [{ id: 7, name: "小红书" }],
     lastFollowedAt: 1700000000000,
@@ -227,5 +229,57 @@ describe("圈子工作台页（/deliveries/:id/circle）", () => {
       expect(body.customerIds).toEqual([102]);
       expect(body.updatedAt).toBe(2000);
     });
+  });
+
+  it("列设置：客户表字段自由显隐 + localStorage 持久化；导出 Excel 跟随所选字段", async () => {
+    localStorage.clear();
+    mockCircleApi(assistantMe);
+    const hrefs: string[] = [];
+    const spy = vi
+      .spyOn(HTMLAnchorElement.prototype, "click")
+      .mockImplementation(function (this: HTMLAnchorElement) {
+        hrefs.push(this.href);
+      });
+    try {
+      renderApp("/deliveries/1/circle");
+      await screen.findByText("圈子工作台 · 圈子全年交付");
+
+      const fieldsOf = (href: string | undefined): string[] =>
+        (new URL(href ?? "", window.location.origin).searchParams.get("fields") ?? "").split(",");
+
+      // 默认导出：fields = 默认所选字段（昵称锁定 + 常用列），不含未勾选的 行业
+      fireEvent.click(screen.getByRole("button", { name: "导出 Excel" }));
+      let fields = fieldsOf(hrefs.at(-1));
+      expect(fields).toContain("nickname");
+      expect(fields).toContain("realName");
+      expect(fields).not.toContain("industry");
+
+      // 打开列设置：取消「城市」→ 列消失；勾选「行业」→ 显示张三的行业
+      fireEvent.click(screen.getByRole("button", { name: "列设置" }));
+      const panel = screen.getByRole("group", { name: "列设置" });
+      fireEvent.click(within(panel).getByLabelText("城市"));
+      await waitFor(() => expect(screen.queryAllByText("杭州")).toHaveLength(0));
+      fireEvent.click(within(panel).getByLabelText("行业"));
+      await screen.findByText("教育");
+
+      // 昵称行头锁定不可关（checkbox 禁用）
+      expect(within(panel).getByLabelText("客户")).toHaveProperty("disabled", true);
+
+      // 持久化到 localStorage（DataGrid 同款 key 规范）
+      const stored = JSON.parse(
+        localStorage.getItem("gb-crm:datagrid:delivery-circle-customers:columns") ?? "[]",
+      ) as string[];
+      expect(stored).not.toContain("city");
+      expect(stored).toContain("industry");
+
+      // 再次导出：跟随最新所选字段
+      fireEvent.click(screen.getByRole("button", { name: "导出 Excel" }));
+      fields = fieldsOf(hrefs.at(-1));
+      expect(fields).toContain("nickname");
+      expect(fields).toContain("industry");
+      expect(fields).not.toContain("city");
+    } finally {
+      spy.mockRestore();
+    }
   });
 });
