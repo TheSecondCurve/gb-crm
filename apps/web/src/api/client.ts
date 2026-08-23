@@ -15,6 +15,14 @@ export class ApiError extends Error {
   }
 }
 
+/** 会话失效回调（H4）：任意请求收到 401 时触发（登录接口自身除外），由 AuthProvider 注册 */
+type UnauthorizedHandler = () => void;
+let unauthorizedHandler: UnauthorizedHandler | null = null;
+
+export function setUnauthorizedHandler(handler: UnauthorizedHandler | null): void {
+  unauthorizedHandler = handler;
+}
+
 async function request<T>(method: string, path: string, body?: unknown): Promise<T | null> {
   const res = await fetch(`${API_BASE}${path}`, {
     method,
@@ -25,6 +33,14 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
   if (res.status === 204) return null;
   const json: unknown = await res.json().catch(() => null);
   if (!res.ok) {
+    // H4：会话失效分流——401 时通知 AuthProvider 清空 me（登录接口自身的 401 是正常失败，排除）
+    if (
+      res.status === 401 &&
+      !(method === "POST" && path === "/auth/login") &&
+      unauthorizedHandler
+    ) {
+      unauthorizedHandler();
+    }
     const err = (json as { error?: { code?: string; message?: string }; data?: unknown } | null)
       ?.error;
     throw new ApiError(

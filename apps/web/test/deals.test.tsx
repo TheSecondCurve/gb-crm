@@ -32,7 +32,7 @@ interface Call {
   body?: string;
 }
 
-function mockDealsApi(me: Me, rows: DealDto[] = [deal]) {
+function mockDealsApi(me: Me, rows: DealDto[] = [deal], failDelete = false) {
   const calls: Call[] = [];
   mockFetch((url, init) => {
     const method = init?.method ?? "GET";
@@ -86,7 +86,11 @@ function mockDealsApi(me: Me, rows: DealDto[] = [deal]) {
         const patch = JSON.parse(String(init?.body)) as Record<string, unknown>;
         return { status: 200, body: { data: { ...deal, ...patch, updatedAt: 2001 } } };
       }
-      if (method === "DELETE") return { status: 204 };
+      if (method === "DELETE") {
+        return failDelete
+          ? { status: 500, body: { error: { code: "INTERNAL", message: "服务器错误" } } }
+          : { status: 204 };
+      }
     }
   });
   return calls;
@@ -176,6 +180,89 @@ describe("成交记录页", () => {
         updatedAt: 2000,
       });
     });
+  });
+
+  it("金额行内编辑：元字符串 → PATCH 为分整数（number，K13）", async () => {
+    const calls = mockDealsApi(adminMe);
+    renderApp("/deals");
+    await screen.findByText("398.00");
+
+    fireEvent.doubleClick(cell(1, "amountCents"));
+    const input = cell(1, "amountCents").querySelector("input")!;
+    expect(input.value).toBe("398.00");
+    fireEvent.change(input, { target: { value: "500.6" } });
+    fireEvent.keyDown(input, { key: "Tab" });
+
+    await waitFor(() => {
+      const patch = calls.find((c) => c.method === "PATCH" && c.url === "/api/v1/deals/1");
+      expect(patch).toBeTruthy();
+      expect(JSON.parse(String(patch?.body))).toEqual({ amountCents: 50060, updatedAt: 2000 });
+    });
+  });
+
+  it("金额非法输入：toast 报错且不发 PATCH（不静默清库）", async () => {
+    const calls = mockDealsApi(adminMe);
+    renderApp("/deals");
+    await screen.findByText("398.00");
+
+    fireEvent.doubleClick(cell(1, "amountCents"));
+    const input = cell(1, "amountCents").querySelector("input")!;
+    fireEvent.change(input, { target: { value: "12a" } });
+    fireEvent.keyDown(input, { key: "Tab" });
+
+    await waitFor(() => expect(screen.getByText("金额需为数字（元）")).toBeTruthy());
+    expect(calls.some((c) => c.method === "PATCH")).toBe(false);
+  });
+
+  it("税后比例非法输入：toast 报错且不发 PATCH", async () => {
+    const calls = mockDealsApi(adminMe);
+    renderApp("/deals");
+    await screen.findByText("0.9306");
+
+    fireEvent.doubleClick(cell(1, "afterTaxRatio"));
+    const input = cell(1, "afterTaxRatio").querySelector("input")!;
+    fireEvent.change(input, { target: { value: "abc" } });
+    fireEvent.keyDown(input, { key: "Tab" });
+
+    await waitFor(() => expect(screen.getByText("税后金额比例需为数字")).toBeTruthy());
+    expect(calls.some((c) => c.method === "PATCH")).toBe(false);
+  });
+
+  it("新增：金额/税后比例经表单提交为 number（amountCents 分整数）", async () => {
+    const calls = mockDealsApi(adminMe);
+    renderApp("/deals");
+    await screen.findByText("张三");
+
+    fireEvent.click(screen.getByRole("button", { name: "新增" }));
+    const dialog = screen.getByRole("dialog", { name: "新增成交记录" });
+
+    fireEvent.click(await within(dialog).findByLabelText("张三"));
+    fireEvent.change(within(dialog).getByLabelText("金额（元）"), { target: { value: "200.5" } });
+    fireEvent.change(within(dialog).getByLabelText("税后金额比例"), { target: { value: "0.95" } });
+    fireEvent.click(within(dialog).getByRole("button", { name: "创建" }));
+
+    await waitFor(() => {
+      const post = calls.find((c) => c.method === "POST" && c.url === "/api/v1/deals");
+      expect(post).toBeTruthy();
+      expect(JSON.parse(String(post?.body))).toEqual({
+        customerId: 101,
+        amountCents: 20050,
+        afterTaxRatio: 0.95,
+      });
+    });
+  });
+
+  it("删除失败：toast 提示错误信息，确认框不卡死", async () => {
+    const calls = mockDealsApi(adminMe, [deal], true);
+    renderApp("/deals");
+    await screen.findByText("张三");
+
+    fireEvent.click(screen.getByRole("button", { name: "删除" }));
+    const dialog = screen.getByRole("dialog", { name: "删除成交记录" });
+    fireEvent.click(within(dialog).getByRole("button", { name: "删除" }));
+    await waitFor(() => expect(screen.getByText("服务器错误")).toBeTruthy());
+    expect(screen.getByRole("dialog", { name: "删除成交记录" })).toBeTruthy();
+    expect(calls.some((c) => c.method === "DELETE" && c.url === "/api/v1/deals/1")).toBe(true);
   });
 
   it("assistant：只读整表，无新增/删除", async () => {

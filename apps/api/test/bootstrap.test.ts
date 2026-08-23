@@ -134,6 +134,39 @@ describe("bootstrap admin（§5 五条规则）", () => {
     expect(tmp.sqlite.prepare("SELECT COUNT(*) AS n FROM sessions").get()).toEqual({ n: 0 });
   });
 
+  it("reset 除删 session 外还撤销目标用户全部 PAT（L6）", async () => {
+    const id = await seedUser(tmp.db, { username: "alice" });
+    tmp.sqlite
+      .prepare(
+        "INSERT INTO api_tokens (user_id, token_hash, token_prefix, scope, created_at, expires_at) VALUES (?, 'hash-1', 'gb_1', 'read', 1, 9999999999999)",
+      )
+      .run(id);
+    // 已 revoked 的行不受影响
+    tmp.sqlite
+      .prepare(
+        "INSERT INTO api_tokens (user_id, token_hash, token_prefix, scope, created_at, expires_at, revoked_at) VALUES (?, 'hash-2', 'gb_2', 'read', 1, 9999999999999, 5)",
+      )
+      .run(id);
+
+    const result = await bootstrapAdmin(
+      tmp.db,
+      env({
+        ADMIN_USERNAME: "alice",
+        ADMIN_PASSWORD: "new-password-1",
+        ADMIN_BOOTSTRAP_RESET_PASSWORD: true,
+      }),
+      { log },
+    );
+    expect(result).toBe("reset");
+
+    const rows = tmp.sqlite
+      .prepare("SELECT token_prefix, revoked_at FROM api_tokens WHERE user_id = ? ORDER BY id")
+      .all(id) as { token_prefix: string; revoked_at: number | null }[];
+    expect(rows.map((r) => r.token_prefix)).toEqual(["gb_1", "gb_2"]);
+    expect(rows[0]!.revoked_at).not.toBeNull(); // 活跃 PAT 被撤销
+    expect(rows[1]!.revoked_at).toBe(5); // 已撤销的保持原值
+  });
+
   it("reset 找不到目标用户 → 拒启", async () => {
     await seedUser(tmp.db, { username: "alice" }); // live admin 存在
     await expect(

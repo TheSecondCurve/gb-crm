@@ -142,6 +142,20 @@ describe("产品目录页", () => {
     });
   });
 
+  it("价格非法输入：toast 报错、不发 PATCH 且不清空价格（M6）", async () => {
+    const calls = mockProductsApi(adminMe);
+    renderApp("/products");
+    await screen.findByText("123.45");
+
+    fireEvent.doubleClick(cell(1, "priceCents"));
+    const input = cell(1, "priceCents").querySelector("input")!;
+    fireEvent.change(input, { target: { value: "12a" } });
+    fireEvent.keyDown(input, { key: "Tab" });
+
+    await waitFor(() => expect(screen.getByText("价格需为数字（元）")).toBeTruthy());
+    expect(calls.some((c) => c.method === "PATCH")).toBe(false);
+  });
+
   it("assistant：只读整表，无新增/删除", async () => {
     mockProductsApi(assistantMe);
     renderApp("/products");

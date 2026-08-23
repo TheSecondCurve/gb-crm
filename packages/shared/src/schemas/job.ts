@@ -1,5 +1,6 @@
 import { z } from "zod";
 
+import { customerListQuerySchema } from "./customer.js";
 import { pageQuerySchema } from "./common.js";
 
 // K51 后台任务（background_jobs）：手动触发 + 未来定时触发（trigger 字段预留）。
@@ -30,3 +31,13 @@ export const jobCreateSchema = z.object({
   params: z.record(z.string(), z.unknown()).optional(),
 });
 export type JobCreate = z.infer<typeof jobCreateSchema>;
+
+/**
+ * K51 批量打标任务参数（M11）：客户列表 WHERE 子集（q/order/sort/customerType/ownerId/channelId/tagId）。
+ * 任务不分页全量跑，去掉 page/pageSize；strict 拒绝未知键，防执行期 TypeError / SqliteError。
+ * 创建时校验（非法 422），执行前复验（防排队期间代码演进后落库 params 不兼容）。
+ */
+export const bulkTagJobParamsSchema = customerListQuerySchema
+  .omit({ page: true, pageSize: true })
+  .strict();
+export type BulkTagJobParams = z.infer<typeof bulkTagJobParamsSchema>;

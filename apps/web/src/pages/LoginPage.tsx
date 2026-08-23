@@ -3,6 +3,7 @@ import { Navigate } from "react-router-dom";
 
 import { useAuth } from "../auth/AuthProvider";
 import { ApiError } from "../api/client";
+import { homePath, NoPagesPlaceholder } from "../components/PageGuard";
 import { BRAND_NAME } from "../brand";
 
 export function LoginPage() {
@@ -12,8 +13,12 @@ export function LoginPage() {
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
-  // 已登录访问 /login 直接跳走
-  if (!isLoading && me) return <Navigate to="/customers" replace />;
+  // 已登录访问 /login 直接跳落地页（homePath 统一推导）；pages 为空 → 占位兜底（H5 防死循环）
+  if (!isLoading && me) {
+    const target = homePath(me.pages);
+    if (target === null) return <NoPagesPlaceholder />;
+    return <Navigate to={target} replace />;
+  }
 
   async function onSubmit(e: FormEvent) {
     e.preventDefault();
@@ -21,7 +26,7 @@ export function LoginPage() {
     setError(null);
     try {
       await login(username, password);
-      // 成功后 me 更新，上方 Navigate 自动跳到 /customers
+      // 成功后 me 更新，上方按 homePath 自动跳落地页（pages 为空则就地显示占位）
     } catch (err) {
       // 401 与其它失败统一展示服务端中文文案，不暴露失败原因
       setError(err instanceof ApiError ? err.message : "登录失败，请稍后重试");

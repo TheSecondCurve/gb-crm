@@ -332,6 +332,25 @@ describe("DataGrid flush / 409 / cache", () => {
     expect(cell(1, "nickname").textContent).toBe("别人的");
   });
 
+  it("非 409 失败：toast 报错并回滚乐观更新（invalidate 列表 query，M5）", async () => {
+    const { patchRow, waiters } = makePatchRow();
+    const { queryClient } = setup(patchRow, [row1]);
+
+    fireEvent.doubleClick(cell(1, "nickname"));
+    fireEvent.change(cellInput(1, "nickname"), { target: { value: "假保存" } });
+    fireEvent.keyDown(cellInput(1, "nickname"), { key: "Tab" });
+    // 入队即乐观写入 cache
+    expect(queryClient.getQueryData<{ data: Row[] }>(["rows"])?.data[0]?.nickname).toBe("假保存");
+
+    await act(async () => waiters[0]!.reject(new Error("network")));
+    expect(screen.getByText("network")).toBeTruthy();
+    // invalidate 触发 refetch，界面不再停留在假的「已保存」值
+    await vi.waitFor(() => {
+      const cached = queryClient.getQueryData<{ data: Row[] }>(["rows"]);
+      expect(cached?.data[0]?.nickname).toBe("张三");
+    });
+  });
+
   it("乐观更新：入队即改 cache，UI 先变", async () => {
     const { patchRow } = makePatchRow();
     const { queryClient } = setup(patchRow, [row1]);

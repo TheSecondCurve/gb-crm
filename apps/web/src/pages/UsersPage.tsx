@@ -265,6 +265,8 @@ export function UsersPage() {
       setDeleting(null);
       await list.invalidate();
       showToast("已删除");
+    } catch (err) {
+      showToast(err instanceof ApiError ? err.message : "删除失败，请稍后重试");
     } finally {
       setBusy(false);
     }

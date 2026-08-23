@@ -45,6 +45,8 @@ export function RolesTab() {
 
   const isChecked = (role: RoleKey, key: string) => enabled[role].includes(key);
   const canAllow = (role: RoleKey, key: string) => data?.roles[role]?.allowed.includes(key) ?? false;
+  // H5：每个角色至少保留一个页面，否则该角色登录后无处可去（服务端 schema 同样拒绝空数组）
+  const hasEmptyRole = ROLES.some((r) => enabled[r].length === 0);
 
   const toggle = (role: RoleKey, key: string) => {
     setEnabled((prev) => ({
@@ -122,7 +124,17 @@ export function RolesTab() {
             );
           })}
           <div className="modal-actions field-span">
-            <button type="button" className="btn-primary" onClick={() => void save()}>
+            {hasEmptyRole && (
+              <p className="role-access-hint" role="alert">
+                每个角色至少需保留一个可访问页面，否则该角色登录后无处可去
+              </p>
+            )}
+            <button
+              type="button"
+              className="btn-primary"
+              disabled={hasEmptyRole}
+              onClick={() => void save()}
+            >
               保存
             </button>
           </div>

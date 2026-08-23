@@ -223,6 +223,11 @@ export function deleteDelivery(db: Db, id: number, ctx: AuditContext): void {
 
 // ---- deliverables（交付项）----
 
+/** 父交付单必须 live：软删或不存在 → 与 GET 子资源同形 404（读写面一致） */
+function assertDeliveryLive(db: Db, deliveryId: number): void {
+  if (!getDeliveryById(db, deliveryId)) throw notFound("交付记录不存在");
+}
+
 /** 交付项列表（含任务展开） */
 export function listDeliverablesResult(db: Db, deliveryId: number): DeliverableDto[] {
   const delivery = getDeliveryById(db, deliveryId);
@@ -311,6 +316,7 @@ export function patchDeliverable(
   ctx: AuditContext,
 ): DeliverableDto {
   return inTx(db, (tx) => {
+    assertDeliveryLive(tx, deliveryId);
     const row = getDeliverableByIdAny(tx, itemId);
     if (!row || row.deliveryId !== deliveryId) throw notFound("交付项不存在");
     applyScalarPatch(patch, ctx, {
@@ -326,6 +332,7 @@ export function patchDeliverable(
 }
 
 export function deleteDeliverable(db: Db, deliveryId: number, itemId: number, ctx: AuditContext): void {
+  assertDeliveryLive(db, deliveryId);
   const row = getDeliverableByIdAny(db, itemId);
   if (!row || row.deliveryId !== deliveryId) throw notFound("交付项不存在");
   const changes = softDeleteDeliverable(db, itemId, {
@@ -350,6 +357,7 @@ export function createTask(
   ctx: AuditContext,
 ): DeliveryTaskDto {
   return inTx(db, (tx) => {
+    assertDeliveryLive(tx, deliveryId);
     const item = getDeliverableById(tx, itemId);
     if (!item || item.deliveryId !== deliveryId) throw notFound("交付项不存在");
     // 客户维度任务必带该交付的客户；项目维度必须为空（客户归属不一致 → 422）
@@ -383,6 +391,7 @@ export function patchTask(
   ctx: AuditContext,
 ): DeliveryTaskDto {
   return inTx(db, (tx) => {
+    assertDeliveryLive(tx, deliveryId);
     assertDeliverableLive(tx, deliveryId, itemId);
     const row = getTaskByIdAny(tx, itemId, taskId);
     if (!row) throw notFound("交付动作不存在");
@@ -411,6 +420,7 @@ export function patchTask(
 }
 
 export function deleteTaskById(db: Db, deliveryId: number, itemId: number, taskId: number): void {
+  assertDeliveryLive(db, deliveryId);
   assertDeliverableLive(db, deliveryId, itemId);
   const changes = deleteTask(db, itemId, taskId);
   if (changes === 0) throw notFound("交付动作不存在");

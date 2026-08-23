@@ -15,7 +15,7 @@ import {
   insertJob,
   listJobs,
 } from "./repo.js";
-import { getJobType } from "./registry.js";
+import { getJobType, parseJobParams } from "./registry.js";
 
 export interface JobAuthContext {
   now: number;
@@ -43,12 +43,14 @@ export function createJob(db: Db, body: JobCreate, ctx: JobAuthContext): Backgro
   if (!can(ctx.systemRole, def.requiredPermission.resource, def.requiredPermission.action)) {
     throw forbidden();
   }
+  // M11：按 type 注册的 params schema 校验（非法 → 422 VALIDATION），入库存规范化后的值
+  const params = parseJobParams(def, body.params ?? {});
   // 创建时预检（LLM 就绪等），先于入队给用户即时反馈
-  def.validate?.(db, body.params ?? {});
+  def.validate?.(db, params);
 
   const id = insertJob(db, {
     type: body.type,
-    params: JSON.stringify(body.params ?? {}),
+    params: JSON.stringify(params),
     status: "queued",
     progress: JSON.stringify({ processed: 0, total: 0, succeeded: 0, failed: 0 }),
     trigger: "manual",
