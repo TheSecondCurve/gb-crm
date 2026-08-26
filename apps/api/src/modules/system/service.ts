@@ -1,8 +1,8 @@
-// system 配置业务规则（K46/K50，存储为 system_configs code='llm'）：
-// - GET 只回掩码：apiKeySet + apiKeyMasked，永不全量返回 apiKey；
+// system 配置业务规则（K46/K50/K53，存储为 system_configs code='llm'/'pageAccess'/'s3'）：
+// - GET 只回掩码：secret 永不全量返回（LLM apiKey / S3 secretAccessKey）；
 // - PATCH：单配置、单管理员，有意不做 OCC（偏离 K24 内核：无并发写场景，做了反而要
-//   每次先 GET 拿 updatedAt，纯负担）；apiKey 空/缺席保留旧值（placeholder 语义）。
-import type { AiConfigGet, AiConfigPatch } from "@gb-crm/shared";
+//   每次先 GET 拿 updatedAt，纯负担）；secret 空/缺席保留旧值（placeholder 语义）。
+import type { AiConfigGet, AiConfigPatch, S3ConfigGet, S3ConfigPatch, S3TestResult } from "@gb-crm/shared";
 import {
   canAllowedPageKeys,
   computeEffectivePages,
@@ -13,18 +13,23 @@ import {
   type SystemRole,
 } from "@gb-crm/shared";
 
-import { ApiError } from "../../plugins/error-handler.js";
+import { s3Probe, S3Error, type S3ClientConfig } from "../../lib/s3.js";
+import { ApiError, s3Error, unprocessable } from "../../plugins/error-handler.js";
 import type { Db } from "../../db/client.js";
 import {
   getAiConfig,
   getPageAccessConfig,
+  getS3Config,
+  isS3RemoteReady,
   upsertAiConfig,
   upsertPageAccessConfig,
+  upsertS3Config,
 } from "./repo.js";
 
 const CONFIGURABLE_ROLES = ["operator", "assistant"] as const;
 
-export function maskApiKey(key: string | null): string | null {
+/** 掩码规则通用（LLM apiKey / S3 secretAccessKey）：≤8 位全遮，否则首 4…末 4 */
+export function maskSecret(key: string | null): string | null {
   if (!key) return null;
   if (key.length <= 8) return "••••••••";
   return `${key.slice(0, 4)}…${key.slice(-4)}`;
@@ -38,7 +43,7 @@ export function getAiConfigResult(db: Db): AiConfigGet {
     baseUrl: row?.baseUrl ?? null,
     model: row?.model ?? null,
     apiKeySet: apiKey !== null && apiKey !== "",
-    apiKeyMasked: maskApiKey(apiKey),
+    apiKeyMasked: maskSecret(apiKey),
   };
 }
 
@@ -104,6 +109,98 @@ export function patchPageAccess(
   }
   upsertPageAccessConfig(db, next, ctx.now, ctx.userId);
   return getPageAccessMatrix(db);
+}
+
+// ---- S3 兼容对象存储（code='s3'，K53；仅 admin 经 requireCan("system") 访问）----
+// enabled=true 时四要素必须齐备（endpoint/bucket/accessKeyId/secretAccessKey），
+// 防止存出「启用但残缺」的配置导致每日备份静默不上传。
+
+/** prefix 归一化：去开头/结尾/重复斜杠；空 → "" */
+export function normalizeS3Prefix(prefix: string | null): string | null {
+  if (prefix === null) return null;
+  const trimmed = prefix
+    .split("/")
+    .filter((seg) => seg !== "")
+    .join("/");
+  return trimmed === "" ? "" : `${trimmed}/`;
+}
+
+function s3ConfigToClientConfig(cfg: NonNullable<ReturnType<typeof getS3Config>>): S3ClientConfig {
+  // 调用方先用 isS3RemoteReady 断言过四要素
+  return {
+    endpoint: cfg.endpoint!,
+    region: cfg.region,
+    bucket: cfg.bucket!,
+    accessKeyId: cfg.accessKeyId!,
+    secretAccessKey: cfg.secretAccessKey!,
+  };
+}
+
+export function getS3ConfigResult(db: Db): S3ConfigGet {
+  const cfg = getS3Config(db);
+  const secret = cfg?.secretAccessKey ?? null;
+  return {
+    enabled: cfg?.enabled ?? false,
+    endpoint: cfg?.endpoint ?? null,
+    region: cfg?.region ?? null,
+    bucket: cfg?.bucket ?? null,
+    prefix: cfg?.prefix ?? null,
+    accessKeyId: cfg?.accessKeyId ?? null,
+    secretKeySet: secret !== null,
+    secretKeyMasked: maskSecret(secret),
+  };
+}
+
+export function patchS3Config(
+  db: Db,
+  patch: S3ConfigPatch,
+  ctx: { now: number; userId: number },
+): S3ConfigGet {
+  const current = getS3Config(db);
+  const next = {
+    enabled: patch.enabled !== undefined ? patch.enabled : (current?.enabled ?? false),
+    endpoint: patch.endpoint !== undefined ? patch.endpoint : (current?.endpoint ?? null),
+    region: patch.region !== undefined ? patch.region : (current?.region ?? null),
+    bucket: patch.bucket !== undefined ? patch.bucket : (current?.bucket ?? null),
+    prefix:
+      patch.prefix !== undefined
+        ? normalizeS3Prefix(patch.prefix)
+        : normalizeS3Prefix(current?.prefix ?? null),
+    accessKeyId:
+      patch.accessKeyId !== undefined ? patch.accessKeyId : (current?.accessKeyId ?? null),
+    // 空/缺席保留旧值
+    secretAccessKey:
+      patch.secretAccessKey !== undefined
+        ? patch.secretAccessKey
+        : (current?.secretAccessKey ?? null),
+    updatedAt: ctx.now,
+    updatedBy: ctx.userId,
+  };
+  if (next.enabled && !isS3RemoteReady(next)) {
+    throw unprocessable("启用远程备份需先完整填写 Endpoint / Bucket / AccessKeyId / SecretAccessKey");
+  }
+  upsertS3Config(db, next);
+  return getS3ConfigResult(db);
+}
+
+/** 连通性测试：写探针对象再删除；配置未保存/不完整 → 422，上游失败 → 502 S3_ERROR */
+export async function testS3Connection(
+  db: Db,
+  opts: { fetchFn?: typeof fetch } = {},
+): Promise<S3TestResult> {
+  const cfg = getS3Config(db);
+  if (!cfg || !isS3RemoteReady(cfg)) {
+    throw unprocessable("请先保存完整的对象存储配置");
+  }
+  try {
+    const probeKey = await s3Probe(s3ConfigToClientConfig(cfg), cfg.prefix ?? "", {
+      fetchFn: opts.fetchFn,
+    });
+    return { ok: true, probeKey };
+  } catch (err) {
+    if (err instanceof S3Error) throw s3Error(err.message);
+    throw err;
+  }
 }
 
 /** 供 /auth/me 计算当前角色实际可见的菜单页（含安全边界交集） */

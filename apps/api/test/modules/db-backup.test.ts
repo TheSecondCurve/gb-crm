@@ -1,13 +1,16 @@
 // 数据库备份任务（type=db-backup）：仅 admin 可创建；better-sqlite3 backup → gzip 落
 // <数据库目录>/backups/；滚动保留最近 7 份，超出静默删除最旧。
+// K53：配置启用的 S3 远程存储时自动上传一份（覆盖单对象），失败降级 partial。
 import fs from "node:fs";
 import path from "node:path";
 import zlib from "node:zlib";
 
 import type { FastifyInstance } from "fastify";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { buildApp } from "../../src/app.js";
+import { systemConfigs } from "../../src/db/schema.js";
+import { REMOTE_BACKUP_KEY } from "../../src/modules/jobs/backup.js";
 import { createJobRunner } from "../../src/modules/jobs/runner.js";
 import { loginAs, seedUser, testEnv } from "../helpers/auth.js";
 import { createTmpDb, type TmpDb } from "../helpers/tmp-db.js";
@@ -38,11 +41,56 @@ async function loginAsRole(role: "admin" | "operator" | "assistant") {
 const post = (url: string, cookie: string, payload?: Record<string, unknown>) =>
   app.inject({ method: "POST", url, headers: { cookie }, ...(payload ? { payload } : {}) });
 
-async function runBackupJob(cookie: string) {
+function seedS3Config(overrides: Record<string, unknown> = {}): void {
+  tmp.db
+    .insert(systemConfigs)
+    .values({
+      code: "s3",
+      value: JSON.stringify({
+        enabled: true,
+        endpoint: "https://s3.example.com",
+        region: "ap-east-1",
+        bucket: "gb-crm-backup",
+        prefix: "daily/",
+        accessKeyId: "AKIDEXAMPLE12345678",
+        secretAccessKey: "secret-key-abcdefgh12345678",
+        ...overrides,
+      }),
+      updatedAt: clock.t,
+      updatedBy: null,
+    })
+    .onConflictDoNothing()
+    .run();
+}
+
+interface RemoteDto {
+  ok: boolean;
+  bucket: string;
+  key: string;
+  bytes?: number;
+  error?: string;
+}
+
+interface BackupResultDto {
+  file: string;
+  bytes: number;
+  kept: number;
+  pruned: string[];
+  remote: RemoteDto | null;
+}
+
+async function runBackupJob(
+  cookie: string,
+  opts: { fetchFn?: typeof fetch } = {},
+): Promise<{
+  status: string;
+  typeLabel: string;
+  result: BackupResultDto | null;
+}> {
   const res = await post("/api/v1/background-jobs", cookie, { type: "db-backup" });
   expect(res.statusCode).toBe(201);
   const jobId = res.json().data.id as number;
-  const runner = createJobRunner({ db: tmp.db, now: () => clock.t });
+  const runner = createJobRunner({ db: tmp.db, now: () => clock.t, fetchFn: opts.fetchFn });
   await runner.pumpOnce();
   const detail = await app.inject({
     method: "GET",
@@ -52,7 +100,7 @@ async function runBackupJob(cookie: string) {
   return detail.json().data as {
     status: string;
     typeLabel: string;
-    result: { file: string; bytes: number; kept: number; pruned: string[] } | null;
+    result: BackupResultDto | null;
   };
 }
 
@@ -112,5 +160,91 @@ describe("数据库备份任务", () => {
     expect(remaining).toContain(outsider);
     expect(remaining).not.toContain(oldNames[0]!);
     expect(remaining).toContain(path.basename(dto.result!.file));
+  });
+});
+
+describe("数据库备份任务 · 远程上传（K53）", () => {
+  /** 记录 PUT 请求的 S3 mock */
+  function s3Mock(status: number) {
+    const calls: { url: URL; init: RequestInit }[] = [];
+    const fetchFn = vi.fn(async (url: unknown, init?: unknown) => {
+      calls.push({ url: url as URL, init: (init ?? {}) as RequestInit });
+      return new Response(null, { status });
+    }) as unknown as typeof fetch;
+    return { calls, fetchFn };
+  }
+
+  it("启用且配置完整 → 上传成功，任务 succeeded，result.remote 带 bucket/key/bytes", async () => {
+    const { calls, fetchFn } = s3Mock(200);
+    seedS3Config();
+    const admin = await loginAsRole("admin");
+    const dto = await runBackupJob(admin, { fetchFn });
+
+    expect(dto.status).toBe("succeeded");
+    expect(dto.result!.remote).toEqual({
+      ok: true,
+      bucket: "gb-crm-backup",
+      key: `daily/${REMOTE_BACKUP_KEY}`,
+      bytes: dto.result!.bytes,
+    });
+
+    // 只有一次 PUT，URL 为固定覆盖对象，body 与本地备份逐字节一致
+    expect(calls.length).toBe(1);
+    expect(calls[0]!.init.method).toBe("PUT");
+    expect(String(calls[0]!.url)).toBe(
+      "https://s3.example.com/gb-crm-backup/daily/gb-crm-latest.sqlite.gz",
+    );
+    expect((calls[0]!.init.headers as Record<string, string>).Authorization).toMatch(
+      /^AWS4-HMAC-SHA256 Credential=AKIDEXAMPLE12345678\//,
+    );
+    expect(calls[0]!.init.body).toBeInstanceOf(Buffer);
+    expect((calls[0]!.init.body as Buffer).equals(fs.readFileSync(dto.result!.file))).toBe(true);
+  });
+
+  it("上传失败 → 任务 partial + result.remote.error；本地备份不受影响", async () => {
+    const { fetchFn } = s3Mock(500);
+    seedS3Config();
+    const admin = await loginAsRole("admin");
+    const dto = await runBackupJob(admin, { fetchFn });
+
+    expect(dto.status).toBe("partial");
+    expect(dto.result!.remote!.ok).toBe(false);
+    expect(dto.result!.remote!.error).toContain("500");
+    // 本地备份仍成功落盘
+    expect(fs.existsSync(dto.result!.file)).toBe(true);
+  });
+
+  it("未配置 / 未启用 / 配置不完整 → 跳过上传（不发请求），任务 succeeded", async () => {
+    const { calls, fetchFn } = s3Mock(200);
+    const admin = await loginAsRole("admin");
+
+    let dto = await runBackupJob(admin, { fetchFn });
+    expect(dto.status).toBe("succeeded");
+    expect(dto.result!.remote).toBeNull();
+
+    seedS3Config({ enabled: false });
+    dto = await runBackupJob(admin, { fetchFn });
+    expect(dto.status).toBe("succeeded");
+    expect(dto.result!.remote).toBeNull();
+
+    seedS3Config({ enabled: true, secretAccessKey: "" }); // 四要素缺一
+    dto = await runBackupJob(admin, { fetchFn });
+    expect(dto.status).toBe("succeeded");
+    expect(dto.result!.remote).toBeNull();
+
+    expect(calls.length).toBe(0);
+  });
+
+  it("网络异常 → partial，error 带中文原因", async () => {
+    const fetchFn = vi.fn(async () => {
+      throw new Error("ECONNREFUSED");
+    }) as unknown as typeof fetch;
+    seedS3Config();
+    const admin = await loginAsRole("admin");
+    const dto = await runBackupJob(admin, { fetchFn });
+
+    expect(dto.status).toBe("partial");
+    expect(dto.result!.remote!.ok).toBe(false);
+    expect(dto.result!.remote!.error).toContain("ECONNREFUSED");
   });
 });

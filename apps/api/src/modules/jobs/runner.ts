@@ -21,7 +21,7 @@ export interface JobRunnerOptions {
   db: Db;
   /** 时钟注入（epoch 毫秒）；默认 Date.now() */
   now?: () => number;
-  /** LLM fetch 注入（测试 mock）；默认全局 fetch */
+  /** LLM / S3 客户端 fetch 注入（测试 mock）；默认全局 fetch */
   fetchFn?: typeof fetch;
 }
 
