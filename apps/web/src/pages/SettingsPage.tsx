@@ -12,6 +12,7 @@ import type { AiConfigDto } from "../api/types";
 import { useAuth } from "../auth/AuthProvider";
 import { JobsTab } from "../components/JobsTab";
 import { RolesTab } from "../components/RolesTab";
+import { SchedulesTab } from "../components/SchedulesTab";
 import { useToast } from "../components/Toast";
 
 export function SettingsPage() {
@@ -21,12 +22,13 @@ export function SettingsPage() {
   const queryClient = useQueryClient();
   const [searchParams, setSearchParams] = useSearchParams();
   const requestedTab = searchParams.get("tab");
-  // LLM 与「角色权限」tab 仅 admin；后台任务全角色。非 admin 固定 jobs。
+  // LLM 与「角色权限」tab 仅 admin；后台任务全角色；「定时任务」仅 admin（jobSchedules）。非 admin 固定 jobs。
   const canSystem = can(role, "system", "read");
-  const tabKeys = canSystem ? (["llm", "roles", "jobs"] as const) : (["jobs"] as const);
-  const tab = (tabKeys as readonly string[]).includes(requestedTab ?? "")
-    ? (requestedTab ?? "")
-    : tabKeys[0];
+  const canSchedules = can(role, "jobSchedules", "list");
+  const tabKeys: readonly string[] = canSystem
+    ? ["llm", "roles", "jobs", ...(canSchedules ? ["schedules"] : [])]
+    : ["jobs"];
+  const tab = tabKeys.includes(requestedTab ?? "") ? (requestedTab ?? "") : tabKeys[0]!;
 
   const { data: aiConfig } = useQuery({
     queryKey: ["system", "ai-config"],
@@ -98,10 +100,17 @@ export function SettingsPage() {
         <button type="button" role="tab" aria-selected={tab === "jobs"} onClick={() => setSearchParams({ tab: "jobs" })}>
           后台任务
         </button>
+        {canSchedules && (
+          <button type="button" role="tab" aria-selected={tab === "schedules"} onClick={() => setSearchParams({ tab: "schedules" })}>
+            定时任务
+          </button>
+        )}
       </div>
 
       {tab === "jobs" ? (
         <JobsTab />
+      ) : tab === "schedules" ? (
+        <SchedulesTab />
       ) : tab === "roles" ? (
         <RolesTab />
       ) : (

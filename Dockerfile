@@ -38,7 +38,8 @@ FROM node:24-bookworm-slim AS runtime
 ENV NODE_ENV=production \
     HOST=0.0.0.0 \
     PORT=3001 \
-    DATABASE_PATH=/data/gb-crm.sqlite
+    DATABASE_PATH=/data/gb-crm.sqlite \
+    TZ=Asia/Shanghai
 WORKDIR /app
 
 COPY package.json tsconfig.base.json ./

@@ -5,7 +5,7 @@ import { describe, expect, it, vi } from "vitest";
 import { act, fireEvent, screen, waitFor, within } from "@testing-library/react";
 
 import { adminMe, assistantMe, mockFetch, renderApp } from "./helpers";
-import type { BackgroundJobDto } from "../src/api/types";
+import type { BackgroundJobDto, JobScheduleDto } from "../src/api/types";
 
 interface Call {
   url: string;
@@ -158,6 +158,41 @@ describe("系统设置页", () => {
     await waitFor(() =>
       expect(calls.some((c) => c.method === "POST" && c.url === "/api/v1/background-jobs/1/cancel")).toBe(true),
     );
+  });
+
+  it("admin：定时任务 tab（?tab=schedules）渲染调度列表，非 admin 不显示该 tab", async () => {
+    const schedules: JobScheduleDto[] = [
+      {
+        id: 1,
+        type: "customer-tags-generate-all",
+        typeLabel: "全量生成客户标签",
+        params: {},
+        cron: "0 2 * * *",
+        enabled: true,
+        lastRunAt: null,
+        nextRunAt: 2000,
+        createdAt: 1000,
+        updatedAt: 1000,
+        createdBy: { id: 1, nickname: "管理员" },
+        updatedBy: null,
+      },
+    ];
+    mockFetch((url) => {
+      if (url === "/api/v1/auth/me") return { status: 200, body: { data: adminMe } };
+      if (url === "/api/v1/job-schedules/types") {
+        return { status: 200, body: { data: [{ type: "customer-tags-generate-all", label: "全量生成客户标签" }] } };
+      }
+      if (url.startsWith("/api/v1/job-schedules")) {
+        return { status: 200, body: { data: schedules, meta: { page: 1, pageSize: 100, total: schedules.length } } };
+      }
+      throw new Error(`unexpected fetch: ${url}`);
+    });
+    renderApp("/settings?tab=schedules");
+    const tab = await screen.findByRole("tab", { name: "定时任务" });
+    expect(tab.getAttribute("aria-selected")).toBe("true");
+    expect(await screen.findByText("全量生成客户标签")).toBeTruthy();
+    expect(screen.getByText("0 2 * * *")).toBeTruthy();
+    expect(screen.getByText("启用")).toBeTruthy();
   });
 
   it("admin：角色权限 tab 可勾选收缩并保存（operator 允许集内）", async () => {

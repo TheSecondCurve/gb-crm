@@ -348,6 +348,29 @@ export const backgroundJobs = sqliteTable(
   ],
 );
 
+// K52 定时任务：调度定义（cron 表达式 + 任务类型 + params + 启停 + last/next run）。
+// 调度器把到期 next_run_at 物化成 background_jobs（trigger='scheduled'）行，执行器无感知。
+export const jobSchedules = sqliteTable(
+  "job_schedules",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    type: text("type").notNull(),
+    params: text("params").notNull().default("{}"),
+    cron: text("cron").notNull(),
+    enabled: integer("enabled").notNull().default(1),
+    lastRunAt: integer("last_run_at"),
+    nextRunAt: integer("next_run_at"),
+    createdAt: integer("created_at").notNull(),
+    updatedAt: integer("updated_at").notNull(),
+    createdBy: integer("created_by").references(() => users.id, { onDelete: "set null" }),
+    updatedBy: integer("updated_by").references(() => users.id, { onDelete: "set null" }),
+  },
+  (t) => [
+    check("job_schedules_enabled_check", sql`"enabled" IN (0, 1)`),
+    index("job_schedules_enabled_next_idx").on(t.enabled, t.nextRunAt),
+  ],
+);
+
 // K42 成交表：客户必填（创建）；意向产品/负责人单值可空；stage 枚举；delivery_date epoch ms。
 export const deals = sqliteTable(
   "deals",
