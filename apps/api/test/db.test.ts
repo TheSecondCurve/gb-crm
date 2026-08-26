@@ -40,6 +40,7 @@ describe("migration", () => {
       "delivery_customers",
       "delivery_tasks",
       "delivery_types",
+      "job_schedules",
       "products",
       "sessions",
       "sqlite_sequence",

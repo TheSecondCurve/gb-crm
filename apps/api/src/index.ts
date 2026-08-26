@@ -6,6 +6,7 @@ import { createDb } from "./db/client.js";
 import { migrateDb } from "./db/migrate.js";
 import { parseAppEnv } from "./env.js";
 import { createJobRunner } from "./modules/jobs/runner.js";
+import { createJobScheduler } from "./modules/jobs/scheduler.js";
 
 const env = parseAppEnv();
 const { db, sqlite, close } = createDb(env.DATABASE_PATH);
@@ -15,6 +16,9 @@ const app = buildApp({ env, db, logger: { level: env.LOG_LEVEL } });
 
 const jobRunner = createJobRunner({ db, now: () => Date.now() });
 jobRunner.start();
+// K52：调度器把到期 job_schedules 物化成 trigger='scheduled' 队列行；执行器无感知。
+const jobScheduler = createJobScheduler({ db, now: () => Date.now() });
+jobScheduler.start();
 
 try {
   await bootstrapAdmin(db, env, { log: (m) => app.log.info(m) });
