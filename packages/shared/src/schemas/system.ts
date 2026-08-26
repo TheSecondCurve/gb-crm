@@ -26,6 +26,59 @@ export type AiConfigPatch = z.infer<typeof aiConfigPatchSchema>;
 // 存储为 system_configs code='pageAccess'（value = { operator: string[], assistant: string[] }）。
 // admin 固定全量，不参与配置（防锁死管理页）。配置只能在各角色 can() 允许集内收缩。
 
+// ── S3 兼容对象存储（远程备份，K53）──
+// 存储为 system_configs code='s3'（value = { enabled, endpoint, region, bucket, prefix,
+// accessKeyId, secretAccessKey }）。GET 掩码同 LLM 配置：secretAccessKey 永不全量返回。
+// PATCH：secretAccessKey 空/缺席保留旧值（placeholder 语义）；enabled=true 时四要素必须齐
+// （endpoint/bucket/accessKeyId/secretAccessKey，服务端完整性校验 422）。
+
+export const s3ConfigGetSchema = z.object({
+  enabled: z.boolean(),
+  endpoint: z.string().nullable(),
+  region: z.string().nullable(),
+  bucket: z.string().nullable(),
+  /** 归一化后的对象 key 前缀："" 或 "xxx/"（无开头斜杠） */
+  prefix: z.string().nullable(),
+  accessKeyId: z.string().nullable(),
+  secretKeySet: z.boolean(),
+  secretKeyMasked: z.string().nullable(),
+});
+export type S3ConfigGet = z.infer<typeof s3ConfigGetSchema>;
+
+const httpUrlSchema = z
+  .string()
+  .trim()
+  .max(500)
+  .refine((v) => /^https?:\/\/\S+$/.test(v), { message: "Endpoint 必须是 http(s) 地址" });
+
+/** 桶名字符集放宽到主流兼容实现（MinIO/OSS/COS/R2），仅挡空格与路径分隔符 */
+const bucketNameSchema = z
+  .string()
+  .trim()
+  .min(1)
+  .max(200)
+  .regex(/^[A-Za-z0-9][A-Za-z0-9._-]*$/, "Bucket 名只能包含字母、数字、点、下划线、连字符");
+
+export const s3ConfigPatchSchema = z.object({
+  enabled: z.boolean().optional(),
+  endpoint: httpUrlSchema.nullable().optional(),
+  region: z.string().trim().max(100).nullable().optional(),
+  bucket: bucketNameSchema.nullable().optional(),
+  /** 服务端归一化为 "" 或 "xxx/"（去首尾/重复斜杠） */
+  prefix: z.string().trim().max(400).nullable().optional(),
+  accessKeyId: z.string().trim().max(200).nullable().optional(),
+  /** 传非空串才更新；空串/缺席保留旧值（placeholder 语义，同 LLM apiKey） */
+  secretAccessKey: z.string().trim().min(1).max(500).optional(),
+});
+export type S3ConfigPatch = z.infer<typeof s3ConfigPatchSchema>;
+
+export const s3TestResultSchema = z.object({
+  ok: z.literal(true),
+  /** 实际探测写入又删除的对象 key */
+  probeKey: z.string(),
+});
+export type S3TestResult = z.infer<typeof s3TestResultSchema>;
+
 const pageAccessKeySchema = z.string().min(1).max(64);
 
 export const pageAccessPatchSchema = z.object({

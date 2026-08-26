@@ -2,7 +2,7 @@
 
 闪光团队客户信息管理系统（品牌文案 **「女商 私域运营管理端」**）。内网单进程：Vite + React 管理端 + Fastify REST + SQLite。
 
-完整架构与编号决策见 `docs/design.md`（K1–K35）。需求原文 `docs/core.md`，视觉 `docs/style.md`，Agent 签发与 Skill 用法 `docs/dev.md`。本文件是给编码代理的工作契约：改代码前先对照这里，再对照 design。
+完整架构与编号决策见 `docs/design.md`（K1–K35）。需求原文 `docs/core.md`，视觉 `docs/style.md`，Agent 签发与 Skill 用法 `docs/dev.md`，远程备份（Cloudflare R2）申请与配置指南 `docs/remote-backup.md`。本文件是给编码代理的工作契约：改代码前先对照这里，再对照 design。
 
 ## 工程结构
 
@@ -36,7 +36,7 @@ v1 **不抽** `packages/ui`。视觉 token 在 `apps/web/src/styles/tokens.css`�
 
 例外：`modules/agent/routes.ts` 是单文件模块（K35 Agent SQL 端点），直接用 `db.$client` 原生 better-sqlite3，不走三层。
 
-K45/K46/K50/K51 补充：`modules/tags` 词表三层（admin 写、其余只读，维护入口「业务设置」页 `/business-settings`）；`modules/system` 走通用 `system_configs` 表（code='llm' 存 LLM 打标配置，GET 掩码 / PATCH，admin only，有意不做 OCC；code='pageAccess' 存角色→页面权限——前端功能级配置，admin only，`GET/PATCH /system/page-access`，只在 can() 允许集内收缩，admin 固定全量不参与配置；未来新配置直接加 code 行不建表）；后台任务 `modules/jobs`（表 `background_jobs`，执行器 `runner.ts` 进程内**串行**消费 queued，生产 `index.ts` `start()`、测试 `pumpOnce()`；状态机 queued→running→succeeded|partial|failed|cancelled——落终态带 `status='running'` CAS，影响 0 行静默跳过（cancelled 是不可被覆盖的终态），重启 `recover()` 把残留 running 标 failed；API：POST/GET `background-jobs`、`GET :id`、`POST :id/cancel`（仅 queued/running 可取消，非本人需 `jobs.cancelAny`）；任务类型注册表 `registry.ts` 驱动（未知 422、按 type 校验业务权限、params 按各 type 注册的 Zod schema 创建+执行双侧校验、非法 422 VALIDATION、创建时预检 LLM 就绪 422）；批量打标 = type `customer-tags-generate-all`，前端在系统设置页「后台任务」tab 查看/取消（全角色），有活跃任务 3s 轮询；数据库备份 = type `db-backup`（仅 admin，`backup.ts`：better-sqlite3 backup → gzip → `<数据库目录>/backups/gb-crm-<时间戳>.sqlite.gz` chmod 600，滚动保留最近 7 份，日常备份在「定时任务」tab 配 cron）；定时任务（K52）调度定义存表 `job_schedules`（type+params+cron+enabled+last/next_run_at），调度器 `scheduler.ts` 进程内把到期（enabled=1 且 next_run_at≤now）调度用 CAS 推进 next_run_at 并插 `trigger='scheduled'` 队列行（trigger_spec=cron，created_by=NULL），执行器无感知；cron 求值 `lib/cron.ts` 零依赖、5 字段、按进程本地时区（生产容器设 `TZ=Asia/Shanghai`）；API `GET/POST job-schedules`、`GET/PATCH/DELETE :id`、`POST :id/run`、`GET types`，仅 admin（ACL 资源 `jobSchedules`），前端系统设置页「定时任务」tab）；AI 打标 `lib/llm.ts`（OpenAI 兼容 `chat/completions`，零新依赖，`buildApp({ llmFetch })` 注入测试 mock）。
+K45/K46/K50/K51/K53 补充：`modules/tags` 词表三层（admin 写、其余只读，维护入口「业务设置」页 `/business-settings`）；`modules/system` 走通用 `system_configs` 表（code='llm' 存 LLM 打标配置，GET 掩码 / PATCH，admin only，有意不做 OCC；code='pageAccess' 存角色→页面权限——前端功能级配置，admin only，`GET/PATCH /system/page-access`，只在 can() 允许集内收缩，admin 固定全量不参与配置；code='s3'（K53）存 S3 兼容对象存储远程备份配置，`GET/PATCH /system/s3-config` + `POST /system/s3-config/test`（连通性探针），admin only，secret 只回掩码、enabled=true 时 endpoint/bucket/accessKeyId/secretAccessKey 四要素必须齐备否则 422；未来新配置直接加 code 行不建表）；后台任务 `modules/jobs`（表 `background_jobs`，执行器 `runner.ts` 进程内**串行**消费 queued，生产 `index.ts` `start()`、测试 `pumpOnce()`；状态机 queued→running→succeeded|partial|failed|cancelled——落终态带 `status='running'` CAS，影响 0 行静默跳过（cancelled 是不可被覆盖的终态），重启 `recover()` 把残留 running 标 failed；API：POST/GET `background-jobs`、`GET :id`、`POST :id/cancel`（仅 queued/running 可取消，非本人需 `jobs.cancelAny`）；任务类型注册表 `registry.ts` 驱动（未知 422、按 type 校验业务权限、params 按各 type 注册的 Zod schema 创建+执行双侧校验、非法 422 VALIDATION、创建时预检 LLM 就绪 422）；批量打标 = type `customer-tags-generate-all`，前端在系统设置页「后台任务」tab 查看/取消（全角色），有活跃任务 3s 轮询；数据库备份 = type `db-backup`（仅 admin，`backup.ts`：better-sqlite3 backup → gzip → `<数据库目录>/backups/gb-crm-<时间戳>.sqlite.gz` chmod 600，滚动保留最近 7 份，日常备份在「定时任务」tab 配 cron；K53：备份后若 code='s3' 启用且配置完整 → 上传一份到远端固定对象 `{prefix}gb-crm-latest.sqlite.gz` **覆盖式不留多份**，上传失败任务 partial 不影响本地份）；定时任务（K52）调度定义存表 `job_schedules`（type+params+cron+enabled+last/next_run_at），调度器 `scheduler.ts` 进程内把到期（enabled=1 且 next_run_at≤now）调度用 CAS 推进 next_run_at 并插 `trigger='scheduled'` 队列行（trigger_spec=cron，created_by=NULL），执行器无感知；cron 求值 `lib/cron.ts` 零依赖、5 字段、按进程本地时区（生产容器设 `TZ=Asia/Shanghai`）；API `GET/POST job-schedules`、`GET/PATCH/DELETE :id`、`POST :id/run`、`GET types`，仅 admin（ACL 资源 `jobSchedules`），前端系统设置页「定时任务」tab）；AI 打标 `lib/llm.ts`（OpenAI 兼容 `chat/completions`，零新依赖，`buildApp({ llmFetch })` 注入测试 mock）；S3 客户端 `lib/s3.ts`（零依赖 SigV4 签名 + path-style，兼容 AWS/MinIO/OSS/COS/R2，AWS 官方向量对拍单测，`buildApp({ s3Fetch })` / runner `fetchFn` 注入 mock）。
 
 公共能力：
 
@@ -50,7 +50,7 @@ K45/K46/K50/K51 补充：`modules/tags` 词表三层（admin 写、其余只读�
 
 ### Web
 
-- 路由：`/login` `/my/customers` `/my/deals` `/customers` `/customers/:id`（总览）`/channels` `/products` `/deals` `/deliveries` `/deliveries/:id` `/deliveries/:id/circle` `/deliveries/:id/gantt` `/deliveries/:id/matrix` `/delivery-types` `/users` `/settings`（系统设置，tab：LLM 打标配置 admin + 角色权限 admin + 后台任务全角色）`/business-settings`（业务设置，客户标签词表）（默认进客户）
+- 路由：`/login` `/my/customers` `/my/deals` `/customers` `/customers/:id`（总览）`/channels` `/products` `/deals` `/deliveries` `/deliveries/:id` `/deliveries/:id/circle` `/deliveries/:id/gantt` `/deliveries/:id/matrix` `/delivery-types` `/users` `/settings`（系统设置，tab：LLM 打标配置 admin + 角色权限 admin + 远程备份 admin + 后台任务全角色 + 定时任务 admin）`/business-settings`（业务设置，客户标签词表）（默认进客户）
 - 页面权限：菜单/路由统一由 `packages/shared/src/pages.ts` 的 `PAGE_REGISTRY` + `/auth/me.pages` 驱动（安全层 can() ∩ 配置允许集）；无权访问的路由被 `PageGuard` 重定向到该角色第一张可看菜单页；详情型页面（`/customers/:id`、`/deliveries/:id/*`）不单独配，跟随父页面。改菜单/新增页只改注册表，不要再在 Sidebar/App 手写显隐。
 - 表格：`components/DataGrid/`（双击编辑 + 行内 PATCH 队列）
 - 列定义：`src/columns/`；列表页：`src/pages/` + `useResourceList.ts`
