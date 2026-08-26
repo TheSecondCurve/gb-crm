@@ -5,7 +5,7 @@ import { api, ApiError } from "../api/client";
 import type { DealDto } from "../api/types";
 import { useAuth } from "../auth/AuthProvider";
 import { optionsOf } from "../columns/common";
-import { dateToEpochMs, dealColumns } from "../columns/deals";
+import { convertDealBody, dealColumns } from "../columns/deals";
 import { DataGrid, Pagination } from "../components/DataGrid/DataGrid";
 import { ConfirmDialog } from "../components/ConfirmDialog";
 import { RecordFormModal } from "../components/RecordFormModal";
@@ -28,18 +28,9 @@ export function DealsPage() {
   const canUpdate = can(role, "deals", "update");
   const canDelete = can(role, "deals", "delete");
 
-  /** 交付日期编辑输入 YYYY-MM-DD → epoch ms；空 = 清空（null）；非法 → 抛错（队列 toast） */
-  const convertDeliveryDate = (body: Record<string, unknown>): Record<string, unknown> => {
-    if (!("deliveryDate" in body)) return body;
-    const ms = dateToEpochMs(body.deliveryDate);
-    if (ms === null && String(body.deliveryDate ?? "").trim() !== "") {
-      throw new Error("交付日期需为 YYYY-MM-DD 格式");
-    }
-    return { ...body, deliveryDate: ms };
-  };
-
+  /** POST/PATCH body 转换唯一实现见 columns/deals.convertDealBody（行内编辑 / 弹窗共用） */
   const patchRow = useCallback(async (id: number, body: Record<string, unknown>) => {
-    const res = await api.patch<{ data: DealDto }>(`/deals/${id}`, convertDeliveryDate(body));
+    const res = await api.patch<{ data: DealDto }>(`/deals/${id}`, convertDealBody(body));
     return res!.data;
   }, []);
 
@@ -47,7 +38,7 @@ export function DealsPage() {
   const createDeal = async (body: Record<string, unknown>) => {
     setBusy(true);
     try {
-      const res = await api.post<{ data: DealDto }>("/deals", convertDeliveryDate(body));
+      const res = await api.post<{ data: DealDto }>("/deals", convertDealBody(body));
       setCreating(false);
       await list.invalidate();
       showToast("已创建成交记录");
@@ -88,6 +79,8 @@ export function DealsPage() {
       setDeleting(null);
       await list.invalidate();
       showToast("已删除");
+    } catch (err) {
+      showToast(err instanceof ApiError ? err.message : "删除失败，请稍后重试");
     } finally {
       setBusy(false);
     }

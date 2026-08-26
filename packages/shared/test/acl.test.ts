@@ -30,6 +30,7 @@ const EXPECTED: Record<SystemRole, Partial<Record<Resource, readonly Action[]>>>
     tags: ["list", "read", "create", "update", "delete"],
     system: ["read", "update"],
     jobs: ["list", "read", "create", "cancel", "cancelAny"],
+    jobSchedules: ["list", "read", "create", "update", "delete"],
     auth: ["setPassword", "impersonate"],
   },
   operator: {
@@ -160,6 +161,15 @@ describe("§6 必测场景", () => {
       expect(can(role, "tags", "read")).toBe(true);
       for (const action of ["create", "update", "delete"] as const) {
         expect(can(role, "tags", action)).toBe(false);
+      }
+    }
+  });
+
+  it("jobSchedules 定时任务：仅 admin（K52）", () => {
+    for (const action of ["list", "read", "create", "update", "delete"] as const) {
+      expect(can("admin", "jobSchedules", action)).toBe(true);
+      for (const role of ["operator", "assistant", null] as const) {
+        expect(can(role, "jobSchedules", action)).toBe(false);
       }
     }
   });

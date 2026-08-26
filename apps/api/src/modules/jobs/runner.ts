@@ -3,6 +3,8 @@
 // - start()：recover()（重启残留 running → failed）+ 后台循环串行消费；生产 index.ts 调用；
 // - handler 取消感知：isCancelled() 查 DB status；取消发生在 queued/running 时，running 的
 //   由 handler 每迭代检查提前结束（当前客户 ≤30s LLM 调用会跑完）。
+// - H3：finishJob 带 status='running' CAS，取消落在最后一次检查之后时，
+//   循环走完的 succeeded/partial 与兜底 failed 都写不进去（静默跳过），cancelled 不可被覆盖。
 import type { Db } from "../../db/client.js";
 import { ApiError } from "../../plugins/error-handler.js";
 import {
@@ -13,7 +15,7 @@ import {
   updateJobProgress,
   type JobRow,
 } from "./repo.js";
-import { JOB_TYPES, type JobContext } from "./registry.js";
+import { JOB_TYPES, parseJobParams, type JobContext } from "./registry.js";
 
 export interface JobRunnerOptions {
   db: Db;
@@ -88,7 +90,9 @@ export function createJobRunner(opts: JobRunnerOptions): JobRunner {
     };
 
     try {
-      await def.run(ctx, parseParams(job.params));
+      // M11：执行侧复验 params（防排队期间代码演进后落库 params 与新 schema 不兼容）；
+      // 校验失败抛 ApiError(VALIDATION)，由下方 catch 落 failed（中文 message）
+      await def.run(ctx, parseJobParams(def, parseParams(job.params)));
     } catch (err) {
       if (!finished) {
         const message = err instanceof ApiError ? err.message : "服务器内部错误";

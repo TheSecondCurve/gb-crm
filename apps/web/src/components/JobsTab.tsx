@@ -209,6 +209,14 @@ function JobDetailModal({ job, busy, onClose, onCancel }: JobDetailModalProps) {
         </span>
         <span className="detail-label">触发</span>
         <span>{TRIGGER_LABELS[job.trigger] ?? job.trigger}</span>
+        {job.triggerSpec && (
+          <>
+            <span className="detail-label">cron</span>
+            <span>
+              <code>{job.triggerSpec}</code>
+            </span>
+          </>
+        )}
         <span className="detail-label">创建人</span>
         <span>{job.createdBy?.nickname ?? "—"}</span>
         <span className="detail-label">创建时间</span>

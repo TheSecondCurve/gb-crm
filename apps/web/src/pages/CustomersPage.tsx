@@ -45,9 +45,13 @@ export function CustomersPage() {
     return res!.data;
   }, []);
 
-  // 导出 Excel：跟随当前搜索/类型筛选，同源 attachment 下载（不离开当前页）
+  // 导出 Excel：跟随当前搜索/类型/标签筛选（与列表、bulkGenerate 同一 WHERE），同源 attachment 下载
   const exportXlsx = () => {
-    const href = `/api/v1/customers/export.xlsx${buildQuery({ q: list.q, customerType: list.filter })}`;
+    const params: Record<string, string | number | boolean | null | undefined> = {};
+    if (list.q) params.q = list.q;
+    if (list.filter) params.customerType = list.filter;
+    if (list.secondFilter) params.tagId = Number(list.secondFilter);
+    const href = `/api/v1/customers/export.xlsx${buildQuery(params)}`;
     const a = document.createElement("a");
     a.href = href;
     a.download = "";
@@ -99,6 +103,8 @@ export function CustomersPage() {
       setDeleting(null);
       await list.invalidate();
       showToast("已删除");
+    } catch (err) {
+      showToast(err instanceof ApiError ? err.message : "删除失败，请稍后重试");
     } finally {
       setBusy(false);
     }

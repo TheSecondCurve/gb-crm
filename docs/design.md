@@ -141,7 +141,7 @@ Phase 2 表（本设计不建表、不导入）：活动交付 12、内容资产
 | K31 | **兼职助手不能** `customers.create`，**不能** `customers.updateOwners`（归属人）。仍可 PATCH 客户其它标量。`can()` 此两格锁定，不是待改默认 | 2026-08-21 产品拍板（原 Q5）。PR 7 测试：assistant POST 403、PATCH ownerIds 403。 |
 | K32 | **内网 + Docker**。提供 `Dockerfile` 与 `docker-compose.yml`（PR 14 **必做**）。SQLite **volume 挂载**，不进镜像。可 `HOST=0.0.0.0` 跟在内网 Caddy 后；推荐 `COOKIE_SECURE=true` + HTTPS + `TRUST_PROXY=true`。非 loopback 且未 Secure 仍启动 warn。**不**暴露公网，不追加公网威胁加固 | 2026-08-21 产品/运维拍板（原 Q7）。 |
 | K33 | UI「删除」= 软删。v1 **无**回收站、**无**管理员硬删。`ON DELETE CASCADE`/`SET NULL` 仅 schema 预留，v1 路径永不触发 | 2026-08-21 产品拍板（原 Q9）。 |
-| K34 | 侧栏与登录标题品牌文案锁定为 **「闪光 · 客户运营」**。禁止「女商」 | 2026-08-21 产品拍板（原 Q13）。PR 8 用此常量。 |
+| K34 | 侧栏与登录标题品牌文案锁定为 **「女商 私域运营管理端」** | 2026-08-21 产品拍板（原 Q13）。2026-08-23 品牌改文案；PR 8 曾用「闪光 · 客户运营」。 |
 | K35 | Agent 访问：**PAT 与 cookie session 并行**，不做 JWT。已部署 CRM 托管 `GET /agent/login.sh`（`curl \| sh` 签发）；明文 token 只返回一次，本机 `~/.gb-crm/credentials.json`（目录 700 / 文件 600）。范围 `read`/`write`（REST 资源路由仍 **∩** `can()`）。Skill 包在仓库 `skills/gb-crm/` 备用（脚本发 Bearer，skill 不含密钥）。Agent 数据访问收敛为单一端点 **`POST /api/v1/agent/sql`**（自由 SQL，仅 Bearer PAT，cookie 403）：用 better-sqlite3 `stmt.readonly` 判读写——只读语句任意 scope / 角色放行（含渠道密钥列，产品接受）；写语句必须 `write` scope + admin。读上限 1000 行截断；单语句。REST 资源路由保留给 web 管理端 | Agent 用不了 HttpOnly cookie；JWT 难作废（K5）。**2026-08-21 产品拍板推翻旧决定「不开放任意 SQL」**：换 token 节省与取数灵活性；写 SQL 绕过 PATCH 内核 / OCC / 软删 / RBAC 的风险由「仅 admin+write 可写」与 SKILL.md 工作守则兜底 |
 | K36 | 客户表删除 父记录 / 档案页 / 所在社群 / 升单人 / 飞书记录（`parent_id` / `profile_url` / `feishu_record_id` 列 + `customer_upsell_owners` / `customer_community_channels` join 表） | 2026-08-22 产品决策。`0002_drop_customer_fields.sql` 迁移删除 |
 | K37 | users / channels / products 删除 飞书记录（`feishu_record_id` 列 + 各表 partial unique 索引） | 2026-08-22 产品决策。`0003_drop_feishu_record_ids.sql` 迁移删除 |
@@ -158,7 +158,8 @@ Phase 2 表（本设计不建表、不导入）：活动交付 12、内容资产
 | K48 | **customers.industry**：客户表新增 `industry`（行业）一列（可空文本，PATCH 标量内核）；同时作为 AI 打标输入与输出——AI 推断非空即**总是覆盖**写回（LLM 缺失/空串不动，防清空人工值；上限 100 字符）。**不做**：公司/职位/预算等更多画像列（保持「稍微扩展」） | 2026-08-22 产品决策。`0015_customer_tags_ai.sql` 迁移。**K52 用户追加：行业改为 AI 输出（总是覆盖）** |
 | K49 | **admin「扮演用户」（act as user）**：admin 把当前 cookie session 的身份切到任一可加载用户，用于测试「我的运营」等按人过滤的页面。机制：`sessions` 表加可空列 `impersonated_by`（原身份 admin）；扮演 = `UPDATE sessions SET user_id=目标, impersonated_by=admin`（cookie 不变），退出 = 恢复 `user_id=impersonated_by` 并清空。**单层不可嵌套**（已扮演再 start → 409，service 兜底；弱角色下被 requireCan 403 拦截同样安全）。目标闸门与 loadAuthUser 一致（未软删 / enabled / systemRole 非空 / username 非空），**禁止扮演自己**（409）。端点：`GET /auth/impersonate/targets`、`POST /auth/impersonate/:id`、`POST /auth/impersonate/stop`——均 **仅 cookie session**（Bearer PAT 403）；targets/start 挂 `auth.impersonate`（矩阵仅 admin），**stop 不查角色**（以「当前会话正处于扮演中」为唯一准入，否则扮成 operator/assistant 后无法自行退出）。`GET /auth/me` 增 `impersonatedBy: {id,nickname} | null`。审计留痕：`sessions.impersonated_by` 即「谁扮演了谁」，不引入事件表。前端：右上角用户菜单「切换身份（扮演用户）」弹窗选目标；扮演中显示「扮演中：昵称（角色）」徽标 + 退出扮演按钮，侧栏/权限按被扮演者实时生效 | 2026-08-22 产品决策（测试「我的运营」等按人过滤功能）。`0016_session_impersonation.sql` 迁移 |
 | K50 | **系统配置表 + 业务设置页 + 批量打标**：① `ai_config` 单行表 → 通用 `system_configs`（`code` PK + `value` JSON + 审计），LLM 配置存 `code='llm'`，未来新配置直接加 code 行不再建表（`0017_system_configs.sql` 迁移并 drop ai_config；`GET/PATCH /system/ai-config` 路由不变，掩码/OCC 语义不变）。② 词表**保留关系型 `tags` 表**（业务配置表；不进 KV——`customer_tags` M2M 外键引用 `tags.id`，需每行审计/软删/live-unique，JSON blob 做不到）；菜单拆分：新增「业务设置」页 `/business-settings`（`can(tags, read)` 可见，admin 写），tab「客户标签词表」承载原设置页词表 CRUD；「系统设置」只留 LLM 配置。③ 批量打标：`POST /api/v1/customers/tags/generate-all`（`customers.update`；query 复用列表 WHERE q/customerType/tagId/ownerId，不分页）——assertAiReady 前置（未配置/词表空 422）→ 逐客户串行复用单条打标核心 → 单个客户 502 `LLM_ERROR` 跳过并计数 → 返回 `{ total, succeeded, failed }`。前端：客户信息页工具栏「全量生成标签」（跟随当前筛选，ConfirmDialog 确认）；我的客户页工具栏「全量生成标签」（固定 ownerId=当前用户）+ 行操作「AI 生成标签」（单条端点，生成中禁用）。**不做**：词表进 KV 配置表、后台队列/进度轮询/断点续跑、客户列表行级 AI 按钮（客户页经总览页已有） | 2026-08-22 产品决策。`0017_system_configs.sql` 迁移。K45 词表维护入口、K46 配置存储迁移至此。**批量打标在 K51 已改为后台任务，本节 ③ 的同步端点废弃** |
-| K51 | **后台任务系统**：手动触发批量打标改后台任务，为未来定时任务预留。① 表 `background_jobs`（`0018_background_jobs.sql`）：type + params(JSON) + status（`queued→running→succeeded|partial|failed|cancelled`）+ progress(JSON `{processed,total,succeeded,failed}`) + result(JSON) + error + trigger（`manual/scheduled`，未来定时器只插 scheduled 行）+ trigger_spec + 审计/起止时间；进程重启 runner `recover()` 把残留 `running`→`failed`（error 注明重启中断）。② 执行器 `modules/jobs/runner.ts`：进程内**串行**消费 queued（CAS 领取防并发；`pumpOnce()` 供测试，生产 `index.ts` `start()` 循环）；handler 驱动终态（`ctx.finish`），取消感知 = 每迭代查 DB status（running 中被取消则下一客户前停止，当前 ≤30s LLM 调用跑完）。③ 资源 API：`POST /background-jobs`（`jobs.create`，type 注册表 `modules/jobs/registry.ts` 驱动：未知 422、业务权限如批量打标→`customers.update`、预检 LLM 就绪 422）、`GET /background-jobs`（list）、`GET /background-jobs/:id`、`POST /background-jobs/:id/cancel`（仅 queued/running 可取消 409；非本人需 `jobs.cancelAny` 仅 admin）。④ 前端：系统设置页新增 tab「后台任务」（`?tab=jobs`；列表 + 详情弹窗（进度条/成功失败/失败明细/错误/耗时）+ 取消；有 queued/running 时 3s 轮询）；客户信息页/我的客户页「全量生成标签」改为创建任务并跳转。⑤ 任务类型：`customer-tags-generate-all`（复用列表 WHERE，失败收集 `failures:[{customerId,nickname,message}]`，status 按成败计数定 succeeded/partial/failed；K52：自建新标签走**批量全局预算 ≤20**，跨客户累计，超预算丢弃）。**不做**：定时调度器本身（cron，仅 schema 预留）、任务并发、重试/断点续跑、失败明细分页 | 2026-08-22 产品决策。`0018_background_jobs.sql` 迁移。K50 同步批量端点废弃，语义由任务取代。**K51 修订：后台任务 tab 由业务设置页移至系统设置页（全角色可见，LLM 打标配置仍 admin），业务设置页只留客户标签词表**。**K52 用户追加：批量任务新标签全局预算** |
+| K51 | **后台任务系统**：手动触发批量打标改后台任务，为未来定时任务预留。① 表 `background_jobs`（`0018_background_jobs.sql`）：type + params(JSON) + status（`queued→running→succeeded|partial|failed|cancelled`）+ progress(JSON `{processed,total,succeeded,failed}`) + result(JSON) + error + trigger（`manual/scheduled`，未来定时器只插 scheduled 行）+ trigger_spec + 审计/起止时间；进程重启 runner `recover()` 把残留 `running`→`failed`（error 注明重启中断）。② 执行器 `modules/jobs/runner.ts`：进程内**串行**消费 queued（CAS 领取防并发；`pumpOnce()` 供测试，生产 `index.ts` `start()` 循环）；handler 驱动终态（`ctx.finish`），取消感知 = 每迭代查 DB status（running 中被取消则下一客户前停止，当前 ≤30s LLM 调用跑完）。③ 资源 API：`POST /background-jobs`（`jobs.create`，type 注册表 `modules/jobs/registry.ts` 驱动：未知 422、业务权限如批量打标→`customers.update`、预检 LLM 就绪 422）、`GET /background-jobs`（list）、`GET /background-jobs/:id`、`POST /background-jobs/:id/cancel`（仅 queued/running 可取消 409；非本人需 `jobs.cancelAny` 仅 admin）。④ 前端：系统设置页新增 tab「后台任务」（`?tab=jobs`；列表 + 详情弹窗（进度条/成功失败/失败明细/错误/耗时）+ 取消；有 queued/running 时 3s 轮询）；客户信息页/我的客户页「全量生成标签」改为创建任务并跳转。⑤ 任务类型：`customer-tags-generate-all`（复用列表 WHERE，失败收集 `failures:[{customerId,nickname,message}]`，status 按成败计数定 succeeded/partial/failed；K52：自建新标签走**批量全局预算 ≤20**，跨客户累计，超预算丢弃）。**不做**：任务并发、重试/断点续跑、失败明细分页（定时调度器已完成，见 K52） | 2026-08-22 产品决策。`0018_background_jobs.sql` 迁移。K50 同步批量端点废弃，语义由任务取代。**K51 修订：后台任务 tab 由业务设置页移至系统设置页（全角色可见，LLM 打标配置仍 admin），业务设置页只留客户标签词表**。**K52 用户追加：批量任务新标签全局预算** |
+| K52 | **定时任务（cron 调度）**：K51 之后补全「调度」能力，让新注册任务类型自动可被定时触发（复用注册表校验）。① 调度定义存表 `job_schedules`（`0019_job_schedules.sql`）：type + params(JSON) + cron（5 字段表达式）+ enabled + last_run_at/next_run_at + 审计——不塞 system_configs KV（调度是可增删改启停的实体列表，需每人审计/启停/自动推进，关系型表更贴合，同 K50 保留 tags 关系表）。② 调度器 `modules/jobs/scheduler.ts`：进程内把到期（enabled=1 且 next_run_at ≤ now）的调度用 CAS（WHERE next_run_at=fireAt）推进 next_run_at 并插 `background_jobs` 行（trigger='scheduled', trigger_spec=cron, created_by=NULL），执行器照常从 queued 串行消费、无感知；漏跑补偿=推进用 now() 求下一触发（停机错过只补跑一次，不连追，CAS 防并发重复插行）。③ cron 求值 `lib/cron.ts`（零依赖自研）：5 字段 `minute hour dom month dow`，支持 `* , - /` 与数字，dow 7→0，dom/dow 标准 OR 语义，`cronNext(cron, fromMs)` 5 年窗口内不可达返回 null（创建/更新校验非法 cron 422）；**按进程本地时区求值**（getters），生产容器应设 `TZ=Asia/Shanghai`。④ 资源 API（仅 admin，新 ACL 资源 `jobSchedules`：list/read/create/update/delete）：`GET/POST /job-schedules`、`GET/PATCH/DELETE /job-schedules/:id`、`POST /job-schedules/:id/run`（立即执行一次，不推进 next_run_at）、`GET /job-schedules/types`（可调度类型选项）；创建/更新复用 jobs 注册表（未知 type 422、按任务类型业务权限、params 双侧校验 M11、预检 LLM 就绪 422）。⑤ 前端：系统设置页新增 tab「定时任务」（仅 admin）；JobsTab 详情显示 cron（triggerSpec）。**不做**：任务并发、重试/断点续跑、失败明细分页、`CRON_TZ` 配置、重复调度策略 | 2026-08-26 产品决策（K51「不做：定时调度器」至此完成）。`0019_job_schedules.sql` 迁移 |
 
 ---
 
@@ -328,7 +329,7 @@ flowchart TB
 
 ### 4. 视觉与信息架构
 
-**结论：独立 Admin，设计语言 1:1 复用女商。** 侧栏与登录标题锁定 **「闪光 · 客户运营」**（K34），**不要**出现「女商」。
+**结论：独立 Admin，设计语言 1:1 复用女商。** 侧栏与登录标题锁定 **「女商 私域运营管理端」**（K34）。
 
 PR 8 **几乎原文**拷贝 mhtml 里的 CSS（layout / sidebar-toggle / `.sidebar-hidden` / sticky header / card / table / `.empty` / `.row-disabled` / `.badge*` / login-card / modal / pagination / tabs）。不要重写一套。token 与快照一致（小写 hex）。`--on-ink: #dcd7ce` 可加（style.md 有、mhtml `:root` 无）。
 
@@ -373,7 +374,7 @@ PR 8 **几乎原文**拷贝 mhtml 里的 CSS（layout / sidebar-toggle / `.sideb
 v1 导航（管理员）：
 
 ```
-闪光 · 客户运营
+女商 私域运营管理端
   主数据
     客户信息      /customers
     渠道资产      /channels
@@ -1372,7 +1373,7 @@ sqlite3 "$DATABASE_PATH" ".backup '${DATABASE_PATH}.bak-$(date +%F)'"
 | Q5 | 助手不能建客户、不能改归属人 | K31 |
 | Q7 | 内网 + Docker（sqlite volume；非公网） | K32 |
 | Q9 | 只软删，无硬删/回收站 | K33 |
-| Q13 | 品牌文案「闪光 · 客户运营」 | K34 |
+| Q13 | 品牌文案「女商 私域运营管理端」 | K34 |
 | （后补） | Agent 用 PAT + 托管 `login.sh` + 仓库 `skills/gb-crm/`；不开 SQL | K35 |
 
 此前已关闭、不再提问：四张表（Goals/K19）、角色拆分（K10）、不做飞书导入（K16）、独立应用（K1）、Excel 深度（K8/K30）、父记录列（K15，2026-08-22 由 K36 撤销）、归属人 M2M（K15，2026-08-22 由 K39 撤销为单值）、离职闸门（K10）、无登录成员进 users（K10）、`dev` 已存在（K17）。
@@ -1715,7 +1716,7 @@ assistant 全域只读（无新增/修改/删除/动作按钮；甘特/矩阵仅
 
 - **依赖**：PR 4；可与 5–7 并行
 - **影响文件**：`styles/*`（mhtml CSS 几乎原文，含 collapse/empty/disabled/sticky/badge）、`main.tsx`（BrowserRouter + QueryClientProvider）、`App.tsx` 路由、layout、LoginPage
-- **说明**：品牌常量锁定 `闪光 · 客户运营`（K34），登录标题与侧栏共用，禁止「女商」。
+- **说明**：品牌常量锁定 `女商 私域运营管理端`（K34），登录标题与侧栏共用。
 
 ### PR 9 — `feat(web): DataGrid 内核`
 

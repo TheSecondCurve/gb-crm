@@ -12,6 +12,7 @@
 import {
   tagScopeSchema,
   type BulkTagGenerateResult,
+  type BulkTagJobParams,
   type CustomerListQuery,
   type CustomerPatch,
   type CustomerWrite,
@@ -450,18 +451,21 @@ export interface BulkTaggingJobOptions {
 }
 
 /**
- * 批量生成客户标签（K51，jobs 任务执行核心）：与列表/导出同一 WHERE（q/customerType/tagId/ownerId），
- * 不分页逐客户串行打标（复用 aiTagCustomer）；单个客户 LLM 失败（502 LLM_ERROR）跳过并收集明细，
- * 不中断整体；返回 { total, succeeded, failed, failures, cancelled }。未配置/词表空 → 422（跑之前即拦）。
+ * 批量生成客户标签（K51，jobs 任务执行核心）：与列表/导出同一 WHERE
+ * （q/customerType/ownerId/channelId/tagId/sort/order，M11：经 bulkTagJobParamsSchema 校验后的子集，
+ * 不含分页——任务不分页全量跑），不分页逐客户串行打标（复用 aiTagCustomer）；
+ * 单个客户 LLM 失败（502 LLM_ERROR）跳过并收集明细，不中断整体；
+ * 返回 { total, succeeded, failed, failures, cancelled }。未配置/词表空 → 422（跑之前即拦）。
  */
 export async function runBulkTaggingJob(
   db: Db,
-  query: CustomerListQuery,
+  query: BulkTagJobParams,
   ctx: AuditContext,
   opts: BulkTaggingJobOptions = {},
 ): Promise<BulkTagGenerateResult> {
   const { settings, vocabulary } = assertAiReady(db);
-  const rows = listAllCustomers(db, query);
+  // listAllCustomers 不分页（签名要求完整列表查询类型），page/pageSize 补默认值仅为满足其签名，不参与查询
+  const rows = listAllCustomers(db, { page: 1, pageSize: 25, ...query });
   const total = rows.length;
   // 批量全局预算：跨客户累计（默认 ≤20；测试注入小值）
   const newTagBudget: NewTagBudget = opts.newTagBudget ?? { used: 0, max: AI_NEW_TAG_BATCH_MAX };

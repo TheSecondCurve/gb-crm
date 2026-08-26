@@ -29,8 +29,15 @@ export function ProductsPage() {
   const canDelete = can(role, "products", "delete");
 
   const patchRow = useCallback(async (id: number, body: Record<string, unknown>) => {
-    // K13：价格编辑输入元 → Math.round(yuan*100) 分；isPackage select "true"/"false" → boolean
-    if ("priceCents" in body) body = { ...body, priceCents: yuanToCents(body.priceCents) };
+    // K13：价格编辑输入元 → Math.round(yuan*100) 分；isPackage select "true"/"false" → boolean。
+    // 非法数字抛错（队列 toast + 回滚），禁止静默写 null 清空价格；"" 保持清空语义
+    if ("priceCents" in body) {
+      const cents = yuanToCents(body.priceCents);
+      if (cents === null && String(body.priceCents ?? "").trim() !== "") {
+        throw new Error("价格需为数字（元）");
+      }
+      body = { ...body, priceCents: cents };
+    }
     if ("isPackage" in body) body = { ...body, isPackage: body.isPackage === "true" };
     const res = await api.patch<{ data: ProductDto }>(`/products/${id}`, body);
     return res!.data;

@@ -12,6 +12,7 @@ services:
       DATABASE_PATH: /data/gb-crm.sqlite
       TRUST_PROXY: "true" # 前面是内网 Caddy（HTTPS）；无反代时改 false
       COOKIE_SECURE: "true" # 与 HTTPS 配套；纯 HTTP 内网改 false（启动会有 warn）
+      TZ: "Asia/Shanghai" # 定时任务 cron 按进程本地时区求值（K52），必须与业务时区一致
     env_file:
       - .env.production # SESSION_SECRET / ADMIN_USERNAME / ADMIN_PASSWORD
     volumes:

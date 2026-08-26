@@ -91,17 +91,90 @@ describe("POST /api/v1/agent/sql · 读", () => {
     expect(res.json().data.rows).toEqual([["gh_secret", "13800000000"]]);
   });
 
-  it("WITH...SELECT 与 PRAGMA 均 readonly=true，任意令牌可执行", async () => {
+  it("WITH...SELECT 任意令牌可执行", async () => {
     await seedUser(tmp.db);
     const token = await mintToken("alice", "read");
 
     const withRes = await runSql("WITH x AS (SELECT 1 AS n) SELECT * FROM x", bearer(token));
     expect(withRes.statusCode).toBe(200);
     expect(withRes.json().data.rows).toEqual([[1]]);
+  });
+});
 
-    const pragma = await runSql("PRAGMA table_info(users)", bearer(token));
-    expect(pragma.statusCode).toBe(200);
-    expect(pragma.json().data.columns).toContain("name");
+describe("POST /api/v1/agent/sql · 读路径加固", () => {
+  it("read 令牌 PRAGMA locking_mode=EXCLUSIVE → 403，连接状态未被改变", async () => {
+    await seedUser(tmp.db);
+    const token = await mintToken("alice", "read");
+    const res = await runSql("PRAGMA locking_mode=EXCLUSIVE", bearer(token));
+    expect(res.statusCode).toBe(403);
+    expect(res.json().error).toMatchObject({
+      code: "FORBIDDEN",
+      message: "只读令牌仅允许执行 SELECT / WITH / VALUES 查询",
+    });
+    // 连接级 PRAGMA 未生效：锁模式仍是 normal，后续查询照常可用
+    expect(tmp.sqlite.pragma("locking_mode", { simple: true })).toBe("normal");
+    const after = await runSql("SELECT COUNT(*) FROM users", bearer(token));
+    expect(after.statusCode).toBe(200);
+  });
+
+  it("read 令牌其它连接级 PRAGMA / BEGIN 同样落入写门 → 403", async () => {
+    await seedUser(tmp.db);
+    const token = await mintToken("alice", "read");
+    for (const sql of ["PRAGMA busy_timeout=0", "PRAGMA foreign_keys=OFF", "BEGIN"]) {
+      const res = await runSql(sql, bearer(token));
+      expect(res.statusCode, sql).toBe(403);
+      expect(res.json().error.code, sql).toBe("FORBIDDEN");
+    }
+  });
+
+  it("read 令牌 WITH...DELETE 判为写 → 403 且未删除任何行", async () => {
+    await seedUser(tmp.db);
+    const token = await mintToken("alice", "read");
+    const res = await runSql(
+      "WITH target AS (SELECT id FROM users LIMIT 1) DELETE FROM users WHERE id IN (SELECT id FROM target)",
+      bearer(token),
+    );
+    expect(res.statusCode).toBe(403);
+    expect(res.json().error.message).toBe("仅管理员可执行写 SQL");
+    expect(
+      tmp.sqlite.prepare("SELECT COUNT(*) AS n FROM users WHERE deleted_at IS NULL").get(),
+    ).toEqual({ n: 1 });
+  });
+
+  it("read 令牌查 password_hash 列 → 403", async () => {
+    await seedUser(tmp.db);
+    const token = await mintToken("alice", "read");
+    const res = await runSql("SELECT username, password_hash FROM users", bearer(token));
+    expect(res.statusCode).toBe(403);
+    expect(res.json().error).toMatchObject({
+      code: "FORBIDDEN",
+      message: "查询涉及凭据字段（password_hash / token_hash），已拒绝",
+    });
+  });
+
+  it("read 令牌 SELECT * FROM users（列含 password_hash）→ 403", async () => {
+    await seedUser(tmp.db);
+    const token = await mintToken("alice", "read");
+    const res = await runSql("SELECT * FROM users", bearer(token));
+    expect(res.statusCode).toBe(403);
+    expect(res.json().error.code).toBe("FORBIDDEN");
+    // 未泄露数据
+    expect(res.body).not.toContain("password123");
+  });
+
+  it("read 令牌 SELECT * FROM sessions → 403", async () => {
+    await seedUser(tmp.db);
+    const cookie = await loginAs(app, "alice", "password123"); // 造一条 live session
+    expect(cookie).toBeTruthy();
+    const token = await mintToken("alice", "read");
+    const res = await runSql("SELECT * FROM sessions", bearer(token));
+    expect(res.statusCode).toBe(403);
+    expect(res.json().error).toMatchObject({ code: "FORBIDDEN" });
+
+    // api_tokens 的 token_hash 同样被列名黑名单挡住
+    const hashRes = await runSql("SELECT token_hash FROM api_tokens", bearer(token));
+    expect(hashRes.statusCode).toBe(403);
+    expect(hashRes.json().error.message).toContain("凭据字段");
   });
 });
 
@@ -218,7 +291,8 @@ describe("POST /api/v1/agent/sql · 鉴权与校验", () => {
   it("语法错误 → 422 SQL_ERROR，带 sqlite 错误信息", async () => {
     await seedUser(tmp.db);
     const token = await mintToken("alice", "read");
-    const res = await runSql("SELEC bad", bearer(token));
+    // 词形必须是查询才会进读分支；非查询词形（如 PRAGMA）在 prepare 前就被写门拦下
+    const res = await runSql("SELECT * FRM users", bearer(token));
     expect(res.statusCode).toBe(422);
     expect(res.json().error.code).toBe("SQL_ERROR");
     expect(res.json().error.message).toContain("syntax error");

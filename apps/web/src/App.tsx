@@ -1,9 +1,8 @@
 import { Navigate, Route, Routes } from "react-router-dom";
-import { menuPagesSorted, type PageKey } from "@gb-crm/shared";
 
 import { useAuth } from "./auth/AuthProvider";
 import { AppLayout } from "./layout/AppLayout";
-import { PageGuard } from "./components/PageGuard";
+import { homePath, NoPagesPlaceholder, PageGuard } from "./components/PageGuard";
 import { LoginPage } from "./pages/LoginPage";
 import { CustomersPage } from "./pages/CustomersPage";
 import { CustomerOverviewPage } from "./pages/CustomerOverviewPage";
@@ -30,14 +29,11 @@ function RequireAuth() {
   return <AppLayout />;
 }
 
-/** 落地页：优先客户信息（保留原行为），不可用时取该角色第一张可看菜单页 */
+/** 落地页：homePath 统一推导（customers 优先，否则第一张可看菜单页）；pages 为空 → 占位兜底 */
 function HomeRedirect() {
   const { me } = useAuth();
-  const pages = (me?.pages ?? []) as PageKey[];
-  const byMenu = menuPagesSorted(pages);
-  const target = pages.includes("customers")
-    ? "/customers"
-    : (byMenu[0]?.path ?? "/login");
+  const target = homePath(me?.pages ?? []);
+  if (target === null) return <NoPagesPlaceholder />;
   return <Navigate to={target} replace />;
 }
 

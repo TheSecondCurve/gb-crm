@@ -29,10 +29,16 @@ export function ChannelsPage() {
   const canDelete = can(role, "channels", "delete");
 
   const patchRow = useCallback(async (id: number, body: Record<string, unknown>) => {
-    // followerCount 由文本编辑器产生："" → null，否则转 number
+    // followerCount 由文本编辑器产生："" → null（有意清空）；非法数字抛错（队列 toast + 回滚），不静默写库
     if ("followerCount" in body) {
       const s = String(body.followerCount ?? "").trim();
-      body = { ...body, followerCount: s === "" ? null : Number(s) };
+      if (s === "") {
+        body = { ...body, followerCount: null };
+      } else {
+        const n = Number(s);
+        if (!Number.isFinite(n)) throw new Error("粉丝/好友数需为数字");
+        body = { ...body, followerCount: n };
+      }
     }
     const res = await api.patch<{ data: ChannelDto }>(`/channels/${id}`, body);
     return res!.data;

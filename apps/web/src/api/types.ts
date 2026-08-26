@@ -104,6 +104,28 @@ export interface BackgroundJobDto {
   finishedAt: number | null;
 }
 
+/** K52 定时任务：调度定义（cron 表达式 + 任务类型 + params + 启停 + last/next run）。仅 admin。 */
+export interface JobScheduleDto {
+  id: number;
+  type: string;
+  typeLabel: string | null;
+  params: Record<string, unknown>;
+  cron: string;
+  enabled: boolean;
+  lastRunAt: number | null;
+  nextRunAt: number | null;
+  createdAt: number;
+  updatedAt: number;
+  createdBy: UserRefDto | null;
+  updatedBy: UserRefDto | null;
+}
+
+/** K52 可被调度的任务类型选项（GET /job-schedules/types） */
+export interface JobScheduleTypeOptionDto {
+  type: string;
+  label: string;
+}
+
 /** K47 客户总览 */
 export interface CustomerStatsDto {
   dealCount: number;
