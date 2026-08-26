@@ -5,7 +5,8 @@ import { z } from "zod";
 
 import type { Db } from "../../db/client.js";
 import { unprocessable } from "../../plugins/error-handler.js";
-import { assertAiReady, runBulkTaggingJob } from "../customers/service.js";export interface JobProgress {
+import { assertAiReady, runBulkTaggingJob } from "../customers/service.js";
+import { runDbBackup, type DbBackupJobResult, uploadBackupToS3 } from "./backup.js";export interface JobProgress {
   processed: number;
   total: number;
   succeeded: number;
@@ -83,6 +84,32 @@ export const JOB_TYPES: Record<string, JobTypeDef> = {
       // 全成功=succeeded；部分失败=partial；全失败=failed
       const status = result.failed === 0 ? "succeeded" : result.succeeded > 0 ? "partial" : "failed";
       ctx.finish(status, { result });
+    },
+  },
+  // 数据库备份：仅 admin（system.update）。备份到 <数据库目录>/backups/，gzip + 滚动保留 7 份；
+  // K53：配置了启用的 S3 远程存储则再上传一份（覆盖单对象 gb-crm-latest.sqlite.gz），
+  // 上传失败 → partial（本地备份不受影响）；一次性任务，进度 total=1。
+  // 日常备份由管理员在「定时任务」tab 配 cron 调度。
+  "db-backup": {
+    label: "数据库备份",
+    requiredPermission: { resource: "system", action: "update" },
+    run: async (ctx) => {
+      ctx.reportProgress({ processed: 0, total: 1, succeeded: 0, failed: 0 });
+      if (ctx.isCancelled()) {
+        ctx.finish("cancelled", {});
+        return;
+      }
+      const backup = await runDbBackup(ctx.db.$client, ctx.audit.now);
+      const remote = await uploadBackupToS3(ctx.db, backup.file, { fetchFn: ctx.fetchFn });
+      const result: DbBackupJobResult = { ...backup, remote };
+      const remoteFailed = remote !== null && !remote.ok;
+      ctx.reportProgress({
+        processed: 1,
+        total: 1,
+        succeeded: remoteFailed ? 0 : 1,
+        failed: remoteFailed ? 1 : 0,
+      });
+      ctx.finish(remoteFailed ? "partial" : "succeeded", { result });
     },
   },
 };

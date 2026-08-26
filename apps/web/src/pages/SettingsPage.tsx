@@ -1,7 +1,7 @@
-// 系统设置页（K46/K50/K51）：tab 结构（URL query 驱动，?tab=llm|jobs）。
-// 「LLM 打标配置」（仅 admin，存储为 system_configs code='llm'）+「后台任务」（K51 运维查看/取消，全角色）。
+// 系统设置页（K46/K50/K51/K53）：tab 结构（URL query 驱动，?tab=llm|roles|storage|jobs|schedules）。
+// 「LLM 打标配置」「远程备份」「角色权限」仅 admin；「后台任务」全角色；「定时任务」仅 jobSchedules。
 // 标签词表在「业务设置」页（/business-settings，K50）。
-// 路由守卫：仅登录即可访问；LLM tab 按 can(system, read) 显隐；侧栏入口同样按角色显隐。
+// 路由守卫：仅登录即可访问；admin tab 按 can(system, read) 显隐；侧栏入口同样按角色显隐。
 import { useEffect, useState, type FormEvent } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { can } from "@gb-crm/shared";
@@ -13,6 +13,7 @@ import { useAuth } from "../auth/AuthProvider";
 import { JobsTab } from "../components/JobsTab";
 import { RolesTab } from "../components/RolesTab";
 import { SchedulesTab } from "../components/SchedulesTab";
+import { StorageTab } from "../components/StorageTab";
 import { useToast } from "../components/Toast";
 
 export function SettingsPage() {
@@ -22,11 +23,11 @@ export function SettingsPage() {
   const queryClient = useQueryClient();
   const [searchParams, setSearchParams] = useSearchParams();
   const requestedTab = searchParams.get("tab");
-  // LLM 与「角色权限」tab 仅 admin；后台任务全角色；「定时任务」仅 admin（jobSchedules）。非 admin 固定 jobs。
+  // LLM 与「角色权限」「远程备份」tab 仅 admin；后台任务全角色；「定时任务」仅 admin（jobSchedules）。非 admin 固定 jobs。
   const canSystem = can(role, "system", "read");
   const canSchedules = can(role, "jobSchedules", "list");
   const tabKeys: readonly string[] = canSystem
-    ? ["llm", "roles", "jobs", ...(canSchedules ? ["schedules"] : [])]
+    ? ["llm", "roles", "storage", "jobs", ...(canSchedules ? ["schedules"] : [])]
     : ["jobs"];
   const tab = tabKeys.includes(requestedTab ?? "") ? (requestedTab ?? "") : tabKeys[0]!;
 
@@ -95,6 +96,9 @@ export function SettingsPage() {
             <button type="button" role="tab" aria-selected={tab === "roles"} onClick={() => setSearchParams({ tab: "roles" })}>
               角色权限
             </button>
+            <button type="button" role="tab" aria-selected={tab === "storage"} onClick={() => setSearchParams({ tab: "storage" })}>
+              远程备份
+            </button>
           </>
         )}
         <button type="button" role="tab" aria-selected={tab === "jobs"} onClick={() => setSearchParams({ tab: "jobs" })}>
@@ -113,6 +117,8 @@ export function SettingsPage() {
         <SchedulesTab />
       ) : tab === "roles" ? (
         <RolesTab />
+      ) : tab === "storage" ? (
+        <StorageTab />
       ) : (
         <div className="settings-section">
           <div className="card">

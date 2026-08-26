@@ -38,12 +38,14 @@ export interface BuildAppOptions extends FastifyServerOptions {
   hashFn?: UsersRoutesOptions["hashFn"];
   /** K46：LLM 客户端 fetch 注入（AI 打标测试 mock）；默认全局 fetch */
   llmFetch?: typeof fetch;
+  /** K53：S3 客户端 fetch 注入（远程备份/连通性测试 mock）；默认全局 fetch */
+  s3Fetch?: typeof fetch;
   /** 生产静态资源目录覆盖（默认 env.WEB_DIST ?? 仓库布局推导）；仅 NODE_ENV=production 生效 */
   webDist?: string;
 }
 
 export function buildApp(options: BuildAppOptions): FastifyInstance {
-  const { env, db, now, rateLimitMax, gcProbability, hashFn, llmFetch, webDist, ...serverOptions } =
+  const { env, db, now, rateLimitMax, gcProbability, hashFn, llmFetch, s3Fetch, webDist, ...serverOptions } =
     options;
   const clock = now ?? (() => Date.now());
 
@@ -79,7 +81,7 @@ export function buildApp(options: BuildAppOptions): FastifyInstance {
     dealsRoutes(instance, { db, now: clock });
     deliveriesRoutes(instance, { db, now: clock });
     tagsRoutes(instance, { db, now: clock });
-    systemRoutes(instance, { db, now: clock });
+    systemRoutes(instance, { db, now: clock, s3Fetch });
     jobsRoutes(instance, { db, now: clock });
     jobSchedulesRoutes(instance, { db, now: clock });
     agentRoutes(instance, { db });
