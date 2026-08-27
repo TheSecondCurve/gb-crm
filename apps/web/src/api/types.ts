@@ -74,6 +74,7 @@ export interface S3ConfigDto {
   accessKeyId: string | null;
   secretKeySet: boolean;
   secretKeyMasked: string | null;
+  keep: number;
 }
 
 /** K50 批量生成标签结果（逐客户串行，LLM 失败跳过计数） */

@@ -1,17 +1,20 @@
 # 远程备份配置指南（Cloudflare R2）
 
-> 适用对象：系统管理员。目标：给 gb-crm 配一个 S3 兼容的远程对象存储，让每日数据库备份自动上传一份到云端（覆盖式单对象，不占多份空间）。以 **Cloudflare R2** 为例——免费额度充足、无流量费；其它 S3 兼容服务商见文末对照表。
+> 适用对象：系统管理员。目标：给 gb-crm 配一个 S3 兼容的远程对象存储，让每日数据库备份自动上传到云端（滚动保留 N 份）。以 **Cloudflare R2** 为例——免费额度充足、无流量费；其它 S3 兼容服务商见文末对照表。
 
 ## 0. 功能是怎么工作的
 
 - 备份 = 后台任务 `db-backup`（可手动触发，也可由「定时任务」按 cron 调度）。
-- 每次备份先落**本地** `<数据库目录>/backups/gb-crm-<时间戳>.sqlite.gz`（滚动保留 7 份），然后若「远程备份」配置为启用且完整，自动上传一份到远端固定对象：
+- 每次备份先落**本地** `<数据库目录>/backups/gb-crm-<时间戳>.sqlite.gz`（滚动保留 7 份），然后若「远程备份」配置为启用且完整，自动上传到远端：
 
   ```
-  {路径前缀}gb-crm-latest.sqlite.gz     ← 远端永远只有这一份，每次覆盖
+  {路径前缀}gb-crm-<时间戳>.sqlite.gz   ← 时间戳版本，滚动保留 N 份（可配，默认 7）
+  {路径前缀}gb-crm-latest.sqlite.gz     ← 最新指针，每次覆盖，方便一键恢复
   ```
 
-- 上传失败时任务标记为「部分失败」，错误原因可在后台任务详情里看到，**不影响**已成功的本地备份。
+  远端与本地同为时间戳命名、字典序即时间序，超出 N 份自动删除最旧（仅删匹配 `gb-crm-YYYYMMDD-HHmmss-SSS.sqlite.gz` 的对象，`latest` 永不计入滚动）。
+
+- 上传失败时任务标记为「部分失败」，错误原因可在后台任务详情里看到，**不影响**已成功的本地备份；远端修剪（LIST/DELETE）失败仅记录 `pruneError`，上传成功仍视为成功。
 - 未启用 / 配置残缺时静默跳过上传，行为与从前一致。
 
 ## 1. 申请 Cloudflare 并开通 R2
@@ -60,6 +63,7 @@ R2 不用账号密码访问，而是生成一对 S3 API Key：
 | 路径前缀 | 可空；想归整就填 `backups/`（结尾斜杠会自动归一化，最终对象为 `backups/gb-crm-latest.sqlite.gz`） |
 | AccessKeyId | 第 3 步的 Access Key ID |
 | SecretAccessKey | 第 3 步的 Secret Access Key |
+| 远端保留份数（N） | 1~30，默认 7。远端时间戳版本滚动保留 N 份，超出删最旧；`latest` 始终覆盖保留 |
 
 然后：
 
@@ -81,13 +85,19 @@ R2 不用账号密码访问，而是生成一对 S3 API Key：
 
 ## 6. 怎么恢复数据
 
-远端只有一个最新备份文件，恢复思路是「下载 → 解压 → 替换库文件」：
+远端有 `N` 份时间戳版本 + 1 个最新指针，恢复思路是「下载 → 解压 → 替换库文件」：
 
 ```bash
-# 1) 下载（任选一种 S3 工具）
+# 1) 下载（任选一种 S3 工具）——最新指针
 aws s3 cp s3://gb-crm-backup/backups/gb-crm-latest.sqlite.gz ./ \
   --endpoint-url https://<ACCOUNT_ID>.r2.cloudflarestorage.com \
   --region auto
+
+# 1b) 或按时间挑选历史版本（列出桶内对象）
+aws s3 ls s3://gb-crm-backup/backups/ --endpoint-url https://<ACCOUNT_ID>.r2.cloudflarestorage.com --region auto
+# 形如 backups/gb-crm-20260827-033000-123.sqlite.gz
+aws s3 cp s3://gb-crm-backup/backups/gb-crm-20260827-033000-123.sqlite.gz ./ \
+  --endpoint-url https://<ACCOUNT_ID>.r2.cloudflarestorage.com --region auto
 
 # 2) 解压成标准 SQLite 文件
 gunzip gb-crm-latest.sqlite.gz        # 得到 gb-crm-latest.sqlite
@@ -106,7 +116,8 @@ sqlite3 gb-crm-latest.sqlite ".tables"
 - API Token 权限已限定为**仅该桶读写**；若怀疑泄露，去 Cloudflare 同一页面 **Revoke** 后重新生成，再更新配置页即可。
 - SecretAccessKey 明文存于本机 SQLite（库文件 chmod 600 + 仅内网），接口永远只回掩码，日志不含明文。
 - 远端对象含全量客户数据：Cloudflare 账号本身务必开启强密码 / 两步验证。
-- 想清空远端：删掉桶里的 `{前缀}gb-crm-latest.sqlite.gz` 即可，下次备份会重新生成。
+- 想清空远端：删掉桶里 `{前缀}gb-crm-latest.sqlite.gz` + `{前缀}gb-crm-*.sqlite.gz` 即可，下次备份会重新生成。
+- 远端滚动依赖 `ListObjectsV2 + DeleteObject` 权限（与上传同为读写权限）；修剪失败不影响已上传的备份，仅在任务 `result.remote.pruneError` 中记录。
 
 ## 附：其它 S3 兼容服务商字段对照
 
