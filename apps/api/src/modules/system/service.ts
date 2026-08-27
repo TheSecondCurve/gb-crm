@@ -148,6 +148,7 @@ export function getS3ConfigResult(db: Db): S3ConfigGet {
     accessKeyId: cfg?.accessKeyId ?? null,
     secretKeySet: secret !== null,
     secretKeyMasked: maskSecret(secret),
+    keep: cfg?.keep ?? 7,
   };
 }
 
@@ -173,6 +174,7 @@ export function patchS3Config(
       patch.secretAccessKey !== undefined
         ? patch.secretAccessKey
         : (current?.secretAccessKey ?? null),
+    keep: patch.keep !== undefined ? patch.keep : (current?.keep ?? 7),
     updatedAt: ctx.now,
     updatedBy: ctx.userId,
   };

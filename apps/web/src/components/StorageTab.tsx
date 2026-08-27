@@ -1,5 +1,5 @@
 // 远程备份 tab（K53，系统设置页）：S3 兼容对象存储配置（system_configs code='s3'，仅 admin）。
-// 保存并启用后，「数据库备份」任务自动上传一份到远端固定对象 gb-crm-latest.sqlite.gz（覆盖式）。
+// 保存并启用后，「数据库备份」任务自动上传时间戳版本（滚动保留 N 份）+ 覆盖最新 gb-crm-latest.sqlite.gz。
 // secretAccessKey 只回掩码：输入留空 = 不改。
 import { useEffect, useState, type FormEvent } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -16,6 +16,7 @@ interface StorageForm {
   prefix: string;
   accessKeyId: string;
   secretAccessKey: string;
+  keep: string;
 }
 
 const emptyForm: StorageForm = {
@@ -26,6 +27,7 @@ const emptyForm: StorageForm = {
   prefix: "",
   accessKeyId: "",
   secretAccessKey: "",
+  keep: "7",
 };
 
 function formFromDto(cfg: S3ConfigDto): StorageForm {
@@ -37,6 +39,7 @@ function formFromDto(cfg: S3ConfigDto): StorageForm {
     prefix: cfg.prefix ?? "",
     accessKeyId: cfg.accessKeyId ?? "",
     secretAccessKey: "",
+    keep: String(cfg.keep ?? 7),
   };
 }
 
@@ -71,6 +74,8 @@ export function StorageTab() {
     if (form.accessKeyId.trim() !== (config?.accessKeyId ?? ""))
       body.accessKeyId = form.accessKeyId.trim() || null;
     if (form.secretAccessKey.trim() !== "") body.secretAccessKey = form.secretAccessKey.trim();
+    const keepNum = Number.parseInt(form.keep, 10);
+    if (!Number.isNaN(keepNum) && keepNum !== (config?.keep ?? 7)) body.keep = keepNum;
     return body;
   };
 
@@ -109,9 +114,10 @@ export function StorageTab() {
         </div>
         <div className="card-body">
           <p style={{ marginTop: 0, fontSize: 13 }}>
-            启用后每次「数据库备份」（含定时任务）都会把备份包上传一份到远端固定对象
-            <code>{` {前缀}gb-crm-latest.sqlite.gz `}</code>
-            （覆盖式，远端只保留最新一份）。
+            启用后每次「数据库备份」（含定时任务）都会把备份包上传到远端：时间戳版本
+            <code>{` {前缀}gb-crm-YYYYMMDD-HHmmss-SSS.sqlite.gz `}</code>
+            （滚动保留 <strong>{form.keep}</strong> 份）+ 覆盖
+            <code>{` {前缀}gb-crm-latest.sqlite.gz `}</code>（最新指针，方便一键恢复）。
           </p>
           <form className="settings-form" onSubmit={(e) => void saveConfig(e)}>
             <label className="inline-field field-span">
@@ -120,7 +126,7 @@ export function StorageTab() {
                 checked={form.enabled}
                 onChange={(e) => setForm((f) => ({ ...f, enabled: e.target.checked }))}
               />
-              启用远程上传（每次数据库备份后自动上传，覆盖远端同一份）
+              启用远程上传（每次数据库备份后自动上传时间戳版本 + 覆盖 latest）
             </label>
             <label className="field">
               Endpoint
@@ -176,6 +182,17 @@ export function StorageTab() {
                 }
                 value={form.secretAccessKey}
                 onChange={(e) => setForm((f) => ({ ...f, secretAccessKey: e.target.value }))}
+              />
+            </label>
+            <label className="field">
+              远端保留份数（N）
+              <input
+                type="number"
+                min={1}
+                max={30}
+                placeholder="1~30，默认 7"
+                value={form.keep}
+                onChange={(e) => setForm((f) => ({ ...f, keep: e.target.value }))}
               />
             </label>
             <div className="modal-actions field-span">

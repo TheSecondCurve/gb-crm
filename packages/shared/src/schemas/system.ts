@@ -28,9 +28,9 @@ export type AiConfigPatch = z.infer<typeof aiConfigPatchSchema>;
 
 // ── S3 兼容对象存储（远程备份，K53）──
 // 存储为 system_configs code='s3'（value = { enabled, endpoint, region, bucket, prefix,
-// accessKeyId, secretAccessKey }）。GET 掩码同 LLM 配置：secretAccessKey 永不全量返回。
+// accessKeyId, secretAccessKey, keep }）。GET 掩码同 LLM 配置：secretAccessKey 永不全量返回。
 // PATCH：secretAccessKey 空/缺席保留旧值（placeholder 语义）；enabled=true 时四要素必须齐
-// （endpoint/bucket/accessKeyId/secretAccessKey，服务端完整性校验 422）。
+// （endpoint/bucket/accessKeyId/secretAccessKey，服务端完整性校验 422）；keep 为远端滚动保留份数。
 
 export const s3ConfigGetSchema = z.object({
   enabled: z.boolean(),
@@ -42,6 +42,8 @@ export const s3ConfigGetSchema = z.object({
   accessKeyId: z.string().nullable(),
   secretKeySet: z.boolean(),
   secretKeyMasked: z.string().nullable(),
+  /** 远端滚动保留份数（1~30，默认 7） */
+  keep: z.number().int().min(1).max(30),
 });
 export type S3ConfigGet = z.infer<typeof s3ConfigGetSchema>;
 
@@ -69,6 +71,8 @@ export const s3ConfigPatchSchema = z.object({
   accessKeyId: z.string().trim().max(200).nullable().optional(),
   /** 传非空串才更新；空串/缺席保留旧值（placeholder 语义，同 LLM apiKey） */
   secretAccessKey: z.string().trim().min(1).max(500).optional(),
+  /** 远端滚动保留份数（1~30）；缺席保留旧值，未配置时默认 7 */
+  keep: z.number().int().min(1).max(30).optional(),
 });
 export type S3ConfigPatch = z.infer<typeof s3ConfigPatchSchema>;
 

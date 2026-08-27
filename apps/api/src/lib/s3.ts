@@ -1,7 +1,7 @@
 // S3 兼容对象存储最小客户端（K53，零新增依赖：node:crypto + 原生 fetch）。
 // SigV4 签名（AWS Signature Version 4）+ path-style 寻址（endpoint[/base]/bucket/key），
 // 兼容 AWS S3 / MinIO / 阿里云 OSS / 腾讯云 COS / Cloudflare R2 等。
-// 只实现备份所需的最小面：PutObject / DeleteObject / 连通性探针。
+// 只实现备份所需的最小面：PutObject / DeleteObject / ListObjectsV2 / 连通性探针。
 import { createHash, createHmac } from "node:crypto";
 
 export interface S3ClientConfig {
@@ -123,11 +123,11 @@ function amzDateNow(): string {
 
 async function s3Request(
   cfg: S3ClientConfig,
-  method: "PUT" | "DELETE",
+  method: "PUT" | "DELETE" | "GET",
   key: string,
   body: Buffer | undefined,
-  opts: S3RequestOptions & { contentType?: string },
-): Promise<void> {
+  opts: S3RequestOptions & { contentType?: string; query?: string },
+): Promise<Response> {
   const fetchFn = opts.fetchFn ?? fetch;
   // endpoint 允许带 base path（如网关型部署）：/base/bucket/key
   let url: URL;
@@ -136,14 +136,17 @@ async function s3Request(
   } catch {
     throw new S3Error("Endpoint 不是合法的 http(s) 地址");
   }
-  url.pathname = `${url.pathname.replace(/\/+$/, "")}${encodeS3KeyPath(cfg.bucket, key)}`;
+  const keyPath = key ? encodeS3KeyPath(cfg.bucket, key) : `/${awsUriEscape(cfg.bucket)}`;
+  url.pathname = `${url.pathname.replace(/\/+$/, "")}${keyPath}`;
+  if (opts.query) url.search = opts.query.startsWith("?") ? opts.query : `?${opts.query}`;
 
   const payloadHash = body ? sha256Hex(body) : EMPTY_PAYLOAD_SHA256;
   const amzDate = amzDateNow();
   const { authorization } = signS3Request({
     method,
     host: url.host,
-    path: encodeS3KeyPath(cfg.bucket, key),
+    path: keyPath,
+    query: opts.query?.replace(/^\?/, "") ?? "",
     payloadHash,
     amzDate,
     accessKeyId: cfg.accessKeyId,
@@ -171,6 +174,7 @@ async function s3Request(
     const text = await res.text().catch(() => "");
     throw new S3Error(`对象存储返回 ${res.status}：${(text || res.statusText).slice(0, 200)}`);
   }
+  return res;
 }
 
 export async function s3PutObject(
@@ -188,6 +192,62 @@ export async function s3DeleteObject(
   opts: S3RequestOptions = {},
 ): Promise<void> {
   await s3Request(cfg, "DELETE", key, undefined, opts);
+}
+
+function buildListQuery(prefix: string, continuationToken?: string): string {
+  const params: Record<string, string> = {
+    "list-type": "2",
+    prefix,
+    "max-keys": "1000",
+  };
+  if (continuationToken) params["continuation-token"] = continuationToken;
+  const sorted = Object.keys(params).sort();
+  return sorted.map((k) => `${awsUriEscape(k)}=${awsUriEscape(params[k]!)}`).join("&");
+}
+
+function parseListXml(xml: string): { keys: string[]; isTruncated: boolean; nextToken: string | null } {
+  const keys: string[] = [];
+  const keyRe = /<Key>(.*?)<\/Key>/g;
+  let m: RegExpExecArray | null;
+  while ((m = keyRe.exec(xml)) !== null) {
+    // S3 返回的 Key 未经 encoding-type 时为原样；若有编码则需 decode
+    try {
+      keys.push(decodeURIComponent(m[1]!));
+    } catch {
+      keys.push(m[1]!);
+    }
+  }
+  const isTruncated = /<IsTruncated>true<\/IsTruncated>/.test(xml);
+  const tokenMatch = xml.match(/<NextContinuationToken>(.*?)<\/NextContinuationToken>/);
+  const nextToken = tokenMatch ? tokenMatch[1]! : null;
+  return { keys, isTruncated, nextToken: nextToken ? decodeURIComponent(nextToken) : null };
+}
+
+/**
+ * ListObjectsV2（path-style）：列出桶内指定前缀的对象 key（分页聚合，单次最多 1000）。
+ * 用于远端备份的滚动清理：列出 {prefix} 下的所有备份对象。
+ */
+export async function s3ListObjects(
+  cfg: S3ClientConfig,
+  prefix: string,
+  opts: S3RequestOptions = {},
+): Promise<string[]> {
+  const fetchFn = opts.fetchFn ?? fetch;
+  const allKeys: string[] = [];
+  let continuation: string | undefined;
+  do {
+    const query = buildListQuery(prefix, continuation);
+    const res = await s3Request(cfg, "GET", "", undefined, {
+      fetchFn,
+      timeoutMs: opts.timeoutMs ?? 10_000,
+      query,
+    });
+    const xml = await res.text();
+    const { keys, isTruncated, nextToken } = parseListXml(xml);
+    allKeys.push(...keys);
+    continuation = isTruncated && nextToken ? nextToken : undefined;
+  } while (continuation);
+  return allKeys;
 }
 
 /**

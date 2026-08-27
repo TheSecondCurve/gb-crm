@@ -141,9 +141,13 @@ export function upsertPageAccessConfig(
 }
 
 // ---- S3 兼容对象存储（code='s3'，K53）编解码 ----
-// value = { enabled, endpoint, region, bucket, prefix, accessKeyId, secretAccessKey }；
+// value = { enabled, endpoint, region, bucket, prefix, accessKeyId, secretAccessKey, keep }；
 // secretAccessKey 明文存库（同 LLM apiKey，库文件 chmod 600 + 内网），API 只回掩码。
-// prefix 归一化为 "" 或 "xxx/"（无开头斜杠）。
+// prefix 归一化为 "" 或 "xxx/"（无开头斜杠）；keep 为远端滚动保留份数（1~30，默认 7）。
+
+export const DEFAULT_S3_KEEP = 7;
+export const MIN_S3_KEEP = 1;
+export const MAX_S3_KEEP = 30;
 
 export interface S3ConfigValue {
   enabled: boolean;
@@ -154,6 +158,8 @@ export interface S3ConfigValue {
   prefix: string | null;
   accessKeyId: string | null;
   secretAccessKey: string | null;
+  /** 远端滚动保留份数（1~30，默认 7） */
+  keep: number;
 }
 
 function parseS3Value(json: string): S3ConfigValue | undefined {
@@ -165,6 +171,11 @@ function parseS3Value(json: string): S3ConfigValue | undefined {
   }
   if (typeof parsed !== "object" || parsed === null) return undefined;
   const obj = parsed as Record<string, unknown>;
+  const rawKeep = obj.keep;
+  let keep = DEFAULT_S3_KEEP;
+  if (typeof rawKeep === "number" && Number.isInteger(rawKeep) && rawKeep >= MIN_S3_KEEP && rawKeep <= MAX_S3_KEEP) {
+    keep = rawKeep;
+  }
   return {
     enabled: obj.enabled === true,
     endpoint: strOrNull(obj.endpoint),
@@ -173,6 +184,7 @@ function parseS3Value(json: string): S3ConfigValue | undefined {
     prefix: strOrNull(obj.prefix),
     accessKeyId: strOrNull(obj.accessKeyId),
     secretAccessKey: strOrNull(obj.secretAccessKey),
+    keep,
   };
 }
 
@@ -197,6 +209,7 @@ export function upsertS3Config(
       prefix: values.prefix,
       accessKeyId: values.accessKeyId,
       secretAccessKey: values.secretAccessKey,
+      keep: values.keep,
     }),
     values.updatedAt,
     values.updatedBy,
