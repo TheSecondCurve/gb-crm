@@ -67,8 +67,13 @@ interface RemoteDto {
   ok: boolean;
   bucket: string;
   key: string;
+  timestampedKey?: string;
   bytes?: number;
   error?: string;
+  pruned?: string[];
+  kept?: number;
+  keep?: number;
+  pruneError?: string;
 }
 
 interface BackupResultDto {
@@ -164,11 +169,20 @@ describe("数据库备份任务", () => {
 });
 
 describe("数据库备份任务 · 远程上传（K53）", () => {
-  /** 记录 PUT 请求的 S3 mock */
+  /** 记录 S3 请求的 mock：PUT 200 / LIST 返回空 XML */
   function s3Mock(status: number) {
     const calls: { url: URL; init: RequestInit }[] = [];
     const fetchFn = vi.fn(async (url: unknown, init?: unknown) => {
       calls.push({ url: url as URL, init: (init ?? {}) as RequestInit });
+      const method = (init as RequestInit)?.method ?? "GET";
+      const urlStr = String(url);
+      // LIST（GET ?list-type=2）返回空桶 XML
+      if (method === "GET" && urlStr.includes("list-type=2")) {
+        return new Response(
+          `<?xml version="1.0"?><ListBucketResult><IsTruncated>false</IsTruncated></ListBucketResult>`,
+          { status: 200, headers: { "Content-Type": "application/xml" } },
+        );
+      }
       return new Response(null, { status });
     }) as unknown as typeof fetch;
     return { calls, fetchFn };
@@ -181,24 +195,39 @@ describe("数据库备份任务 · 远程上传（K53）", () => {
     const dto = await runBackupJob(admin, { fetchFn });
 
     expect(dto.status).toBe("succeeded");
-    expect(dto.result!.remote).toEqual({
+    expect(dto.result!.remote).toMatchObject({
       ok: true,
       bucket: "gb-crm-backup",
       key: `daily/${REMOTE_BACKUP_KEY}`,
       bytes: dto.result!.bytes,
+      keep: 7,
     });
+    expect(dto.result!.remote!.timestampedKey).toMatch(/^daily\/gb-crm-\d{8}-\d{6}-\d{3}\.sqlite\.gz$/);
+    expect(dto.result!.remote!.pruned).toEqual([]);
+    expect(dto.result!.remote!.kept).toBe(1);
 
-    // 只有一次 PUT，URL 为固定覆盖对象，body 与本地备份逐字节一致
-    expect(calls.length).toBe(1);
-    expect(calls[0]!.init.method).toBe("PUT");
-    expect(String(calls[0]!.url)).toBe(
-      "https://s3.example.com/gb-crm-backup/daily/gb-crm-latest.sqlite.gz",
-    );
-    expect((calls[0]!.init.headers as Record<string, string>).Authorization).toMatch(
+    // 两次 PUT（时间戳版本 + latest）+ 一次 LIST 滚动检查
+    expect(calls.length).toBe(3);
+    const puts = calls.filter((c) => c.init.method === "PUT");
+    const lists = calls.filter((c) => c.init.method === "GET");
+    expect(puts.length).toBe(2);
+    expect(lists.length).toBe(1);
+    // latest 覆盖对象
+    const latest = puts.find((c) => String(c.url).endsWith(`daily/${REMOTE_BACKUP_KEY}`));
+    expect(latest).toBeTruthy();
+    expect((latest!.init.headers as Record<string, string>).Authorization).toMatch(
       /^AWS4-HMAC-SHA256 Credential=AKIDEXAMPLE12345678\//,
     );
-    expect(calls[0]!.init.body).toBeInstanceOf(Buffer);
-    expect((calls[0]!.init.body as Buffer).equals(fs.readFileSync(dto.result!.file))).toBe(true);
+    // 时间戳版本
+    const tsPut = puts.find((c) => /gb-crm-\d{8}-\d{6}-\d{3}\.sqlite\.gz$/.test(String(c.url)) && !String(c.url).endsWith(REMOTE_BACKUP_KEY));
+    expect(tsPut).toBeTruthy();
+    expect(tsPut!.init.body).toBeInstanceOf(Buffer);
+    expect((tsPut!.init.body as Buffer).equals(fs.readFileSync(dto.result!.file))).toBe(true);
+    expect(latest!.init.body).toBeInstanceOf(Buffer);
+    expect((latest!.init.body as Buffer).equals(fs.readFileSync(dto.result!.file))).toBe(true);
+    // LIST 需带 prefix
+    expect(String(lists[0]!.url)).toContain("list-type=2");
+    expect(String(lists[0]!.url)).toContain("prefix=daily%2F");
   });
 
   it("上传失败 → 任务 partial + result.remote.error；本地备份不受影响", async () => {
@@ -246,5 +275,95 @@ describe("数据库备份任务 · 远程上传（K53）", () => {
     expect(dto.status).toBe("partial");
     expect(dto.result!.remote!.ok).toBe(false);
     expect(dto.result!.remote!.error).toContain("ECONNREFUSED");
+  });
+
+  it("远端滚动：keep=N，超出 N 份删除最旧时间戳版本（latest 始终保留）", async () => {
+    // 模拟桶内已有 3 份时间戳版本，配置 keep=3，新增第 4 份时应删最旧 1 份
+    const initialKeys = [
+      "daily/gb-crm-20200101-000000-000.sqlite.gz",
+      "daily/gb-crm-20200102-000000-000.sqlite.gz",
+      "daily/gb-crm-20200103-000000-000.sqlite.gz",
+    ];
+    const deleted: string[] = [];
+    let currentKeys = [...initialKeys];
+    const fetchFn = vi.fn(async (url: unknown, init?: unknown) => {
+      const method = (init as RequestInit)?.method ?? "GET";
+      const urlStr = String(url);
+      if (method === "GET" && urlStr.includes("list-type=2")) {
+        const keysXml = currentKeys.map((k) => `<Contents><Key>${k}</Key></Contents>`).join("");
+        return new Response(
+          `<?xml version="1.0"?><ListBucketResult>${keysXml}<IsTruncated>false</IsTruncated></ListBucketResult>`,
+          { status: 200, headers: { "Content-Type": "application/xml" } },
+        );
+      }
+      if (method === "PUT") {
+        const parsed = new URL(urlStr);
+        // path = /bucket/key → 取 key 部分
+        const key = decodeURIComponent(parsed.pathname.replace(/^\/[^/]+\//, ""));
+        if (/gb-crm-\d{8}-\d{6}-\d{3}\.sqlite\.gz$/.test(key)) {
+          if (!currentKeys.includes(key)) currentKeys.push(key);
+        }
+        // latest 不计入滚动集合
+        return new Response(null, { status: 200 });
+      }
+      if (method === "DELETE") {
+        const parsed = new URL(urlStr);
+        const key = decodeURIComponent(parsed.pathname.replace(/^\/[^/]+\//, ""));
+        deleted.push(key);
+        currentKeys = currentKeys.filter((k) => k !== key);
+        return new Response(null, { status: 200 });
+      }
+      return new Response(null, { status: 200 });
+    }) as unknown as typeof fetch;
+
+    seedS3Config({ keep: 3 });
+    clock.t = new Date("2020-01-04T00:00:00.000Z").getTime();
+    const admin = await loginAsRole("admin");
+    const dto = await runBackupJob(admin, { fetchFn });
+
+    expect(dto.status).toBe("succeeded");
+    const remote = dto.result!.remote as unknown as Record<string, unknown>;
+    expect(remote.keep).toBe(3);
+    expect(remote.kept).toBe(3);
+    // 应删除最旧的那一份
+    expect(deleted).toContain("daily/gb-crm-20200101-000000-000.sqlite.gz");
+    expect(deleted.length).toBe(1);
+    // 桶内最终应保留 3 份时间戳版本（含新增）
+    expect(currentKeys.sort()).toHaveLength(3);
+    expect(currentKeys).not.toContain("daily/gb-crm-20200101-000000-000.sqlite.gz");
+    expect(currentKeys).toContain("daily/gb-crm-20200102-000000-000.sqlite.gz");
+    expect(currentKeys).toContain("daily/gb-crm-20200103-000000-000.sqlite.gz");
+    // pruned 返回被删的 key（不含 prefix？实现返回全 key）
+    expect((remote.pruned as string[])).toContain("daily/gb-crm-20200101-000000-000.sqlite.gz");
+  });
+
+  it("远端 keep 可配：PATCH keep 1~30 校验，非法 422", async () => {
+    const admin = await loginAsRole("admin");
+    // 非法值
+    for (const bad of [0, 31, 1.5, "abc"]) {
+      const res = await app.inject({
+        method: "PATCH",
+        url: "/api/v1/system/s3-config",
+        headers: { cookie: admin },
+        payload: { enabled: false, keep: bad },
+      });
+      expect(res.statusCode).toBe(422);
+    }
+    // 合法值
+    const ok = await app.inject({
+      method: "PATCH",
+      url: "/api/v1/system/s3-config",
+      headers: { cookie: admin },
+      payload: { enabled: false, keep: 1 },
+    });
+    expect(ok.statusCode).toBe(200);
+    expect(ok.json().data.keep).toBe(1);
+    const ok2 = await app.inject({
+      method: "PATCH",
+      url: "/api/v1/system/s3-config",
+      headers: { cookie: admin },
+      payload: { keep: 30 },
+    });
+    expect(ok2.json().data.keep).toBe(30);
   });
 });

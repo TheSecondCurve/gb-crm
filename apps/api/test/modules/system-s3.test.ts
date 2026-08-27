@@ -75,6 +75,7 @@ describe("GET/PATCH /api/v1/system/s3-config", () => {
       accessKeyId: null,
       secretKeySet: false,
       secretKeyMasked: null,
+      keep: 7,
     });
   });
 
@@ -87,11 +88,13 @@ describe("GET/PATCH /api/v1/system/s3-config", () => {
       secretAccessKey: undefined,
       secretKeySet: true,
       secretKeyMasked: "secr…5678",
+      keep: 7,
     });
     expect(res.body).not.toContain(FULL_CONFIG.secretAccessKey);
 
     const again = await get("/api/v1/system/s3-config", cookie);
     expect(again.json().data.enabled).toBe(true);
+    expect(again.json().data.keep).toBe(7);
     expect(again.body).not.toContain(FULL_CONFIG.secretAccessKey);
   });
 
