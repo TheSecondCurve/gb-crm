@@ -20,6 +20,7 @@ import { DeliveryGanttPage } from "./pages/DeliveryGanttPage";
 import { DeliveryMatrixPage } from "./pages/DeliveryMatrixPage";
 import { DeliveryCirclePage } from "./pages/DeliveryCirclePage";
 import { DeliveryTypesPage } from "./pages/DeliveryTypesPage";
+import { MaterialsPage } from "./pages/MaterialsPage";
 
 /** 未登录访问受保护页 → /login；等待 /auth/me 时显示占位 */
 function RequireAuth() {
@@ -152,6 +153,14 @@ export default function App() {
           element={
             <PageGuard pageKey="delivery-matrix">
               <DeliveryMatrixPage />
+            </PageGuard>
+          }
+        />
+        <Route
+          path="/materials"
+          element={
+            <PageGuard pageKey="materials">
+              <MaterialsPage />
             </PageGuard>
           }
         />

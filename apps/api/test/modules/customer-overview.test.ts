@@ -131,4 +131,62 @@ describe("GET /api/v1/customers/:id/overview", () => {
       (await app.inject({ method: "GET", url: `/api/v1/customers/${cid}/overview` })).statusCode,
     ).toBe(401);
   });
+
+  // K54：总览携带该客户的交付资料（live only，updatedAt desc，列表版 DTO 不含 content）
+  it("materials：M2M 关联的 live 资料 + stats.materialCount；软删资料不出现", async () => {
+    const cookie = await loginAsRole("admin");
+    const cid = await createCustomerAsAdmin(cookie, "资料客户");
+    const otherCid = await createCustomerAsAdmin(cookie, "无关客户");
+
+    const m1 = (
+      await post("/api/v1/materials", cookie, {
+        kind: "text",
+        title: "旧资料",
+        content: "第一次咨询纪要",
+        customerIds: [cid],
+      })
+    ).json().data;
+    clock.t += 1000;
+    const m2 = (
+      await post("/api/v1/materials", cookie, {
+        kind: "audio",
+        title: "新资料",
+        url: "https://example.com/a.mp3",
+        customerIds: [cid],
+      })
+    ).json().data;
+    // 软删资料：不应出现
+    const m3 = (
+      await post("/api/v1/materials", cookie, {
+        kind: "text",
+        title: "将删资料",
+        content: "删掉我",
+        customerIds: [cid],
+      })
+    ).json().data;
+    await app.inject({
+      method: "DELETE",
+      url: `/api/v1/materials/${m3.id}`,
+      headers: { cookie },
+    });
+    // 不关联该客户的资料：不应出现
+    await post("/api/v1/materials", cookie, {
+      kind: "text",
+      title: "别人的资料",
+      content: "无关",
+      customerIds: [otherCid],
+    });
+
+    const res = await get(`/api/v1/customers/${cid}/overview`, cookie);
+    expect(res.statusCode).toBe(200);
+    const data = res.json().data;
+
+    expect(data.stats.materialCount).toBe(2);
+    // updatedAt desc：新资料在前
+    expect(data.materials.map((m: { id: number }) => m.id)).toEqual([m2.id, m1.id]);
+    // 列表版 DTO：无 content 键，有 contentLength/excerpt
+    expect("content" in data.materials[0]).toBe(false);
+    expect(data.materials[1].contentLength).toBe(7);
+    expect(data.materials[1].excerpt).toBe("第一次咨询纪要");
+  });
 });

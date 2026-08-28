@@ -113,3 +113,7 @@ export type DeliveryTypeStatus = z.infer<typeof deliveryTypeStatusSchema>;
 /** 标签分类（K45：身份 / 阶段 / 兴趣 / 其它） */
 export const tagScopeSchema = z.enum(["identity", "stage", "interest", "other"]);
 export type TagScope = z.infer<typeof tagScopeSchema>;
+
+/** 资料类型（K54：录音文字稿 / 文本资料全文入库；音视频/链接只存 url + 说明） */
+export const materialKindSchema = z.enum(["transcript", "text", "audio", "video", "link"]);
+export type MaterialKind = z.infer<typeof materialKindSchema>;

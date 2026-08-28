@@ -514,3 +514,47 @@ export const deliveryTasks = sqliteTable(
     index("delivery_tasks_customer_idx").on(t.customerId),
   ],
 );
+
+// K54 交付资料：delivery_id 可空（孤儿资料）；文本类全文入 content，媒体类只存 url；
+// content/url 声明在末尾（overflow 页惰性读）。FTS5 虚表 delivery_materials_fts 由触发器同步，
+// 不入 Drizzle schema（repo 用 db.$client 原生查询，同 agent 模块先例）。
+export const deliveryMaterials = sqliteTable(
+  "delivery_materials",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    deliveryId: integer("delivery_id").references(() => deliveries.id, { onDelete: "set null" }),
+    kind: text("kind").notNull(),
+    title: text("title").notNull(),
+    createdAt: integer("created_at").notNull(),
+    updatedAt: integer("updated_at").notNull(),
+    createdBy: integer("created_by").references(() => users.id, { onDelete: "set null" }),
+    updatedBy: integer("updated_by").references(() => users.id, { onDelete: "set null" }),
+    deletedAt: integer("deleted_at"),
+    url: text("url"),
+    content: text("content"),
+  },
+  (t) => [
+    check(
+      "delivery_materials_kind_check",
+      sql`"kind" IN ('transcript','text','audio','video','link')`,
+    ),
+    index("delivery_materials_delivery_idx").on(t.deliveryId),
+  ],
+);
+
+// K54 资料 × 客户 M2M（0..N；子表硬删）
+export const deliveryMaterialCustomers = sqliteTable(
+  "delivery_material_customers",
+  {
+    materialId: integer("material_id")
+      .notNull()
+      .references(() => deliveryMaterials.id, { onDelete: "cascade" }),
+    customerId: integer("customer_id")
+      .notNull()
+      .references(() => customers.id, { onDelete: "cascade" }),
+  },
+  (t) => [
+    primaryKey({ columns: [t.materialId, t.customerId] }),
+    index("delivery_material_customers_customer_idx").on(t.customerId),
+  ],
+);

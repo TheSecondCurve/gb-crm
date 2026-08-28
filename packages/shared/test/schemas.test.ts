@@ -5,6 +5,9 @@ import {
   channelPatchSchema,
   customerListQuerySchema,
   customerPatchSchema,
+  materialListQuerySchema,
+  materialPatchSchema,
+  materialWriteSchema,
   mintTokenSchema,
   pageQuerySchema,
   productListQuerySchema,
@@ -135,6 +138,58 @@ describe("patch schema（K24：键可缺席，不得绑默认值）", () => {
     expect(
       customerPatchSchema.safeParse({ ownerId: 1.5, updatedAt: 1 }).success,
     ).toBe(false);
+  });
+});
+
+describe("material schemas（K54）", () => {
+  it("文本类 content 必填；媒体类 url 必填", () => {
+    const base = { title: "咨询记录" };
+    expect(
+      materialWriteSchema.safeParse({ ...base, kind: "transcript", content: "语料全文" }).success,
+    ).toBe(true);
+    expect(materialWriteSchema.safeParse({ ...base, kind: "transcript" }).success).toBe(false);
+    expect(materialWriteSchema.safeParse({ ...base, kind: "text", content: "  " }).success).toBe(
+      false,
+    );
+    expect(
+      materialWriteSchema.safeParse({ ...base, kind: "audio", url: "https://x/a.mp3" }).success,
+    ).toBe(true);
+    expect(materialWriteSchema.safeParse({ ...base, kind: "audio" }).success).toBe(false);
+    expect(materialWriteSchema.safeParse({ ...base, kind: "link" }).success).toBe(false);
+  });
+
+  it("关联可空（孤儿允许）：deliveryId nullish、customerIds 可缺席", () => {
+    expect(
+      materialWriteSchema.safeParse({ title: "孤儿", kind: "text", content: "x" }).success,
+    ).toBe(true);
+    expect(
+      materialWriteSchema.parse({
+        title: "x",
+        kind: "video",
+        url: "https://x/v.mp4",
+        deliveryId: null,
+        customerIds: [],
+      }),
+    ).toMatchObject({ deliveryId: null, customerIds: [] });
+  });
+
+  it("patch：键可缺席不绑默认值；缺 updatedAt 失败；显式 null 清空 deliveryId", () => {
+    const r = materialPatchSchema.parse({ updatedAt: 1 });
+    expect("kind" in r).toBe(false);
+    expect("content" in r).toBe(false);
+    expect(materialPatchSchema.safeParse({ title: "x" }).success).toBe(false);
+    expect(materialPatchSchema.parse({ deliveryId: null, updatedAt: 1 }).deliveryId).toBeNull();
+    expect(materialPatchSchema.parse({ customerIds: [], updatedAt: 1 }).customerIds).toEqual([]);
+  });
+
+  it("list query：camelCase 过滤 + orphan", () => {
+    expect(
+      materialListQuerySchema.parse({ kind: "audio", deliveryId: "3", customerId: "7" }),
+    ).toMatchObject({ kind: "audio", deliveryId: 3, customerId: 7 });
+    expect(materialListQuerySchema.parse({ orphan: "1" }).orphan).toBe("1");
+    expect(materialListQuerySchema.safeParse({ orphan: "true" }).success).toBe(false);
+    expect(materialListQuerySchema.parse({ sort: "title" }).sort).toBe("title");
+    expect(materialListQuerySchema.safeParse({ sort: "nickname" }).success).toBe(false);
   });
 });
 

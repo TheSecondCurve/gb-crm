@@ -46,6 +46,7 @@ export const PAGE_REGISTRY: readonly PageDef[] = [
   { key: "delivery-gantt", path: "/deliveries/:id/gantt", label: "甘特图", group: "运营流程", order: 3, menu: false, parent: "deliveries", required: { resource: "deliveries", action: "read" } },
   { key: "delivery-matrix", path: "/deliveries/:id/matrix", label: "矩阵", group: "运营流程", order: 4, menu: false, parent: "deliveries", required: { resource: "deliveries", action: "read" } },
   { key: "delivery-types", path: "/delivery-types", label: "交付类型", group: "运营流程", order: 5, menu: true, required: { resource: "deliveries", action: "list" } },
+  { key: "materials", path: "/materials", label: "资料专区", group: "运营流程", order: 6, menu: true, required: { resource: "materials", action: "list" } },
   // ── 系统 ──
   { key: "users", path: "/users", label: "团队成员", group: "系统", order: 0, menu: true, required: { resource: "users", action: "list" } },
   { key: "settings", path: "/settings", label: "系统设置", group: "系统", order: 1, menu: true, required: { resource: "jobs", action: "list" } },

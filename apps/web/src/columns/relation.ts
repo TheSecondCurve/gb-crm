@@ -4,6 +4,7 @@
 import type { ListEnvelope } from "@gb-crm/shared";
 
 import { api, buildQuery } from "../api/client";
+import { epochMsToDate } from "./common";
 import type { RelationOption } from "../components/DataGrid/DataGrid";
 
 export type RelationLoader = (search: string) => Promise<RelationOption[]>;
@@ -14,6 +15,7 @@ export const customerLabelCache = new Map<number, string>();
 export const productLabelCache = new Map<number, string>();
 export const dealLabelCache = new Map<number, string>();
 export const deliveryTypeLabelCache = new Map<number, string>();
+export const deliveryLabelCache = new Map<number, string>();
 
 /** GET {path}?pageSize=100&q=… → RelationOption[]，并填充 label 缓存 */
 export function createRelationLoader(
@@ -70,6 +72,23 @@ export const deliveryTypeOptionsLoader: RelationLoader = createRelationLoader(
   "/delivery-types",
   (item) => String(item.name ?? item.id),
   deliveryTypeLabelCache,
+);
+
+/** 交付单选项（K54 资料关联）：类型名 #id + 起止日期（有值才拼） */
+export const deliveryOptionsLoader: RelationLoader = createRelationLoader(
+  "/deliveries",
+  (item) => {
+    const row = item as {
+      deliveryType?: { name?: string } | null;
+      startsAt?: number | null;
+      endsAt?: number | null;
+    };
+    const base = `${row.deliveryType?.name ?? "交付"} #${String(item.id)}`;
+    const fmt = (ts: number | null | undefined) => (ts == null ? "" : epochMsToDate(ts));
+    const range = [fmt(row.startsAt), fmt(row.endsAt)].filter(Boolean).join(" ~ ");
+    return range ? `${base}（${range}）` : base;
+  },
+  deliveryLabelCache,
 );
 
 /** relation 编辑初值：refs → number[] */
