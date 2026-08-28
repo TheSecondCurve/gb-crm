@@ -1,13 +1,14 @@
 // 客户总览页（K45–K48）：基本信息 + AI 打标 + 客户统计 + 消费记录 + 当前有效交付圈子。
 import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { can, customerTypeLabels } from "@gb-crm/shared";
+import { can, customerTypeLabels, materialKindLabels } from "@gb-crm/shared";
 import { useNavigate, useParams } from "react-router-dom";
 
 import { api, ApiError } from "../api/client";
-import type { CustomerOverviewDto, TagDto } from "../api/types";
+import type { CustomerOverviewDto, MaterialDetailDto, TagDto } from "../api/types";
 import { useAuth } from "../auth/AuthProvider";
 import { badge, centsToYuan, enumBadge, epochMsToDate, formatDateTime, type BadgeTone } from "../columns/common";
+import { MaterialViewModal } from "../components/MaterialViewModal";
 import { useToast } from "../components/Toast";
 
 const TAG_SCOPE_TONES: Record<string, BadgeTone> = {
@@ -42,6 +43,17 @@ export function CustomerOverviewPage() {
   const [aiBusy, setAiBusy] = useState(false);
   const [saving, setSaving] = useState(false);
   const [picked, setPicked] = useState<number[]>([]);
+  // K54：查看资料（先 GET /materials/:id 拉完整 content 再开只读弹窗）
+  const [viewingMaterial, setViewingMaterial] = useState<MaterialDetailDto | null>(null);
+
+  const openMaterial = async (id: number) => {
+    try {
+      const res = await api.get<{ data: MaterialDetailDto }>(`/materials/${id}`);
+      if (res?.data) setViewingMaterial(res.data);
+    } catch (err) {
+      showToast(err instanceof ApiError ? err.message : "加载资料失败，请稍后重试");
+    }
+  };
 
   const customer = overview?.customer;
   const currentTagIds = useMemo(
@@ -223,7 +235,41 @@ export function CustomerOverviewPage() {
               <div className="stat-value">{overview.circles.length}</div>
               <div className="stat-label">当前圈子数</div>
             </div>
+            <div className="stat-item">
+              <div className="stat-value">{stats.materialCount}</div>
+              <div className="stat-label">资料数</div>
+            </div>
           </div>
+        </div>
+      </div>
+
+      <div className="card">
+        <div className="card-head">
+          <h2>资料（{stats.materialCount}）</h2>
+        </div>
+        <div className="card-body-flush">
+          {overview.materials.length === 0 && <div className="task-empty">暂无资料</div>}
+          {overview.materials.map((m) => (
+            <div className="item-row" key={m.id}>
+              <div className="item-main">
+                <div className="item-title">
+                  {m.title}
+                  <span className="badge-wrap">
+                    {badge(materialKindLabels[m.kind as keyof typeof materialKindLabels] ?? m.kind)}
+                  </span>
+                </div>
+                <div className="item-meta">
+                  {m.delivery ? `关联交付：${m.delivery.deliveryType?.name ?? `交付 #${m.delivery.id}`}` : "未关联交付"}
+                  {` · 更新于 ${formatDateTime(m.updatedAt)}`}
+                </div>
+              </div>
+              <div className="row-actions">
+                <button type="button" onClick={() => void openMaterial(m.id)}>
+                  查看
+                </button>
+              </div>
+            </div>
+          ))}
         </div>
       </div>
 
@@ -285,6 +331,10 @@ export function CustomerOverviewPage() {
           ))}
         </div>
       </div>
+
+      {viewingMaterial && (
+        <MaterialViewModal material={viewingMaterial} onClose={() => setViewingMaterial(null)} />
+      )}
     </>
   );
 }

@@ -305,6 +305,12 @@ select:focus, textarea:focus { outline: 1px solid var(--ink); }
 
 .task-empty { padding: 16px 0; text-align: center; color: var(--muted); font-size: 13px; }
 
+/* ---- K54：交付资料 ---- */
+
+.req-star { color: var(--accent); margin-left: 2px; }
+
+.material-content { max-height: 320px; overflow-y: auto; white-space: pre-wrap; word-break: break-word; padding: 10px 12px; border: 1px solid var(--hairline); border-radius: 6px; background: rgb(250, 250, 248); font-size: 13px; }
+
 /* ---- K44：交付单详情页 / 交付项 / ItemModal ---- */
 
 .detail-row { display: flex; gap: 12px; padding: 6px 0; align-items: baseline; }

@@ -1,0 +1,219 @@
+// 资料专区（K54）：交付资料列表。普通 table（长文本不做行内编辑），行操作走 modal。
+// 筛选：q + kind 下拉（useResourceList filterKey="kind"）+ 「仅看未关联」checkbox（受控 state 拼进 fixedQuery，不改 hook）。
+import { useMemo, useState } from "react";
+import { can, materialKindLabels } from "@gb-crm/shared";
+
+import { api, ApiError } from "../api/client";
+import type { MaterialDetailDto, MaterialDto } from "../api/types";
+import { useAuth } from "../auth/AuthProvider";
+import { badge, epochMsToDate, formatDateTime, optionsOf, type BadgeTone } from "../columns/common";
+import { Pagination } from "../components/DataGrid/DataGrid";
+import { ConfirmDialog } from "../components/ConfirmDialog";
+import { MaterialFormModal } from "../components/MaterialFormModal";
+import { MaterialViewModal } from "../components/MaterialViewModal";
+import { SearchBar } from "../components/SearchBar";
+import { useToast } from "../components/Toast";
+import { useResourceList } from "./useResourceList";
+
+const KIND_TONES: Record<string, BadgeTone> = { transcript: "accent" };
+
+/** 交付资料列表页（K54） */
+export function MaterialsPage() {
+  const { me } = useAuth();
+  const role = me?.systemRole ?? null;
+  const showToast = useToast();
+  // orphan=1 不在 hook 的 filterKey 体系内：受控 state → fixedQuery（并入 query 与 queryKey）
+  const [orphanOnly, setOrphanOnly] = useState(false);
+  const fixedQuery = useMemo(() => (orphanOnly ? { orphan: 1 } : undefined), [orphanOnly]);
+  const list = useResourceList<MaterialDto>("materials", "kind", fixedQuery);
+
+  const [creating, setCreating] = useState(false);
+  const [editing, setEditing] = useState<MaterialDetailDto | null>(null);
+  const [viewing, setViewing] = useState<MaterialDetailDto | null>(null);
+  const [deleting, setDeleting] = useState<MaterialDto | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  const canCreate = can(role, "materials", "create");
+  const canUpdate = can(role, "materials", "update");
+  const canDelete = can(role, "materials", "delete");
+
+  // 查看 / 修改前先拉 DetailDto（列表 DTO 不含完整 content）
+  const openDetail = async (id: number, apply: (m: MaterialDetailDto) => void) => {
+    try {
+      const res = await api.get<{ data: MaterialDetailDto }>(`/materials/${id}`);
+      if (res?.data) apply(res.data);
+    } catch (err) {
+      showToast(err instanceof ApiError ? err.message : "加载资料失败，请稍后重试");
+    }
+  };
+
+  const saveMaterial = async (body: Record<string, unknown>, existing: MaterialDetailDto | null) => {
+    setBusy(true);
+    try {
+      if (existing) {
+        await api.patch<{ data: MaterialDetailDto }>(`/materials/${existing.id}`, body);
+      } else {
+        await api.post<{ data: MaterialDetailDto }>("/materials", body);
+      }
+      setCreating(false);
+      setEditing(null);
+      await list.invalidate();
+      showToast(existing ? "已保存" : "已创建资料");
+    } catch (err) {
+      showToast(
+        err instanceof ApiError && err.status === 409
+          ? "该行已被他人更新，请刷新后重试"
+          : err instanceof ApiError
+            ? err.message
+            : "保存失败，请稍后重试",
+      );
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const confirmDelete = async () => {
+    if (!deleting) return;
+    setBusy(true);
+    try {
+      await api.delete(`/materials/${deleting.id}`);
+      setDeleting(null);
+      await list.invalidate();
+      showToast("已删除");
+    } catch (err) {
+      showToast(err instanceof ApiError ? err.message : "删除失败，请稍后重试");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <>
+      <div className="page-head">
+        <h1>资料专区</h1>
+        <div className="search-bar">
+          <SearchBar onSearch={list.changeSearch} placeholder="搜索资料…" />
+          <select aria-label="类型筛选" value={list.filter} onChange={(e) => list.changeFilter(e.target.value)}>
+            <option value="">全部类型</option>
+            {optionsOf(materialKindLabels).map((o) => (
+              <option key={o.value} value={o.value}>
+                {o.label}
+              </option>
+            ))}
+          </select>
+          <label className="inline-field">
+            <input
+              type="checkbox"
+              checked={orphanOnly}
+              onChange={(e) => setOrphanOnly(e.target.checked)}
+            />
+            仅看未关联
+          </label>
+          {canCreate && (
+            <button type="button" className="btn-primary" onClick={() => setCreating(true)}>
+              新增资料
+            </button>
+          )}
+        </div>
+      </div>
+      <div className="card">
+        <div className="card-body-flush">
+          {list.rows.length === 0 && !list.loading && <div className="task-empty">暂无资料</div>}
+          {(list.rows.length > 0 || list.loading) && (
+            <table className="data-table">
+              <thead>
+                <tr>
+                  <th>标题</th>
+                  <th>关联交付</th>
+                  <th>关联客户</th>
+                  <th>内容</th>
+                  <th>更新时间</th>
+                  <th>操作</th>
+                </tr>
+              </thead>
+              <tbody>
+                {list.rows.map((row) => (
+                  <tr key={row.id}>
+                    <td>
+                      <span className="badge-wrap">
+                        {badge(materialKindLabels[row.kind as keyof typeof materialKindLabels] ?? row.kind, KIND_TONES[row.kind] ?? "plain")}
+                      </span>{" "}
+                      {row.title}
+                    </td>
+                    <td>
+                      {row.delivery
+                        ? `${row.delivery.deliveryType?.name ?? "交付"} ${
+                            epochMsToDate(row.delivery.startsAt) || epochMsToDate(row.delivery.endsAt)
+                              ? `（${epochMsToDate(row.delivery.startsAt) || "?"} ~ ${epochMsToDate(row.delivery.endsAt) || "?"}）`
+                              : `#${row.delivery.id}`
+                          }`
+                        : "未关联"}
+                    </td>
+                    <td>
+                      {row.customers.length === 0 && "未关联"}
+                      {row.customers.map((c) => (
+                        <span className="chip" key={c.id}>
+                          {c.nickname}
+                        </span>
+                      ))}
+                    </td>
+                    <td>{row.excerpt ? row.excerpt : row.contentLength > 0 ? `${row.contentLength} 字符` : "—"}</td>
+                    <td>{formatDateTime(row.updatedAt)}</td>
+                    <td>
+                      <span className="row-actions">
+                        <button type="button" onClick={() => void openDetail(row.id, setViewing)}>
+                          查看
+                        </button>
+                        {canUpdate && (
+                          <button type="button" onClick={() => void openDetail(row.id, setEditing)}>
+                            修改
+                          </button>
+                        )}
+                        {canDelete && (
+                          <button type="button" className="btn-danger" onClick={() => setDeleting(row)}>
+                            删除
+                          </button>
+                        )}
+                      </span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
+        <div className="card-footer">
+          <Pagination page={list.page} pageSize={list.pageSize} total={list.total} onChange={list.changePage} />
+        </div>
+      </div>
+      {creating && (
+        <MaterialFormModal
+          title="新增资料"
+          busy={busy}
+          onClose={() => setCreating(false)}
+          onSubmit={(body) => saveMaterial(body, null)}
+        />
+      )}
+      {editing && (
+        <MaterialFormModal
+          title={`修改资料：${editing.title}`}
+          material={editing}
+          busy={busy}
+          onClose={() => setEditing(null)}
+          onSubmit={(body) => saveMaterial(body, editing)}
+        />
+      )}
+      {viewing && <MaterialViewModal material={viewing} onClose={() => setViewing(null)} />}
+      {deleting && (
+        <ConfirmDialog
+          title="删除资料"
+          message={`确定删除资料「${deleting.title}」吗？删除后不在列表显示。`}
+          confirmText="删除"
+          loading={busy}
+          onConfirm={() => void confirmDelete()}
+          onCancel={() => setDeleting(null)}
+        />
+      )}
+    </>
+  );
+}

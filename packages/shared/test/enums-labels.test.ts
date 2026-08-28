@@ -20,6 +20,8 @@ import {
   employmentStatusSchema,
   jobTitleLabels,
   jobTitleSchema,
+  materialKindLabels,
+  materialKindSchema,
   platformLabels,
   platformSchema,
   productStatusLabels,
@@ -51,11 +53,12 @@ const ALL: [name: string, schema: z.ZodEnum<[string, ...string[]]>, labels: Reco
     ["dealStage", dealStageSchema, dealStageLabels],
     ["deliverableDimension", deliverableDimensionSchema, deliverableDimensionLabels],
     ["tagScope", tagScopeSchema, tagScopeLabels],
+    ["materialKind", materialKindSchema, materialKindLabels],
   ];
 
 describe("枚举与 labels 完整性（Appendix A.5 全量）", () => {
-  it("15 个枚举都在", () => {
-    expect(ALL).toHaveLength(15);
+  it("16 个枚举都在", () => {
+    expect(ALL).toHaveLength(16);
   });
 
   for (const [name, schema, labels] of ALL) {

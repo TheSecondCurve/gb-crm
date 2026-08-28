@@ -1,10 +1,10 @@
 import { useCallback, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { can, deliverableDimensionLabels } from "@gb-crm/shared";
+import { can, deliverableDimensionLabels, materialKindLabels } from "@gb-crm/shared";
 import { useNavigate, useParams } from "react-router-dom";
 
-import { api, ApiError } from "../api/client";
-import type { DeliverableDto, DeliveryDto } from "../api/types";
+import { api, ApiError, buildQuery } from "../api/client";
+import type { DeliverableDto, DeliveryDto, MaterialDetailDto, MaterialDto } from "../api/types";
 import { useAuth } from "../auth/AuthProvider";
 import { badge, optionsOf, type BadgeTone } from "../columns/common";
 import { ConfirmDialog } from "../components/ConfirmDialog";
@@ -12,6 +12,8 @@ import { DeliveryFormModal } from "../components/DeliveryFormModal";
 import { ItemEditModal } from "../components/ItemEditModal";
 import { ItemFormModal } from "../components/ItemFormModal";
 import { ItemModal } from "../components/ItemModal";
+import { MaterialFormModal } from "../components/MaterialFormModal";
+import { MaterialViewModal } from "../components/MaterialViewModal";
 import { useToast } from "../components/Toast";
 
 const DIM_TONES: Record<string, BadgeTone> = { customer: "accent" };
@@ -27,6 +29,9 @@ export function DeliveryDetailPage() {
 
   const canUpdate = can(role, "deliveries", "update");
   const canDelete = can(role, "deliveries", "delete");
+  const canCreateMaterial = can(role, "materials", "create");
+  const canUpdateMaterial = can(role, "materials", "update");
+  const canDeleteMaterial = can(role, "materials", "delete");
 
   const { data: delivery, refetch: refetchDelivery } = useQuery({
     queryKey: ["deliveries", deliveryId],
@@ -37,12 +42,22 @@ export function DeliveryDetailPage() {
     queryFn: async () =>
       (await api.get<{ data: DeliverableDto[] }>(`/deliveries/${deliveryId}/items`))?.data ?? [],
   });
+  // K54：该交付单关联的资料
+  const { data: materials, refetch: refetchMaterials } = useQuery({
+    queryKey: ["materials", "delivery", deliveryId],
+    queryFn: async () =>
+      (await api.get<{ data: MaterialDto[] }>(`/materials${buildQuery({ deliveryId, pageSize: 100 })}`))?.data ?? [],
+  });
 
   const [creatingItem, setCreatingItem] = useState(false);
   const [editingItem, setEditingItem] = useState<DeliverableDto | null>(null);
   const [deletingItem, setDeletingItem] = useState<DeliverableDto | null>(null);
   const [itemsOf, setItemsOf] = useState<DeliverableDto | null>(null);
   const [editingDelivery, setEditingDelivery] = useState(false);
+  const [creatingMaterial, setCreatingMaterial] = useState(false);
+  const [editingMaterial, setEditingMaterial] = useState<MaterialDetailDto | null>(null);
+  const [viewingMaterial, setViewingMaterial] = useState<MaterialDetailDto | null>(null);
+  const [deletingMaterial, setDeletingMaterial] = useState<MaterialDto | null>(null);
   const [busy, setBusy] = useState(false);
 
   const refresh = useCallback(async () => {
@@ -107,6 +122,56 @@ export function DeliveryDetailPage() {
       showToast("已保存");
     } catch (err) {
       showToast(err instanceof ApiError ? err.message : "保存失败，请稍后重试");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  // K54 资料：查看/修改前先拉 DetailDto（列表 DTO 不含完整 content）
+  const openMaterial = async (id: number, apply: (m: MaterialDetailDto) => void) => {
+    try {
+      const res = await api.get<{ data: MaterialDetailDto }>(`/materials/${id}`);
+      if (res?.data) apply(res.data);
+    } catch (err) {
+      showToast(err instanceof ApiError ? err.message : "加载资料失败，请稍后重试");
+    }
+  };
+
+  const saveMaterial = async (body: Record<string, unknown>, existing: MaterialDetailDto | null) => {
+    setBusy(true);
+    try {
+      if (existing) {
+        await api.patch(`/materials/${existing.id}`, body);
+      } else {
+        await api.post("/materials", body);
+      }
+      setCreatingMaterial(false);
+      setEditingMaterial(null);
+      await refetchMaterials();
+      showToast(existing ? "已保存" : "已创建资料");
+    } catch (err) {
+      showToast(
+        err instanceof ApiError && err.status === 409
+          ? "该行已被他人更新，请刷新后重试"
+          : err instanceof ApiError
+            ? err.message
+            : "保存失败，请稍后重试",
+      );
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const confirmDeleteMaterial = async () => {
+    if (!deletingMaterial) return;
+    setBusy(true);
+    try {
+      await api.delete(`/materials/${deletingMaterial.id}`);
+      setDeletingMaterial(null);
+      await refetchMaterials();
+      showToast("已删除");
+    } catch (err) {
+      showToast(err instanceof ApiError ? err.message : "删除失败，请稍后重试");
     } finally {
       setBusy(false);
     }
@@ -229,6 +294,50 @@ export function DeliveryDetailPage() {
         </div>
       </div>
 
+      <div className="card">
+        <div className="card-head">
+          <h2>资料</h2>
+          {canCreateMaterial && (
+            <button type="button" className="btn-primary" onClick={() => setCreatingMaterial(true)}>
+              新增资料
+            </button>
+          )}
+        </div>
+        <div className="card-body-flush">
+          {materials && materials.length === 0 && <div className="task-empty">暂无资料</div>}
+          {materials?.map((m) => (
+            <div className="item-row" key={m.id}>
+              <div className="item-main">
+                <div className="item-title">
+                  {m.title}
+                  <span className="badge-wrap">
+                    {badge(materialKindLabels[m.kind as keyof typeof materialKindLabels] ?? m.kind)}
+                  </span>
+                </div>
+                <div className="item-meta">
+                  {m.customers.length > 0 ? m.customers.map((c) => c.nickname).join("、") : "未关联客户"}
+                </div>
+              </div>
+              <div className="row-actions">
+                <button type="button" onClick={() => void openMaterial(m.id, setViewingMaterial)}>
+                  查看
+                </button>
+                {canUpdateMaterial && (
+                  <button type="button" onClick={() => void openMaterial(m.id, setEditingMaterial)}>
+                    修改
+                  </button>
+                )}
+                {canDeleteMaterial && (
+                  <button type="button" className="btn-danger" onClick={() => setDeletingMaterial(m)}>
+                    删除
+                  </button>
+                )}
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+
       {creatingItem && delivery && (
         <ItemFormModal
           title="新增交付项"
@@ -262,6 +371,38 @@ export function DeliveryDetailPage() {
           busy={busy}
           onClose={() => setEditingDelivery(false)}
           onSubmit={saveDelivery}
+        />
+      )}
+      {creatingMaterial && (
+        <MaterialFormModal
+          title="新增资料"
+          fixedDeliveryId={deliveryId}
+          busy={busy}
+          onClose={() => setCreatingMaterial(false)}
+          onSubmit={(body) => saveMaterial(body, null)}
+        />
+      )}
+      {editingMaterial && (
+        <MaterialFormModal
+          title={`修改资料：${editingMaterial.title}`}
+          material={editingMaterial}
+          fixedDeliveryId={deliveryId}
+          busy={busy}
+          onClose={() => setEditingMaterial(null)}
+          onSubmit={(body) => saveMaterial(body, editingMaterial)}
+        />
+      )}
+      {viewingMaterial && (
+        <MaterialViewModal material={viewingMaterial} onClose={() => setViewingMaterial(null)} />
+      )}
+      {deletingMaterial && (
+        <ConfirmDialog
+          title="删除资料"
+          message={`确定删除资料「${deletingMaterial.title}」吗？删除后不在列表显示。`}
+          confirmText="删除"
+          loading={busy}
+          onConfirm={() => void confirmDeleteMaterial()}
+          onCancel={() => setDeletingMaterial(null)}
         />
       )}
     </>

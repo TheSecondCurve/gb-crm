@@ -33,6 +33,8 @@ import {
 } from "../deals/repo.js";
 import { assembleDeliveries } from "../deliveries/assemble.js";
 import { listActiveCircleRowsByCustomer } from "../deliveries/repo.js";
+import { assembleMaterials } from "../materials/assemble.js";
+import { countLiveMaterialsByCustomer, listLiveMaterialsByCustomer } from "../materials/repo.js";
 import { getAiConfig } from "../system/repo.js";
 import { findLiveTagIds, getLiveTagByName, insertTag, listEnabledLiveTags, maxTagSort } from "../tags/repo.js";
 import {
@@ -514,8 +516,10 @@ export function getCustomerOverviewResult(
       dealCount: countLiveDealsByCustomer(db, id),
       paidTotalCents: paidTotalCentsByCustomer(db, id),
       lastDealAt: lastDealAtByCustomer(db, id),
+      materialCount: countLiveMaterialsByCustomer(db, id),
     },
     deals: assembleDeals(db, listLiveDealsByCustomer(db, id)),
     circles: assembleDeliveries(db, listActiveCircleRowsByCustomer(db, id, now)),
+    materials: assembleMaterials(db, listLiveMaterialsByCustomer(db, id)),
   };
 }

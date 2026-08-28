@@ -10,6 +10,7 @@ import type {
   DeliveryTypeStatus,
   EmploymentStatus,
   JobTitle,
+  MaterialKind,
   Platform,
   ProductStatus,
   ProductType,
@@ -146,4 +147,12 @@ export const tagScopeLabels: Record<TagScope, string> = {
   stage: "阶段",
   interest: "兴趣",
   other: "其它",
+};
+
+export const materialKindLabels: Record<MaterialKind, string> = {
+  transcript: "录音文字稿",
+  text: "文本资料",
+  audio: "音频",
+  video: "视频",
+  link: "其他链接",
 };

@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 
 import { adminMe, assistantMe, mockFetch, renderApp, type Me } from "./helpers";
-import type { DeliverableDto, DeliveryDto } from "../src/api/types";
+import type { DeliverableDto, DeliveryDto, MaterialDto } from "../src/api/types";
 import { dateToEpochMs } from "../src/columns/common";
 
 const delivery: DeliveryDto = {
@@ -49,12 +49,28 @@ interface Call {
   body?: string;
 }
 
-function mockDetailApi(me: Me, items: DeliverableDto[] = [item]) {
+function mockDetailApi(me: Me, items: DeliverableDto[] = [item], materials: MaterialDto[] = []) {
   const calls: Call[] = [];
   mockFetch((url, init) => {
     const method = init?.method ?? "GET";
     calls.push({ url, method, body: init?.body });
     if (url === "/api/v1/auth/me") return { status: 200, body: { data: me } };
+    // K54：交付单关联资料（含新增 POST / 详情 GET）
+    if (url.startsWith("/api/v1/materials")) {
+      if (method === "GET" && /\/materials\/\d+$/.test(url)) {
+        const m = materials.find((v) => url.endsWith(`/${v.id}`));
+        return m ? { status: 200, body: { data: { ...m, content: "资料全文" } } } : undefined;
+      }
+      if (method === "GET") {
+        return { status: 200, body: { data: materials, meta: { page: 1, pageSize: 100, total: materials.length } } };
+      }
+      if (method === "POST") {
+        const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
+        return { status: 201, body: { data: { id: 99, ...body } } };
+      }
+      if (method === "PATCH") return { status: 200, body: { data: {} } };
+      if (method === "DELETE") return { status: 204 };
+    }
     if (url.startsWith("/api/v1/customers")) {
       return {
         status: 200,
@@ -203,6 +219,56 @@ describe("交付单详情页", () => {
       const patch = calls.find((c) => c.method === "PATCH" && c.url === "/api/v1/deliveries/1/items/21/tasks/2");
       expect(patch).toBeTruthy();
       expect(JSON.parse(String(patch?.body))).toEqual({ done: true, updatedAt: 1500 });
+    });
+  });
+
+  it("资料 card：渲染关联资料；assistant 无新增/修改/删除", async () => {
+    const material: MaterialDto = {
+      id: 31,
+      kind: "text",
+      title: "圈子 SOP 文档",
+      url: null,
+      contentLength: 120,
+      excerpt: "SOP 摘要……",
+      deliveryId: 1,
+      delivery: { id: 1, deliveryType: { id: 11, name: "圈子全年交付", kind: "circle" }, startsAt: null, endsAt: null },
+      customers: [{ id: 101, nickname: "张三" }],
+      createdAt: 1000,
+      updatedAt: 2000,
+      createdBy: null,
+      updatedBy: null,
+    };
+    mockDetailApi(assistantMe, [item], [material]);
+    renderApp("/deliveries/1");
+    expect(await screen.findByText("圈子 SOP 文档")).toBeTruthy();
+    expect(screen.getAllByText("文本资料").length).toBeGreaterThan(0); // kind 徽章
+    // assistant（materials 只读）：无新增/修改/删除，仅查看
+    expect(screen.queryByRole("button", { name: "新增资料" })).toBeNull();
+    expect(screen.getByRole("button", { name: "查看" })).toBeTruthy();
+  });
+
+  it("新增资料（交付单内）：不显示交付单选择，POST 固定带 deliveryId", async () => {
+    const calls = mockDetailApi(adminMe);
+    renderApp("/deliveries/1");
+    await screen.findByText("拉群");
+    expect(screen.getByText("暂无资料")).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: "新增资料" }));
+    const dialog = screen.getByRole("dialog", { name: "新增资料" });
+    // fixedDeliveryId 锁定：表单不出现交付单选择
+    expect(within(dialog).queryByLabelText("关联交付单")).toBeNull();
+
+    fireEvent.change(within(dialog).getByLabelText(/标题/), { target: { value: "开营通知" } });
+    fireEvent.change(within(dialog).getByLabelText(/内容/), { target: { value: "请大家准时入群" } });
+    fireEvent.click(within(dialog).getByRole("button", { name: "创建" }));
+
+    await waitFor(() => {
+      const post = calls.find((c) => c.method === "POST" && c.url === "/api/v1/materials");
+      expect(post).toBeTruthy();
+      const body = JSON.parse(String(post?.body)) as Record<string, unknown>;
+      expect(body.deliveryId).toBe(1);
+      expect(body.kind).toBe("text");
+      expect(body.content).toBe("请大家准时入群");
     });
   });
 });
