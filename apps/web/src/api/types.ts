@@ -144,6 +144,8 @@ export interface CustomerStatsDto {
   dealCount: number;
   paidTotalCents: number;
   lastDealAt: number | null;
+  /** K54：关联资料数 */
+  materialCount: number;
 }
 
 export interface CustomerOverviewDto {
@@ -151,6 +153,39 @@ export interface CustomerOverviewDto {
   stats: CustomerStatsDto;
   deals: DealDto[];
   circles: DeliveryDto[];
+  /** K54：关联资料 */
+  materials: MaterialDto[];
+}
+
+/** K54 交付资料上的交付单 ref（软删交付 → null） */
+export interface MaterialDeliveryRefDto {
+  id: number;
+  deliveryType: { id: number; name: string; kind: string } | null;
+  startsAt: number | null;
+  endsAt: number | null;
+}
+
+/** K54 交付资料（列表版不含 content，带 contentLength / excerpt） */
+export interface MaterialDto {
+  id: number;
+  kind: string;
+  title: string;
+  url: string | null;
+  contentLength: number;
+  /** 内容前 100 字符；无内容 → null */
+  excerpt: string | null;
+  deliveryId: number | null;
+  delivery: MaterialDeliveryRefDto | null;
+  customers: { id: number; nickname: string }[];
+  createdAt: number;
+  updatedAt: number;
+  createdBy: UserRefDto | null;
+  updatedBy: UserRefDto | null;
+}
+
+/** K54 交付资料详情 = 列表版 + 完整 content（GET /materials/:id） */
+export interface MaterialDetailDto extends MaterialDto {
+  content: string | null;
 }
 
 export interface ChannelDto {

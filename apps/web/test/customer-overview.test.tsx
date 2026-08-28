@@ -1,6 +1,6 @@
 // 客户总览页（K45–K48）：区块渲染 / AI 打标 POST / 手动标签 PATCH / 标签移除。
 import { describe, expect, it } from "vitest";
-import { fireEvent, screen, waitFor } from "@testing-library/react";
+import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 
 import { adminMe, assistantMe, mockFetch, renderApp } from "./helpers";
 import type { CustomerOverviewDto } from "../src/api/types";
@@ -37,7 +37,7 @@ function makeOverview(over: Partial<CustomerOverviewDto> = {}): CustomerOverview
       createdBy: null,
       updatedBy: null,
     },
-    stats: { dealCount: 2, paidTotalCents: 19900, lastDealAt: 1500 },
+    stats: { dealCount: 2, paidTotalCents: 19900, lastDealAt: 1500, materialCount: 0 },
     deals: [
       {
         id: 11,
@@ -74,6 +74,7 @@ function makeOverview(over: Partial<CustomerOverviewDto> = {}): CustomerOverview
         updatedBy: null,
       },
     ],
+    materials: [],
     ...over,
   };
 }
@@ -104,6 +105,11 @@ function mockOverviewApi(me: typeof adminMe, over: Partial<CustomerOverviewDto> 
     }
     if (url.includes("/customers/1/tags/generate") && method === "POST") {
       return { status: 200, body: { data: makeOverview(over).customer } };
+    }
+    // K54：查看资料详情（完整 content）
+    if (url.startsWith("/api/v1/materials/") && method === "GET") {
+      const material = makeOverview(over).materials.find((m) => url.endsWith(`/${m.id}`));
+      if (material) return { status: 200, body: { data: { ...material, content: "资料完整全文" } } };
     }
     throw new Error(`unexpected fetch: ${method} ${url}`);
   });
@@ -175,9 +181,51 @@ describe("客户总览页", () => {
   });
 
   it("空成交/空圈子显示占位文案", async () => {
-    mockOverviewApi(adminMe, { stats: { dealCount: 0, paidTotalCents: 0, lastDealAt: null }, deals: [], circles: [] });
+    mockOverviewApi(adminMe, { stats: { dealCount: 0, paidTotalCents: 0, lastDealAt: null, materialCount: 0 }, deals: [], circles: [] });
     renderApp("/customers/1");
     expect(await screen.findByText("暂无成交记录")).toBeTruthy();
     expect(screen.getByText("暂无当前有效的交付圈子")).toBeTruthy();
+  });
+
+  it("K54 资料：统计区显示资料数，资料列表渲染并可打开查看弹窗", async () => {
+    const material = {
+      id: 41,
+      kind: "link",
+      title: "访谈文章链接",
+      url: "https://example.com/interview",
+      contentLength: 0,
+      excerpt: null,
+      deliveryId: 21,
+      delivery: { id: 21, deliveryType: { id: 5, name: "私董圈子", kind: "circle" }, startsAt: 1700, endsAt: null },
+      customers: [{ id: 1, nickname: "张三" }],
+      createdAt: 1600,
+      updatedAt: 1700,
+      createdBy: null,
+      updatedBy: null,
+    };
+    const calls = mockOverviewApi(adminMe, {
+      stats: { dealCount: 2, paidTotalCents: 19900, lastDealAt: 1500, materialCount: 1 },
+      materials: [material],
+    });
+    renderApp("/customers/1");
+
+    expect(await screen.findByText("资料数")).toBeTruthy();
+    // 断言 stat 数值（materialCount=1），不只是标签
+    const statItem = screen.getByText("资料数").closest(".stat-item");
+    expect(statItem?.querySelector(".stat-value")?.textContent).toBe("1");
+    expect(screen.getByText("访谈文章链接")).toBeTruthy();
+    expect(screen.getByText(/关联交付：私董圈子/)).toBeTruthy();
+
+    // 打开查看弹窗：先 GET /materials/41 拉全文
+    fireEvent.click(screen.getByRole("button", { name: "查看" }));
+    const dialog = await screen.findByRole("dialog", { name: "访谈文章链接" });
+    expect(calls.some((c) => c.method === "GET" && c.url === "/api/v1/materials/41")).toBe(true);
+    expect(within(dialog).getByRole("link", { name: "https://example.com/interview" })).toBeTruthy();
+  });
+
+  it("K54 资料空态：暂无资料", async () => {
+    mockOverviewApi(adminMe);
+    renderApp("/customers/1");
+    expect(await screen.findByText("暂无资料")).toBeTruthy();
   });
 });

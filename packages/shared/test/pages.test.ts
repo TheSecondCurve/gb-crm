@@ -19,10 +19,12 @@ describe("canAllowedPageKeys（安全层 can() 允许的菜单页）", () => {
     expect(admin).toContain("users");
     expect(admin).toContain("deliveries");
     expect(admin).toContain("business-settings");
+    expect(admin).toContain("materials"); // K54 资料专区
 
     const assistant = canAllowedPageKeys("assistant");
     expect(assistant).not.toContain("users");
     expect(assistant).toContain("channels");
+    expect(assistant).toContain("materials"); // assistant 对 materials 有 list 权限
   });
 });
 

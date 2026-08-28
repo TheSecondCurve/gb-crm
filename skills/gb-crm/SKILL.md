@@ -2,8 +2,8 @@
 name: gb-crm
 description: >
   女商 私域运营管理端（gb-crm）本机 HTTP 客户端。用 ~/.gb-crm/credentials.json 的 PAT
-  通过单一 SQL 端点查询或维护客户、渠道、产品、团队成员、成交记录、交付管理。
-  当用户提到 CRM、客户名单、渠道资产、产品目录、团队成员、成交、交付、gb-crm、
+  通过单一 SQL 端点查询或维护客户、渠道、产品、团队成员、成交记录、交付管理与咨询资料。
+  当用户提到 CRM、客户名单、渠道资产、产品目录、团队成员、成交、交付、咨询资料、语料、gb-crm、
   女商私域运营管理端，或要查/改客户时使用。
   Use when the user runs /gb-crm.
 metadata:
@@ -47,7 +47,7 @@ curl -fsSL http://<crm-host>/agent/login.sh | sh
 ## 工作守则
 
 1. 先 `me`，记下自己的 `id` 与 `systemRole`。
-2. 查数据前先看下面的表结构；**默认过滤软删**：`WHERE deleted_at IS NULL`（sessions / api_tokens / delivery_tasks / delivery_customers / channel_owners / customer_source_channels / customer_social_accounts 无此列）。
+2. 查数据前先看下面的表结构；**默认过滤软删**：`WHERE deleted_at IS NULL`（sessions / api_tokens / delivery_tasks / delivery_customers / delivery_material_customers / channel_owners / customer_source_channels / customer_social_accounts 无此列）。
 3. 写数据只在用户明确要求时做；删除前复述将删的行并得到确认。删除 = **软删**：`UPDATE ... SET deleted_at = <now>`，不要 `DELETE FROM`。
 4. 写时**手动维护** `updated_at = <当前 epoch 毫秒>`、`updated_by = <自己的 user id>`（`me` 拿到）；新建行同理补 `created_at` / `created_by`。
 5. 时间戳一律 **epoch 毫秒**（UTC）。金额 `price_cents` 是**分**，展示元；不要 `yuan * 100` 不 round 就写入。布尔 `is_package` 是 0/1。
@@ -56,7 +56,7 @@ curl -fsSL http://<crm-host>/agent/login.sh | sh
 
 ## 表结构
 
-真相源：`apps/api/drizzle/` 迁移最终态（`0000_init.sql` 为历史；`0002`–`0006` 删除飞书字段/客户旧字段/客户标签；`0007` 社交账号表 K41；`0008` 成交表 K42；`0010` 交付重构 K44，`0009` 旧交付模型 DROP 重建）。列全部 snake_case（SQL 层没有 camelCase）。
+真相源：`apps/api/drizzle/` 迁移最终态（`0000_init.sql` 为历史；`0002`–`0006` 删除飞书字段/客户旧字段/客户标签；`0007` 社交账号表 K41；`0008` 成交表 K42；`0010` 交付重构 K44，`0009` 旧交付模型 DROP 重建；`0012`–`0014` 交付起止日期/类型 kind+status/交付项排期；`0020` 咨询资料 + FTS5，K54）。列全部 snake_case（SQL 层没有 camelCase）。
 
 ### users（团队成员）
 
@@ -137,11 +137,32 @@ curl -fsSL http://<crm-host>/agent/login.sh | sh
 
 交付与成交**弱关联**：交付单独立存在，客户来源可来自成交 merge（前端交互，不持久化关联）。
 
-- `delivery_types`（交付类型配置）：`name`（必填）/ `description` / `default_tasks`（多行文本，每行一个默认动作，创建交付项时预填）；软删。
-- `deliveries`（交付单）：`delivery_type_id`（必填 FK → delivery_types.id）/ `remark`；软删。
+- `delivery_types`（交付类型配置）：`name`（必填）/ `kind`（`consulting` 咨询类/`activity` 活动类/`circle` 圈子类/`other` 其他类，默认 `other`）/ `status`（`active` 有效/`inactive` 失效，默认 `active`）/ `description` / `default_tasks`（多行文本，每行一个默认动作，创建交付项时预填）；软删。
+- `deliveries`（交付单）：`delivery_type_id`（必填 FK → delivery_types.id）/ `starts_at` / `ends_at`（起止日期，epoch 毫秒，可空）/ `remark`；软删。
 - `delivery_customers`（交付 × 客户 M2M）：`(delivery_id, customer_id)` 复合 PK；**硬删**，无审计列。
-- `deliverables`（交付项，挂交付单）：`delivery_id`（必填 FK，cascade）/ `content`（必填，如「拉群」）/ `dimension`（`project`/`customer`，默认 `project`）/ `description` / `delivery_url`；软删。无独立状态，打勾进度即状态。
+- `deliverables`（交付项，挂交付单）：`delivery_id`（必填 FK，cascade）/ `content`（必填，如「拉群」）/ `dimension`（`project`/`customer`，默认 `project`）/ `description` / `delivery_url` / `starts_at` / `ends_at`（排期，可空）；软删。无独立状态，打勾进度即状态。
 - `delivery_tasks`（动作清单，交付项子表）：`deliverable_id`（必填 FK，cascade）/ `customer_id`（**可空**，NULL = 项目维度；客户维度按 customer 分别打勾）/ `content` / `done`（0/1）/ `done_at` / `done_by` / `remark`；**硬删**，无 deleted_at。
+
+### 咨询资料（K54）
+
+领域模型：**每一场咨询服务 = 一条 `deliveries`**（无父子记录）。三类服务对应三条交付类型数据：微博365连麦、线下1v1咨询（kind=`consulting`），商业下午茶（kind=`activity`，一场 5-6 人，客户走 `delivery_customers`）。资料是场次的产出物，可挂交付单也可不挂（**孤儿资料允许**——整理旧资料时先导入、后补关联）。
+
+- `delivery_materials`（资料）：`delivery_id`（**可空** FK → deliveries.id，NULL = 未关联场次的孤儿）/ `kind`（`transcript` 录音文字稿 / `text` 文本资料 / `audio` 音频 / `video` 视频 / `link` 其他链接）/ `title`（必填，标题+说明）/ `url`（媒体类必填）/ `content`（**文本类全文**，可上万字）；审计四列 + `deleted_at` 软删。组合约束（管理端 Zod 强制，写 SQL 时自觉遵守）：`transcript`/`text` 必须有 `content`，`audio`/`video`/`link` 必须有 `url`。
+- `delivery_material_customers`（资料 × 客户 M2M）：`(material_id, customer_id)` 复合 PK，0..N——**一份资料可属多个人**（如下午茶整场录音稿挂全部参会者），0 行 = 未关联客户；**硬删**，无审计列。
+
+全文搜索（FTS5，`trigram` 分词，中文子串友好）：
+
+```sql
+-- 索引表 delivery_materials_fts 由触发器自动同步（软删的行自动移出索引），不要手写它
+SELECT m.id, m.title FROM delivery_materials m
+WHERE m.deleted_at IS NULL
+  AND m.id IN (SELECT rowid FROM delivery_materials_fts
+               WHERE delivery_materials_fts MATCH '"私域运营"');
+```
+
+- MATCH token 必须 **≥3 个字符**（trigram），用双引号包裹；短词（如 2 字「咨询」）退回 `LIKE '%咨询%'`（title 和 content 两列）。
+- 常用过滤：`kind = 'transcript'`、孤儿资料 `delivery_id IS NULL OR NOT EXISTS (SELECT 1 FROM delivery_material_customers mc WHERE mc.material_id = m.id)`、某客户的资料 `JOIN delivery_material_customers mc ON mc.material_id = m.id AND mc.customer_id = ?`。
+- 写资料时同守则 4 补审计列；软删走 `UPDATE ... SET deleted_at = <now>`（触发器会清 FTS，不用管）。
 
 ### 系统表（别动）
 
@@ -163,6 +184,8 @@ curl -fsSL http://<crm-host>/agent/login.sh | sh
 - product status：`on_sale` 在售 / `off_sale` 停售 / `in_dev` 开发中
 - deal stage：`gift` 赠送 / `paid` 已付款 / `refunded` 退款 / `closed` 已关闭
 - deliverable dimension：`project` 项目 / `customer` 客户
+- delivery_type kind：`consulting` 咨询类 / `activity` 活动类 / `circle` 圈子类 / `other` 其他类；status：`active` 有效 / `inactive` 失效
+- material kind（K54）：`transcript` 录音文字稿 / `text` 文本资料 / `audio` 音频 / `video` 视频 / `link` 其他链接
 
 对用户列出结果时用昵称/名称与中文 label，不要甩一堆 id 和 code；需要跟进时再附 id。
 
