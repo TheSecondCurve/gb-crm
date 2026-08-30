@@ -305,6 +305,36 @@ describe("deliveries 交付单", () => {
   });
 });
 
+describe("交付单列表搜索（q 跨 日期/客户/名称）", () => {
+  it("q 命中 交付类型名称、起止本地日期、客户昵称", async () => {
+    const { cookie, typeId } = await seedTypeAndDelivery(2, { name: "微博365连麦" });
+    // 带明确起止日期的交付单（本地当天零点 epoch ms，避免时区 flaky）
+    const day = new Date("2026-05-20T00:00:00").getTime();
+    const c3 = seedCustomer(tmp.db, "专属客户");
+    const dRes = await post("/api/v1/deliveries", cookie, {
+      deliveryTypeId: typeId,
+      customerIds: [c3],
+      startsAt: day,
+      endsAt: day,
+    });
+    expect(dRes.statusCode).toBe(201);
+
+    // 按交付类型名称（该类型共 2 单）
+    const byName = await get("/api/v1/deliveries?q=" + encodeURIComponent("微博365"), cookie);
+    expect(byName.json().meta.total).toBe(2);
+
+    // 按日期：YYYY-MM-DD 与 YYYY-MM 都命中该日交付单
+    const byDay = await get("/api/v1/deliveries?q=" + encodeURIComponent("2026-05-20"), cookie);
+    expect(byDay.json().meta.total).toBe(1);
+    const byMonth = await get("/api/v1/deliveries?q=" + encodeURIComponent("2026-05"), cookie);
+    expect(byMonth.json().meta.total).toBe(1);
+
+    // 按客户昵称（新客户 c3）
+    const byCust = await get("/api/v1/deliveries?q=" + encodeURIComponent("专属客户"), cookie);
+    expect(byCust.json().meta.total).toBe(1);
+  });
+});
+
 describe("deliveries/:id/customers（圈子工作台：客户全量 + Excel 导出）", () => {
   it("deliveryType ref 携带 kind（圈子工作台入口判断）", async () => {
     const { cookie, typeId } = await seedTypeAndDelivery(1, { kind: "circle" });
