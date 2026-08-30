@@ -1,9 +1,10 @@
 import { useCallback, useMemo, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { can, type SystemRole } from "@gb-crm/shared";
 import { useNavigate } from "react-router-dom";
 
 import { api, ApiError } from "../api/client";
-import type { DeliveryDto } from "../api/types";
+import type { DeliveryDto, DeliveryTypeDto } from "../api/types";
 import { useAuth } from "../auth/AuthProvider";
 import { dateToEpochMs, epochMsToDate, formatDateTime } from "../columns/common";
 import { DataGrid, Pagination } from "../components/DataGrid/DataGrid";
@@ -91,6 +92,16 @@ export function DeliveriesPage() {
   const navigate = useNavigate();
   const list = useResourceList<DeliveryDto>("deliveries", "deliveryTypeId");
   const columns = useMemo(() => deliveryColumns(role), [role]);
+  // 交付类型 tab 选项：全部 live（含失效）类型都展示，保证已有交付单都能筛到；按名称排稳定序
+  const { data: typeOptions = [] } = useQuery({
+    queryKey: ["delivery-types", "options"],
+    queryFn: async () =>
+      (await api.get<{ data: DeliveryTypeDto[] }>("/delivery-types?pageSize=100"))?.data ?? [],
+  });
+  const sortedTypes = useMemo(
+    () => [...typeOptions].sort((a, b) => a.name.localeCompare(b.name, "zh")),
+    [typeOptions],
+  );
   const [creating, setCreating] = useState(false);
   const [editing, setEditing] = useState<DeliveryDto | null>(null);
   const [deleting, setDeleting] = useState<DeliveryDto | null>(null);
@@ -150,7 +161,7 @@ export function DeliveriesPage() {
       <div className="page-head">
         <h1>交付管理</h1>
         <div className="search-bar">
-          <SearchBar onSearch={list.changeSearch} placeholder="搜索客户…" />
+          <SearchBar onSearch={list.changeSearch} placeholder="搜索日期/客户/名称…" />
           {canCreate && (
             <button type="button" className="btn-primary" onClick={() => setCreating(true)}>
               新增交付
@@ -159,6 +170,27 @@ export function DeliveriesPage() {
         </div>
       </div>
       <div className="card">
+        <div className="tabs" role="tablist" aria-label="按交付类型筛选">
+          <button
+            type="button"
+            role="tab"
+            aria-selected={list.filter === ""}
+            onClick={() => list.changeFilter("")}
+          >
+            全部
+          </button>
+          {sortedTypes.map((t) => (
+            <button
+              key={t.id}
+              type="button"
+              role="tab"
+              aria-selected={list.filter === String(t.id)}
+              onClick={() => list.changeFilter(String(t.id))}
+            >
+              {t.name}
+            </button>
+          ))}
+        </div>
         <div className="card-body-flush">
           <DataGrid
             ref={list.gridRef}

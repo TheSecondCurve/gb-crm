@@ -4,12 +4,18 @@
 // ≥3 字符 token 走 FTS（delivery_materials_fts，触发器同步、软删自动移出索引），
 // <3 字符 token 回退 LIKE（title/content OR，ESCAPE '\' 转义）。
 // FTS 虚表不入 Drizzle schema，用 db.$client 原生查询拿 id 集合再 inArray（同 agent 模块先例）。
-import { and, asc, count, desc, eq, inArray, isNull, or, sql, type SQL } from "drizzle-orm";
+import { and, asc, count, desc, eq, exists, inArray, isNull, not, or, sql, type SQL } from "drizzle-orm";
 
 import type { MaterialListQuery } from "@gb-crm/shared";
 
 import type { Db } from "../../db/client.js";
-import { customers, deliveryMaterialCustomers, deliveryMaterials } from "../../db/schema.js";
+import {
+  customers,
+  deliveries,
+  deliveryMaterialCustomers,
+  deliveryMaterials,
+  deliveryTypes,
+} from "../../db/schema.js";
 import { escapeLike, fuzzyTokens } from "../../lib/fuzzy.js";
 import { toOffset } from "../../lib/pagination.js";
 
@@ -54,6 +60,30 @@ function searchWhere(db: Db, q: string): SQL | undefined {
   return and(...perToken);
 }
 
+/**
+ * deliveryKind 过滤（资料专区按关联交付类型分 tab）：
+ * consulting/activity/circle 只命中对应 kind 的 live 交付（交付与类型均未软删）；
+ * other = 未关联（无交付单 / 交付软删 / 类型软删——展开为 null）或类型本身为 other。
+ */
+function liveDeliveryOfKind(db: Db, kinds: readonly string[]): SQL {
+  return exists(
+    db
+      .select({ id: deliveries.id })
+      .from(deliveries)
+      .innerJoin(
+        deliveryTypes,
+        and(eq(deliveries.deliveryTypeId, deliveryTypes.id), isNull(deliveryTypes.deletedAt)),
+      )
+      .where(
+        and(
+          eq(deliveries.id, deliveryMaterials.deliveryId),
+          isNull(deliveries.deletedAt),
+          inArray(deliveryTypes.kind, [...kinds]),
+        ),
+      ),
+  );
+}
+
 function listWhere(db: Db, query: MaterialListQuery): SQL | undefined {
   const conditions: SQL[] = [isNull(deliveryMaterials.deletedAt)];
   if (query.q !== undefined) {
@@ -61,6 +91,14 @@ function listWhere(db: Db, query: MaterialListQuery): SQL | undefined {
     if (search) conditions.push(search);
   }
   if (query.kind !== undefined) conditions.push(eq(deliveryMaterials.kind, query.kind));
+  // other 兜底：未关联或类型为 other（即命中非 consulting/activity/circle 的任何情况）
+  if (query.deliveryKind !== undefined) {
+    if (query.deliveryKind === "other") {
+      conditions.push(not(liveDeliveryOfKind(db, ["consulting", "activity", "circle"])));
+    } else {
+      conditions.push(liveDeliveryOfKind(db, [query.deliveryKind]));
+    }
+  }
   if (query.deliveryId !== undefined) {
     conditions.push(eq(deliveryMaterials.deliveryId, query.deliveryId));
   }

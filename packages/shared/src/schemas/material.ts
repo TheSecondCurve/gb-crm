@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-import { materialKindSchema } from "../enums.js";
+import { deliveryTypeKindSchema, materialKindSchema } from "../enums.js";
 import { epochMsSchema, pageQuerySchema } from "./common.js";
 
 // K54 交付资料（delivery_materials 表，camelCase）。
@@ -42,6 +42,11 @@ export const materialListQuerySchema = pageQuerySchema.extend({
   kind: materialKindSchema.optional(),
   deliveryId: z.coerce.number().int().positive().optional(),
   customerId: z.coerce.number().int().positive().optional(),
+  /**
+   * 按关联交付的类型 kind 过滤（咨询/活动/圈子/其他）：
+   * consulting/activity/circle 只命中对应类型；other = 未关联（无交付或交付软删/类型软删）或类型本身为 other。
+   */
+  deliveryKind: deliveryTypeKindSchema.optional(),
   /** orphan=1：只看未完整关联的资料（无交付单或无客户） */
   orphan: z.enum(["1"]).optional(),
 });

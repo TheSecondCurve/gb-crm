@@ -1,7 +1,8 @@
 // 资料专区（K54）：交付资料列表。普通 table（长文本不做行内编辑），行操作走 modal。
-// 筛选：q + kind 下拉（useResourceList filterKey="kind"）+ 「仅看未关联」checkbox（受控 state 拼进 fixedQuery，不改 hook）。
+// 筛选：按关联交付类型分组 tab（useResourceList secondaryFilterKey="deliveryKind"）+ q +
+// kind 下拉（filterKey="kind"）+ 「仅看未关联」checkbox（受控 state 拼进 fixedQuery，不改 hook）。
 import { useMemo, useState } from "react";
-import { can, materialKindLabels } from "@gb-crm/shared";
+import { can, deliveryTypeKindLabels, materialKindLabels } from "@gb-crm/shared";
 
 import { api, ApiError } from "../api/client";
 import type { MaterialDetailDto, MaterialDto } from "../api/types";
@@ -17,6 +18,14 @@ import { useResourceList } from "./useResourceList";
 
 const KIND_TONES: Record<string, BadgeTone> = { transcript: "accent" };
 
+/** 资料专区 tab：按关联交付类型分组。consulting/activity/circle 对应类型；other 兜底（未关联 + 类型为 other）。 */
+const DELIVERY_KIND_TABS: { value: string; label: string }[] = [
+  { value: "consulting", label: deliveryTypeKindLabels.consulting },
+  { value: "activity", label: deliveryTypeKindLabels.activity },
+  { value: "circle", label: deliveryTypeKindLabels.circle },
+  { value: "other", label: "其他" },
+];
+
 /** 交付资料列表页（K54） */
 export function MaterialsPage() {
   const { me } = useAuth();
@@ -25,7 +34,7 @@ export function MaterialsPage() {
   // orphan=1 不在 hook 的 filterKey 体系内：受控 state → fixedQuery（并入 query 与 queryKey）
   const [orphanOnly, setOrphanOnly] = useState(false);
   const fixedQuery = useMemo(() => (orphanOnly ? { orphan: 1 } : undefined), [orphanOnly]);
-  const list = useResourceList<MaterialDto>("materials", "kind", fixedQuery);
+  const list = useResourceList<MaterialDto>("materials", "kind", fixedQuery, "deliveryKind");
 
   const [creating, setCreating] = useState(false);
   const [editing, setEditing] = useState<MaterialDetailDto | null>(null);
@@ -117,6 +126,27 @@ export function MaterialsPage() {
         </div>
       </div>
       <div className="card">
+        <div className="tabs" role="tablist" aria-label="按关联交付类型筛选">
+          <button
+            type="button"
+            role="tab"
+            aria-selected={list.secondFilter === ""}
+            onClick={() => list.changeSecondFilter("")}
+          >
+            全部
+          </button>
+          {DELIVERY_KIND_TABS.map((t) => (
+            <button
+              key={t.value}
+              type="button"
+              role="tab"
+              aria-selected={list.secondFilter === t.value}
+              onClick={() => list.changeSecondFilter(t.value)}
+            >
+              {t.label}
+            </button>
+          ))}
+        </div>
         <div className="card-body-flush">
           {list.rows.length === 0 && !list.loading && <div className="task-empty">暂无资料</div>}
           {(list.rows.length > 0 || list.loading) && (
