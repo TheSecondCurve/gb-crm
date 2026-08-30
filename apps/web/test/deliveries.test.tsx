@@ -120,15 +120,15 @@ describe("交付管理页（交付单列表）", () => {
   it("渲染列表：类型名 + 客户数；assistant 只读仍可见详情", async () => {
     mockDeliveriesApi(adminMe);
     renderApp("/deliveries");
-    expect(await screen.findByText("圈子全年交付")).toBeTruthy();
-    expect(screen.getByText("2 人")).toBeTruthy();
+    await screen.findByText("2 人"); // 表格已加载
+    expect(screen.getAllByText("圈子全年交付").length).toBeGreaterThan(0); // 顶部类型 tab + 行内类型名
     expect(screen.getByText("备注甲")).toBeTruthy();
   });
 
   it("新增交付：选类型 + 手动选客户 + 按意向产品 merge → POST customerIds 合并", async () => {
     const calls = mockDeliveriesApi(adminMe);
     renderApp("/deliveries");
-    await screen.findByText("圈子全年交付");
+    await screen.findByRole("button", { name: "新增交付" });
 
     fireEvent.click(screen.getByRole("button", { name: "新增交付" }));
     const dialog = screen.getByRole("dialog", { name: "新增交付" });
@@ -158,7 +158,7 @@ describe("交付管理页（交付单列表）", () => {
   it("新增交付：可不选客户，起止日期经日历输入后以 epoch ms 提交", async () => {
     const calls = mockDeliveriesApi(adminMe);
     renderApp("/deliveries");
-    await screen.findByText("圈子全年交付");
+    await screen.findByRole("button", { name: "新增交付" });
 
     fireEvent.click(screen.getByRole("button", { name: "新增交付" }));
     const dialog = screen.getByRole("dialog", { name: "新增交付" });
@@ -189,7 +189,7 @@ describe("交付管理页（交付单列表）", () => {
   it("assistant：无新增/删除按钮；详情入口可见", async () => {
     mockDeliveriesApi(assistantMe);
     renderApp("/deliveries");
-    await screen.findByText("圈子全年交付");
+    await screen.findByText("2 人"); // 表格已加载（assistant 只读）
     expect(screen.queryByRole("button", { name: "新增交付" })).toBeNull();
     expect(screen.queryByRole("button", { name: "删除" })).toBeNull();
     expect(screen.getByRole("button", { name: "详情" })).toBeTruthy();
@@ -199,7 +199,7 @@ describe("交付管理页（交付单列表）", () => {
     const single = { ...delivery, customers: [{ id: 101, nickname: "张三" }] };
     const calls = mockDeliveriesApi(adminMe, [single]);
     renderApp("/deliveries");
-    await screen.findByText("圈子全年交付");
+    await screen.findByRole("button", { name: "修改" }); // 表格已加载
 
     fireEvent.click(screen.getByRole("button", { name: "修改" }));
     const dialog = screen.getByRole("dialog", { name: /修改交付/ });
@@ -220,7 +220,7 @@ describe("交付管理页（交付单列表）", () => {
   it("按意向产品 merge：多选产品分页拉全候选客户，可一键合并全部成交", async () => {
     const calls = mockDeliveriesApi(adminMe);
     renderApp("/deliveries");
-    await screen.findByText("圈子全年交付");
+    await screen.findByRole("button", { name: "新增交付" });
 
     fireEvent.click(screen.getByRole("button", { name: "新增交付" }));
     const dialog = screen.getByRole("dialog", { name: "新增交付" });
