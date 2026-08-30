@@ -1,4 +1,5 @@
-// 资料专区（K54）：列表渲染 / q+kind+orphan 请求参数 / 新增（kind 切换显隐）/ 修改 OCC / assistant 只读 / 查看全文。
+// 资料专区（K54）：列表渲染 / q+kind+orphan 请求参数 / 按关联交付类型分组 tab（deliveryKind）/
+// 新增（kind 切换显隐）/ 修改 OCC / assistant 只读 / 查看全文。
 import { describe, expect, it } from "vitest";
 import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 
@@ -139,6 +140,41 @@ describe("资料专区", () => {
     await waitFor(() => {
       const hit = calls.find((c) => c.url.includes("orphan=1"));
       expect(hit).toBeTruthy();
+    });
+  });
+
+  it("按关联交付类型分组 tab：默认「全部」不带 deliveryKind；点选后带对应 deliveryKind；回「全部」不带", async () => {
+    const calls = mockMaterialsApi(adminMe);
+    renderApp("/materials");
+    await screen.findByText("开营录音文字稿");
+
+    // 五个 tab 齐全，默认「全部」选中
+    for (const name of ["全部", "咨询类", "活动类", "圈子类", "其他"]) {
+      expect(screen.getByRole("tab", { name })).toBeTruthy();
+    }
+    const allTab = screen.getByRole("tab", { name: "全部" });
+    expect(allTab.getAttribute("aria-selected")).toBe("true");
+
+    fireEvent.click(screen.getByRole("tab", { name: "圈子类" }));
+    await waitFor(() => {
+      const hit = calls.find((c) => c.url.includes("deliveryKind=circle"));
+      expect(hit).toBeTruthy();
+    });
+    expect(screen.getByRole("tab", { name: "圈子类" }).getAttribute("aria-selected")).toBe("true");
+
+    fireEvent.click(screen.getByRole("tab", { name: "其他" }));
+    await waitFor(() => {
+      const hit = calls.find((c) => c.url.includes("deliveryKind=other"));
+      expect(hit).toBeTruthy();
+    });
+
+    // 回「全部」：最新 GET 不再带 deliveryKind
+    fireEvent.click(screen.getByRole("tab", { name: "全部" }));
+    await waitFor(() => {
+      const gets = calls.filter((c) => c.method === "GET" && c.url.startsWith("/api/v1/materials?"));
+      const last = gets[gets.length - 1];
+      expect(last).toBeTruthy();
+      expect(last?.url).not.toContain("deliveryKind");
     });
   });
 
