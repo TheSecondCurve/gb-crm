@@ -430,6 +430,7 @@ describe("DataGrid 列选择器与状态", () => {
         </ToastProvider>
       </QueryClientProvider>,
     );
-    expect(document.querySelector(".empty")?.textContent).toBe("加载中…");
+    expect(document.querySelector(".grid-skeleton")).toBeTruthy();
+    expect(document.querySelector(".empty")).toBeNull();
   });
 });

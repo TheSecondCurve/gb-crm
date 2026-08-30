@@ -1,5 +1,5 @@
 // 客户总览页（K45–K48）：区块渲染 / AI 打标 POST / 手动标签 PATCH / 标签移除。
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 
 import { adminMe, assistantMe, mockFetch, renderApp } from "./helpers";
@@ -165,7 +165,7 @@ describe("客户总览页", () => {
     renderApp("/customers/1");
     await screen.findByText("张三");
 
-    fireEvent.click(screen.getByRole("button", { name: "+ 已成交" }));
+    fireEvent.click(screen.getByRole("button", { name: "已成交" }));
     fireEvent.click(screen.getByRole("button", { name: "保存" }));
 
     await waitFor(() => {
@@ -287,16 +287,15 @@ describe("客户总览页", () => {
       ).toBe(true),
     );
 
-    // 删除
-    const originalConfirm = window.confirm;
-    window.confirm = vi.fn(() => true);
+    // 删除（复用 ConfirmDialog）：
     fireEvent.click(screen.getByRole("button", { name: "删除" }));
+    const delDialog = screen.getByRole("dialog", { name: "删除维护记录" });
+    fireEvent.click(within(delDialog).getByRole("button", { name: "删除" }));
     await waitFor(() =>
       expect(
         calls.some((c) => c.method === "DELETE" && c.url === "/api/v1/customers/1/records/51"),
       ).toBe(true),
     );
-    window.confirm = originalConfirm;
   });
 
   it("K55 维护记录：assistant 只读（无新增/编辑/删除），但仍渲染记录", async () => {

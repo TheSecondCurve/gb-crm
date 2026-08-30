@@ -32,6 +32,64 @@ export function CustomersPage() {
   const canCreate = can(role, "customers", "create");
   const canUpdate = can(role, "customers", "update");
   const canDelete = can(role, "customers", "delete");
+  // K31：批量改归属人需要 updateOwners（admin/operator）；assistant 不出现选择列
+  const canUpdateOwners = can(role, "customers", "updateOwners");
+
+  // 行级批量选择：选中行在 DataGrid 由受控 selectedIds 持有；翻页/搜索/筛选/取消时清空
+  const [selectedIds, setSelectedIds] = useState<number[]>([]);
+  const [batchOwner, setBatchOwner] = useState("");
+  const [batchBusy, setBatchBusy] = useState(false);
+
+  const clearSelection = () => {
+    setSelectedIds([]);
+    setBatchOwner("");
+  };
+  const changeSearch = (q: string) => {
+    clearSelection();
+    list.changeSearch(q);
+  };
+  const changeFilter = (v: string) => {
+    clearSelection();
+    list.changeFilter(v);
+  };
+  const changeSecondFilter = (v: string) => {
+    clearSelection();
+    list.changeSecondFilter(v);
+  };
+  const changePage = (p: number, ps: number) => {
+    clearSelection();
+    list.changePage(p, ps);
+  };
+
+  // 批量归属人选项（仅在选择条可见时拉取）
+  const { data: userOptions = [] } = useQuery({
+    queryKey: ["users", "batch-options"],
+    enabled: canUpdateOwners && selectedIds.length > 0,
+    queryFn: async () =>
+      (await api.get<{ data: { id: number; nickname: string }[] }>("/users?pageSize=100"))?.data ?? [],
+  });
+
+  const applyBatchOwner = async () => {
+    if (batchOwner === "") return;
+    const ownerId = Number(batchOwner);
+    const targets = list.rows.filter((r) => selectedIds.includes(r.id));
+    setBatchBusy(true);
+    try {
+      // 逐行 PATCH（带各自 updatedAt 走 OCC），复用既有接口，不新开批量端点
+      await Promise.all(
+        targets.map((r) => api.patch(`/customers/${r.id}`, { ownerId, updatedAt: r.updatedAt })),
+      );
+      showToast(`已为 ${targets.length} 个客户更新归属人`);
+      clearSelection();
+      await list.invalidate();
+    } catch (err) {
+      showToast(err instanceof ApiError ? err.message : "批量更新失败，请稍后重试");
+      void list.invalidate();
+    } finally {
+      setBatchBusy(false);
+      setBatchOwner("");
+    }
+  };
 
   // K45：标签筛选下拉选项（词表；空=全部）
   const { data: tagOptions = [] } = useQuery({
@@ -134,11 +192,11 @@ export function CustomersPage() {
       <div className="page-head">
         <h1>客户信息</h1>
         <div className="search-bar">
-          <SearchBar onSearch={list.changeSearch} placeholder="搜索客户…" />
+          <SearchBar onSearch={changeSearch} placeholder="搜索客户…" />
           <select
             aria-label="类型筛选"
             value={list.filter}
-            onChange={(e) => list.changeFilter(e.target.value)}
+            onChange={(e) => changeFilter(e.target.value)}
           >
             <option value="">全部类型</option>
             {optionsOf(customerTypeLabels).map((o) => (
@@ -150,7 +208,7 @@ export function CustomersPage() {
           <select
             aria-label="标签筛选"
             value={list.secondFilter}
-            onChange={(e) => list.changeSecondFilter(e.target.value)}
+            onChange={(e) => changeSecondFilter(e.target.value)}
           >
             <option value="">全部标签</option>
             {tagOptions.map((t) => (
@@ -175,6 +233,34 @@ export function CustomersPage() {
         </div>
       </div>
       <div className="card">
+        {canUpdateOwners && selectedIds.length > 0 && (
+          <div className="batch-bar">
+            <span className="batch-count">已选 {selectedIds.length} 项</span>
+            <select
+              aria-label="批量归属人"
+              value={batchOwner}
+              onChange={(e) => setBatchOwner(e.target.value)}
+            >
+              <option value="">选择归属人…</option>
+              {userOptions.map((u) => (
+                <option key={u.id} value={u.id}>
+                  {u.nickname}
+                </option>
+              ))}
+            </select>
+            <button
+              type="button"
+              className="btn-primary"
+              disabled={batchOwner === "" || batchBusy}
+              onClick={() => void applyBatchOwner()}
+            >
+              {batchBusy ? "更新中…" : "应用归属人"}
+            </button>
+            <button type="button" onClick={clearSelection}>
+              取消选择
+            </button>
+          </div>
+        )}
         <div className="card-body-flush">
           <DataGrid
             ref={list.gridRef}
@@ -184,6 +270,10 @@ export function CustomersPage() {
             loading={list.loading}
             queryKey={list.queryKey}
             patchRow={patchRow}
+            emptyHint={canCreate ? "点右上角「新增」创建第一条客户" : "当前筛选条件下暂无客户"}
+            selectable={canUpdateOwners}
+            selectedIds={selectedIds}
+            onSelectionChange={setSelectedIds}
             renderRowActions={
               canUpdate || canDelete
                 ? (row) => (
@@ -212,7 +302,7 @@ export function CustomersPage() {
             page={list.page}
             pageSize={list.pageSize}
             total={list.total}
-            onChange={list.changePage}
+            onChange={changePage}
           />
         </div>
       </div>
