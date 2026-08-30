@@ -363,3 +363,19 @@ export interface UserDto {
   createdBy: UserRefDto | null;
   updatedBy: UserRefDto | null;
 }
+
+/** K35 后台「授权管理」：Agent PAT 令牌（admin 可见全部；不含 tokenHash/明文）
+ * status 为派生视图：active（未吊销且未过期）/ revoked / expired */
+export interface ApiTokenAdminDto {
+  id: number;
+  prefix: string;
+  name: string | null;
+  scope: "read" | "write";
+  status: "active" | "revoked" | "expired";
+  user: { id: number; nickname: string };
+  createdAt: number;
+  expiresAt: number;
+  lastUsedAt: number | null;
+  revokedAt: number | null;
+  revokedBy: { id: number; nickname: string } | null;
+}

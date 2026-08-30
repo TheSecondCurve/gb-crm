@@ -33,7 +33,7 @@ const EXPECTED: Record<SystemRole, Partial<Record<Resource, readonly Action[]>>>
     system: ["read", "update"],
     jobs: ["list", "read", "create", "cancel", "cancelAny"],
     jobSchedules: ["list", "read", "create", "update", "delete"],
-    auth: ["setPassword", "impersonate"],
+    auth: ["setPassword", "impersonate", "list", "revoke"],
   },
   operator: {
     users: ["list", "read"],
@@ -219,6 +219,15 @@ describe("§6 必测场景", () => {
     expect(can("admin", "auth", "impersonate")).toBe(true);
     for (const role of ["operator", "assistant", null] as const) {
       expect(can(role, "auth", "impersonate")).toBe(false);
+    }
+  });
+
+  it("授权管理（PAT 令牌）：admin 可列全部/吊销任意，其余角色 deny（K35 治理）", () => {
+    expect(can("admin", "auth", "list")).toBe(true);
+    expect(can("admin", "auth", "revoke")).toBe(true);
+    for (const role of ["operator", "assistant", null] as const) {
+      expect(can(role, "auth", "list")).toBe(false);
+      expect(can(role, "auth", "revoke")).toBe(false);
     }
   });
 });

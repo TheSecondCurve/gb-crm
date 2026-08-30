@@ -457,3 +457,167 @@ describe("GET /agent/login.sh", () => {
     }
   });
 });
+
+describe("授权管理（admin）GET/DELETE /api/v1/auth/tokens/admin", () => {
+  // POST /auth/tokens 响应不含 id（只有 prefix）；用 prefix 查 api_tokens 拿真实 id
+  const idOfPrefix = (prefix: string): number =>
+    (tmp.sqlite
+      .prepare("SELECT id FROM api_tokens WHERE token_prefix = ?")
+      .get(prefix) as { id: number }).id;
+
+  it("admin 可列全部令牌：含用户昵称/scope/派生状态，无 hash/明文", async () => {
+    await seedUser(tmp.db);
+    const bobUserId = await seedUser(tmp.db, { username: "bob", nickname: "鲍勃" });
+    const a = await mint({ username: "alice", password: "password123", scope: "read", name: "laptop" });
+    const b = await mint({ username: "bob", password: "password123", scope: "write" });
+    const c = await mint({ username: "bob", password: "password123", scope: "read" });
+    const aId = idOfPrefix(a.json().data.prefix);
+    const bId = idOfPrefix(b.json().data.prefix);
+    const cId = idOfPrefix(c.json().data.prefix);
+
+    // 制造衍生状态：a=已过期（未吊销）、b=已吊销、c=有效（不动）
+    tmp.sqlite.prepare("UPDATE api_tokens SET expires_at = ? WHERE id = ?").run(clock.t - 1, aId);
+    tmp.sqlite.prepare("UPDATE api_tokens SET revoked_at = ? WHERE id = ?").run(clock.t, bId);
+
+    const cookie = await loginAs(app, "alice", "password123");
+    const res = await app.inject({ method: "GET", url: "/api/v1/auth/tokens/admin", headers: { cookie } });
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    expect(body.meta.total).toBe(3);
+    type AdminTokenRow = {
+      id: number;
+      status: string;
+      scope: string;
+      name: string | null;
+      prefix: string;
+      user: { id: number; nickname: string };
+      token?: string;
+      tokenHash?: string;
+    };
+    const byId = Object.fromEntries(
+      (body.data as AdminTokenRow[]).map((r) => [r.id, r]),
+    ) as Record<number, AdminTokenRow>;
+    const rowA = byId[aId]!;
+    const rowB = byId[bId]!;
+    const rowC = byId[cId]!;
+    expect(rowA).toMatchObject({ status: "expired", scope: "read", name: "laptop", prefix: a.json().data.prefix });
+    expect(rowB).toMatchObject({ status: "revoked", scope: "write" });
+    expect(rowC).toMatchObject({ status: "active", scope: "read" });
+    expect(rowA.user).toEqual({ id: rowA.user.id, nickname: "爱丽丝" });
+    expect(rowB.user).toEqual({ id: bobUserId, nickname: "鲍勃" });
+    expect(JSON.stringify(body)).not.toContain(a.json().data.token);
+    expect(rowA.tokenHash).toBeUndefined();
+    expect(rowA.token).toBeUndefined();
+  });
+
+  it("operator/assistant → 403；未登录 → 401", async () => {
+    await seedUser(tmp.db);
+    await seedUser(tmp.db, { username: "op", systemRole: "operator", nickname: "运营" });
+    const opCookie = await loginAs(app, "op", "password123");
+
+    const listRes = await app.inject({
+      method: "GET",
+      url: "/api/v1/auth/tokens/admin",
+      headers: { cookie: opCookie },
+    });
+    expect(listRes.statusCode).toBe(403);
+
+    const delRes = await app.inject({
+      method: "DELETE",
+      url: "/api/v1/auth/tokens/admin/1",
+      headers: { cookie: opCookie },
+    });
+    expect(delRes.statusCode).toBe(403);
+
+    const anon = await app.inject({ method: "GET", url: "/api/v1/auth/tokens/admin" });
+    expect(anon.statusCode).toBe(401);
+  });
+
+  it("admin 吊销他人令牌：revoked_at/revoked_by 写入，令牌随即失效", async () => {
+    const adminId = await seedUser(tmp.db);
+    await seedUser(tmp.db, { username: "bob", nickname: "鲍勃" });
+    const bobMint = await mint({ username: "bob", password: "password123", scope: "write" });
+    const bobToken = bobMint.json().data.token as string;
+    const bobId = idOfPrefix(bobMint.json().data.prefix);
+
+    const cookie = await loginAs(app, "alice", "password123");
+    const del = await app.inject({
+      method: "DELETE",
+      url: `/api/v1/auth/tokens/admin/${bobId}`,
+      headers: { cookie },
+    });
+    expect(del.statusCode).toBe(204);
+
+    const row = tmp.sqlite
+      .prepare("SELECT revoked_at, revoked_by FROM api_tokens WHERE id = ?")
+      .get(bobId) as { revoked_at: number; revoked_by: number };
+    expect(row.revoked_at).toBe(clock.t);
+    expect(row.revoked_by).toBe(adminId);
+
+    const me = await app.inject({ method: "GET", url: "/api/v1/auth/me", headers: bearer(bobToken) });
+    expect(me.statusCode).toBe(401);
+  });
+
+  it("吊销不存在 id → 404；已吊销 → 幂等 204 且不改 revoked_by", async () => {
+    await seedUser(tmp.db);
+    await seedUser(tmp.db, { username: "bob", nickname: "鲍勃" });
+    const bobMint = await mint({ username: "bob", password: "password123", scope: "write" });
+    const bobId = idOfPrefix(bobMint.json().data.prefix);
+    const cookie = await loginAs(app, "alice", "password123");
+
+    const missing = await app.inject({
+      method: "DELETE",
+      url: "/api/v1/auth/tokens/admin/999999",
+      headers: { cookie },
+    });
+    expect(missing.statusCode).toBe(404);
+
+    const first = await app.inject({
+      method: "DELETE",
+      url: `/api/v1/auth/tokens/admin/${bobId}`,
+      headers: { cookie },
+    });
+    expect(first.statusCode).toBe(204);
+    const second = await app.inject({
+      method: "DELETE",
+      url: `/api/v1/auth/tokens/admin/${bobId}`,
+      headers: { cookie },
+    });
+    expect(second.statusCode).toBe(204);
+
+    const row = tmp.sqlite.prepare("SELECT revoked_by FROM api_tokens WHERE id = ?").get(bobId) as {
+      revoked_by: number;
+    };
+    expect(row.revoked_by).toBeGreaterThan(0);
+  });
+
+  it("按 status/scope/userId 过滤生效", async () => {
+    await seedUser(tmp.db);
+    const bobId = await seedUser(tmp.db, { username: "bob", nickname: "鲍勃" });
+    const a = await mint({ username: "alice", password: "password123", scope: "read" });
+    const aId = idOfPrefix(a.json().data.prefix);
+    await mint({ username: "bob", password: "password123", scope: "read" });
+    await mint({ username: "bob", password: "password123", scope: "write" });
+    tmp.sqlite.prepare("UPDATE api_tokens SET revoked_at = ? WHERE id = ?").run(clock.t, aId);
+
+    const cookie = await loginAs(app, "alice", "password123");
+    const get = async (url: string) => app.inject({ method: "GET", url, headers: { cookie } });
+
+    const revokedOnly = await get("/api/v1/auth/tokens/admin?status=revoked");
+    expect(revokedOnly.json().meta.total).toBe(1);
+    expect(revokedOnly.json().data[0].id).toBe(aId);
+
+    const activeOnly = await get("/api/v1/auth/tokens/admin?status=active");
+    expect(activeOnly.json().meta.total).toBe(2);
+
+    const readScope = await get("/api/v1/auth/tokens/admin?scope=read");
+    expect(readScope.json().meta.total).toBe(2);
+
+    const bobAll = await get(`/api/v1/auth/tokens/admin?userId=${bobId}`);
+    expect(bobAll.json().meta.total).toBe(2);
+
+    const bobWrite = await get(`/api/v1/auth/tokens/admin?userId=${bobId}&scope=write`);
+    expect(bobWrite.json().meta.total).toBe(1);
+    expect(bobWrite.json().data[0].scope).toBe("write");
+  });
+});
