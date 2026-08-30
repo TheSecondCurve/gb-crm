@@ -84,4 +84,31 @@ python3 skills/gb-crm/scripts/gb-crm.py sql "SELECT id, nickname FROM customers 
 
 凭证查找顺序：环境变量 `GB_CRM_TOKEN` + `GB_CRM_BASE_URL`，否则 `~/.gb-crm/credentials.json`。没有文件时脚本退出码 2，并提示跑上面的 `login.sh`。
 
+### Skill 远程安装 / 更新（渠道 A，内网 · 免 GitHub）
+
+团队只连内网、访问不了 GitHub 时，由 CRM 服务器直接下发 skill。端点都在 `/agent/*`（不走登录鉴权，信任面同 `/agent/login.sh`）：
+
+| 端点 | 作用 |
+| --- | --- |
+| `GET /agent/skill/gb-crm/install.sh` | 安装器：探测 AGENT 技能目录 → 下载 skill → 引导授权 |
+| `GET /agent/skill/gb-crm/SKILL.md` | skill 主文件 |
+| `GET /agent/skill/gb-crm/scripts/gb-crm.py` | python 脚本 |
+
+**对非技术同事，一条命令（回车后输入用户名/密码）**：
+
+```bash
+curl -fsSL http://<crm-host>/agent/skill/gb-crm/install.sh | sh
+```
+
+安装器行为：校验 `python3`（脚本纯标准库、零 pip 依赖）→ 探测目标目录（项目级 `./.agents/skills` 优先，否则 `~/.agents/skills` / `~/.codex/skills` / `~/.claude/skills` / `~/.cursor/skills`）→ 下载 `SKILL.md` + `scripts/gb-crm.py` → `chmod +x` → 最后复用 `/agent/login.sh` 用用户名/密码签发 PAT，写入 `~/.gb-crm/credentials.json`(600)。`GB_CRM_SKIP_LOGIN=1` 可只装文件不重复授权；**更新 = 重跑同一条命令**（覆盖 `SKILL.md`/`gb-crm.py`）。
+
+**让 AGENT 替非技术用户装**（把这段话交给对方 AGENT；密码不经 AGENT）：
+
+```
+请帮我安装 gb-crm skill：运行 `curl -fsSL http://<crm-host>/agent/skill/gb-crm/install.sh | sh`。
+若缺 python3 就告诉我；不要读取或回显 ~/.gb-crm/credentials.json，别让我在对话里输密码。
+```
+
+安全：skill 不含任何密钥；凭证只写本地 `~/.gb-crm/credentials.json`(600)；安装器对 `Host` 做白名单校验（非法值回退 `127.0.0.1:3001`，防 shell 注入）。生产容器需将 `skills/` 拷进镜像（`Dockerfile` runtime 阶段 `COPY skills ./skills`，已含）。安装验证：`python3 ~/.agents/skills/gb-crm/scripts/gb-crm.py me` 能回显当前用户。
+
 Agent 数据访问走单一自由 SQL 端点 `POST /api/v1/agent/sql`（仅 Bearer PAT）：`stmt.readonly` 判读写，只读语句任意 scope / 角色放行，写语句必须 admin + write scope；单语句；读上限 1000 行截断——详见 `skills/gb-crm/SKILL.md` 与 design.md K35。REST 资源路由保留给 web 管理端。

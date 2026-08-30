@@ -51,6 +51,7 @@ COPY --from=prod-deps /app/node_modules ./node_modules
 COPY apps/api/src ./apps/api/src
 COPY apps/api/drizzle ./apps/api/drizzle
 COPY packages/shared/src ./packages/shared/src
+COPY skills ./skills
 COPY --from=build /app/apps/web/dist ./apps/web/dist
 
 RUN mkdir -p /data && chown -R node:node /data
