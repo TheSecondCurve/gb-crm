@@ -291,6 +291,63 @@ describe("GET /api/v1/materials 列表：搜索（FTS/LIKE 混合）", () => {
     expect(byCustomer.json().data[0].id).toBe(t.id);
   });
 
+  it("deliveryKind 过滤：consulting/activity/circle 只命中对应类；other=未关联或类型为 other；交付软删归 other；非法值 422", async () => {
+    const { cookie } = await loginAsRole("admin");
+
+    const makeType = async (name: string, kind: string): Promise<number> => {
+      const res = await post("/api/v1/delivery-types", cookie, { name, kind });
+      expect(res.statusCode).toBe(201);
+      return res.json().data.id;
+    };
+    const makeDelivery = async (typeId: number): Promise<number> => {
+      const res = await post("/api/v1/deliveries", cookie, {
+        deliveryTypeId: typeId,
+        customerIds: [],
+        startsAt: clock.t - 1000,
+        endsAt: clock.t + 100000,
+      });
+      expect(res.statusCode).toBe(201);
+      return res.json().data.id;
+    };
+
+    const consultingDelivery = await makeDelivery(await makeType("一对一咨询", "consulting"));
+    const activityDelivery = await makeDelivery(await makeType("线下沙龙", "activity"));
+    const circleDelivery = await makeDelivery(await makeType("年度圈子", "circle"));
+    const otherDelivery = await makeDelivery(await makeType("其它服务", "other"));
+
+    const consulting = await createMaterial(cookie, { ...TEXT, title: "咨询类资料", deliveryId: consultingDelivery });
+    const activity = await createMaterial(cookie, { ...TEXT, title: "活动类资料", deliveryId: activityDelivery });
+    const circle = await createMaterial(cookie, { ...TEXT, title: "圈子类资料", deliveryId: circleDelivery });
+    const other = await createMaterial(cookie, { ...TEXT, title: "其他类资料", deliveryId: otherDelivery });
+    const orphan = await createMaterial(cookie, { kind: "text", title: "孤儿资料", content: "无交付" });
+
+    const getIds = async (kind: string): Promise<number[]> => {
+      const res = await get(`/api/v1/materials?deliveryKind=${kind}&pageSize=100`, cookie);
+      expect(res.statusCode).toBe(200);
+      return (res.json().data as Material[]).map((m) => m.id);
+    };
+
+    // 三种明确分类互不串
+    expect(await getIds("consulting")).toEqual([consulting.id]);
+    expect(await getIds("activity")).toEqual([activity.id]);
+    expect(await getIds("circle")).toEqual([circle.id]);
+
+    // other = 类型为 other 的资料 + 未关联孤儿；不含明确分类
+    const otherIds = await getIds("other");
+    expect(otherIds).toContain(other.id);
+    expect(otherIds).toContain(orphan.id);
+    expect(otherIds).not.toContain(consulting.id);
+    expect(otherIds).not.toContain(activity.id);
+
+    // 交付软删 → 展开为 null（未关联）→ 归 other
+    expect((await del(`/api/v1/deliveries/${circleDelivery}`, cookie)).statusCode).toBe(204);
+    expect(await getIds("circle")).not.toContain(circle.id);
+    expect(await getIds("other")).toContain(circle.id);
+
+    // 非法值 → 422 VALIDATION
+    expect((await get("/api/v1/materials?deliveryKind=invalid", cookie)).statusCode).toBe(422);
+  });
+
   it("orphan=1：无交付单或无客户即孤儿；两者都有不出现", async () => {
     const { cookie } = await loginAsRole("admin");
     const delivery = await createDelivery(cookie);
