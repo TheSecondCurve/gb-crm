@@ -558,3 +558,31 @@ export const deliveryMaterialCustomers = sqliteTable(
     index("delivery_material_customers_customer_idx").on(t.customerId),
   ],
 );
+
+// K55 客户维护记录：时序时间线，销售随手记录跟进触点（沟通/状态变化/线索/备注），
+// 按时间倒序持续积累。纯时间线表达客户状态（不新增 customers.status 列）。
+// happened_at 与 created_at 分离（可回填补录）。软删；无 FTS / 无 M2M / 无多态关联。
+export const customerMaintenanceRecords = sqliteTable(
+  "customer_maintenance_records",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    customerId: integer("customer_id")
+      .notNull()
+      .references(() => customers.id, { onDelete: "cascade" }),
+    kind: text("kind").notNull(),
+    happenedAt: integer("happened_at").notNull(),
+    content: text("content"),
+    createdAt: integer("created_at").notNull(),
+    updatedAt: integer("updated_at").notNull(),
+    createdBy: integer("created_by").references(() => users.id, { onDelete: "set null" }),
+    updatedBy: integer("updated_by").references(() => users.id, { onDelete: "set null" }),
+    deletedAt: integer("deleted_at"),
+  },
+  (t) => [
+    check(
+      "customer_maintenance_records_kind_check",
+      sql`"kind" IN ('follow_up','status_change','lead','note','other')`,
+    ),
+    index("customer_maintenance_records_customer_idx").on(t.customerId),
+  ],
+);

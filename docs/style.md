@@ -9,6 +9,15 @@
 
 辅助灰阶（冷灰底上）：正文次级 `#5A544C` · 三级 `#9A948C` · 发丝线 `#D8D6D1`；玄黑底上：亮字 `#DCD7CE` · 注释 `#A39D93` · 暗线 `#3A3530`。
 
+## 设计约束（编码代理评审后固化）
+
+- **表面 token**：白卡/弹层一律用 `--surface`（`#ffffff`），禁止散落 `rgb(255,255,255)`；主底永远是冷灰 `--bg`，不铺玄黑。
+- **唯一强调色**：`--accent`（冷漆红）只做点睛，面积 ≤5%，永不铺底。允许：badge-accent、侧栏 active 左竖线、进度条填充、统计大数字、导出等 Action 文案高亮。禁用作卡片/按钮/弹层底色。
+- **圆角体系（单一半径档）**：badge/chip 全圆（999）；input 4px；按钮/卡片/表格 4-6px；弹层（modal / login-card / command-palette）8px。同页保持一致，不混搭。
+- **弹层顶边强调（3px）统一 `--ink`**：modal、login-card、command-palette 的顶边一律玄黑结构线，不再用 accent（accent 留给 ≤5% 点睛，不占用结构强调）。
+- **图标**：统一 `@phosphor-icons/react`，一处一个 family；小控件用 `weight="bold"` + `aria-hidden`，正文用默认 weight。禁用字符 glyph（`☰ ▾ × ✓ +`）充当控件图标。
+- **键盘手感**：DataGrid 保持单击选中 / 双击·Enter 编辑 / Enter 下移 / Tab 右移 / Shift+Tab 左移 / Esc 取消；列表页搜索框按 `/` 聚焦，全局按 `Ctrl/Cmd+K` 打开快速搜索。
+
 ## 例子
 
 example/example_page.html.mhtml

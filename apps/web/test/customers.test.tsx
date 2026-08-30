@@ -347,6 +347,28 @@ describe("客户信息页", () => {
     expect(calls.some((c) => c.method === "DELETE" && c.url === "/api/v1/customers/1")).toBe(true);
   });
 
+  it("批量改归属人：勾选行 → 选归属人 → 应用 → 逐行 PATCH 带各自 updatedAt", async () => {
+    const calls = mockCustomersApi(adminMe);
+    renderApp("/customers");
+    await screen.findByText("张三");
+
+    fireEvent.click(screen.getByLabelText("全选当前页"));
+    expect(screen.getByText("已选 1 项")).toBeTruthy();
+
+    // 用户选项来自 GET /users?pageSize=100（mockCustomersApi 已 mock users）
+    await screen.findByRole("option", { name: "小李" });
+    fireEvent.change(screen.getByLabelText("批量归属人"), { target: { value: "2" } });
+    fireEvent.click(screen.getByRole("button", { name: "应用归属人" }));
+
+    await waitFor(() => {
+      const patch = calls.find((c) => c.method === "PATCH" && c.url === "/api/v1/customers/1");
+      expect(patch).toBeTruthy();
+      const body = JSON.parse(String(patch?.body));
+      expect(body.ownerId).toBe(2);
+      expect(body.updatedAt).toBe(2000); // 该行自身的 OCC 值
+    });
+  });
+
   it("全量生成标签：确认后创建后台任务（POST /background-jobs，无筛选 params={}）并跳转后台任务 tab", async () => {
     const calls = mockCustomersApi(adminMe);
     renderApp("/customers");

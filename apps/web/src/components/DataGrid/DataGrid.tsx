@@ -34,6 +34,14 @@ export interface DataGridProps<Row extends GridRow> {
   /** 行尾操作列（删除按钮等） */
   renderRowActions?: (row: Row) => ReactNode;
   emptyText?: string;
+  /** 空态副提示（如「点右上角新增」），仅在 rows 为空时展示 */
+  emptyHint?: string;
+  /** 开启行选择列（最左 checkbox + 表头全选）；selection 由父级受控 */
+  selectable?: boolean;
+  /** 已选行 id（配合 selectable）；列表页持有并管理（翻页/搜索时清空） */
+  selectedIds?: number[];
+  /** 选择变化回调（父级更新 selectedIds） */
+  onSelectionChange?: (ids: number[]) => void;
   ref?: Ref<DataGridHandle>;
 }
 
@@ -90,6 +98,10 @@ export function DataGrid<Row extends GridRow>({
   isRowDisabled,
   renderRowActions,
   emptyText = "暂无数据",
+  emptyHint,
+  selectable = false,
+  selectedIds = [],
+  onSelectionChange,
   ref,
 }: DataGridProps<Row>) {
   const queryClient = useQueryClient();
@@ -205,6 +217,27 @@ export function DataGrid<Row extends GridRow>({
   const visibleCols = columns.filter((c) => visibleKeys.includes(c.key));
   const isEditableCol = (col: GridColumn<Row>) => col.editable === true && col.editor != null;
 
+  // 行选择（受控）：selectAllRef 设表头 checkbox 的 indeterminate 态
+  const selectedSet = new Set(selectedIds);
+  const visibleRowIds = rows.map((r) => r.id);
+  const allVisibleSelected = rows.length > 0 && rows.every((r) => selectedSet.has(r.id));
+  const anyVisibleSelected = rows.some((r) => selectedSet.has(r.id));
+  const selectAllRef = useRef<HTMLInputElement>(null);
+  useEffect(() => {
+    if (selectAllRef.current) selectAllRef.current.indeterminate = anyVisibleSelected && !allVisibleSelected;
+  }, [anyVisibleSelected, allVisibleSelected]);
+
+  const toggleSelectAll = () => {
+    if (allVisibleSelected) {
+      onSelectionChange?.(selectedIds.filter((id) => !visibleRowIds.includes(id)));
+    } else {
+      onSelectionChange?.([...new Set([...selectedIds, ...visibleRowIds])]);
+    }
+  };
+  const toggleRow = (id: number) => {
+    onSelectionChange?.(selectedSet.has(id) ? selectedIds.filter((x) => x !== id) : [...selectedIds, id]);
+  };
+
   const move = (dir: "down" | "right" | "left") => {
     const cur = editing;
     if (!cur) return;
@@ -297,7 +330,19 @@ export function DataGrid<Row extends GridRow>({
     return (
       <div className="data-grid" ref={containerRef}>
         {toolbar}
-        <div className="empty">加载中…</div>
+        <div className="grid-skeleton" aria-hidden="true">
+          {Array.from({ length: 6 }, (_, r) => (
+            <div key={r} className="grid-skeleton-row">
+              {visibleCols.slice(0, 8).map((c, i) => (
+                <span
+                  key={c.key}
+                  className="grid-skeleton-bar"
+                  style={{ flex: i === 0 ? "1.4" : "1" }}
+                />
+              ))}
+            </div>
+          ))}
+        </div>
       </div>
     );
   }
@@ -306,7 +351,10 @@ export function DataGrid<Row extends GridRow>({
     return (
       <div className="data-grid" ref={containerRef}>
         {toolbar}
-        <div className="empty">{emptyText}</div>
+        <div className="empty">
+          {emptyText}
+          {emptyHint ? <div className="empty-hint">{emptyHint}</div> : null}
+        </div>
       </div>
     );
   }
@@ -315,9 +363,20 @@ export function DataGrid<Row extends GridRow>({
     <div className="data-grid" ref={containerRef}>
       {toolbar}
       <div className="data-grid-scroll">
-        <table className="data-table data-grid-table">
+        <table className={selectable ? "data-table data-grid-table has-select" : "data-table data-grid-table"}>
           <thead>
             <tr>
+              {selectable && (
+                <th className="grid-select-cell">
+                  <input
+                    ref={selectAllRef}
+                    type="checkbox"
+                    aria-label="全选当前页"
+                    checked={allVisibleSelected}
+                    onChange={toggleSelectAll}
+                  />
+                </th>
+              )}
               {visibleCols.map((col) => (
                 <th key={col.key} style={col.width ? { width: col.width, minWidth: col.width } : undefined}>
                   {col.label}
@@ -329,6 +388,16 @@ export function DataGrid<Row extends GridRow>({
           <tbody>
             {rows.map((row) => (
               <tr key={row.id} className={isRowDisabled?.(row) ? "row-disabled" : undefined}>
+                {selectable && (
+                  <td className="grid-select-cell">
+                    <input
+                      type="checkbox"
+                      aria-label={`选择 ${row.id}`}
+                      checked={selectedSet.has(row.id)}
+                      onChange={() => toggleRow(row.id)}
+                    />
+                  </td>
+                )}
                 {visibleCols.map((col) => {
                   const isSel = selected?.rowId === row.id && selected.colKey === col.key;
                   const isEd = editing?.rowId === row.id && editing.colKey === col.key;

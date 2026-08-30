@@ -37,7 +37,7 @@ function makeOverview(over: Partial<CustomerOverviewDto> = {}): CustomerOverview
       createdBy: null,
       updatedBy: null,
     },
-    stats: { dealCount: 2, paidTotalCents: 19900, lastDealAt: 1500, materialCount: 0 },
+    stats: { dealCount: 2, paidTotalCents: 19900, lastDealAt: 1500, materialCount: 0, maintenanceRecordCount: 0 },
     deals: [
       {
         id: 11,
@@ -75,6 +75,7 @@ function makeOverview(over: Partial<CustomerOverviewDto> = {}): CustomerOverview
       },
     ],
     materials: [],
+    maintenanceRecords: [],
     ...over,
   };
 }
@@ -96,6 +97,22 @@ function mockOverviewApi(me: typeof adminMe, over: Partial<CustomerOverviewDto> 
         status: 200,
         body: { data: tags, meta: { page: 1, pageSize: 100, total: tags.length } },
       };
+    }
+    // K55：维护记录 create/update/delete
+    if (url.includes("/customers/1/records/") && method === "PATCH") {
+      return {
+        status: 200,
+        body: { data: { id: 51, customerId: 1, kind: "lead", happenedAt: 1750000000000, content: "x", createdAt: 1600, updatedAt: 1601, createdBy: { id: 1, nickname: "管理员" }, updatedBy: null } },
+      };
+    }
+    if (url.includes("/customers/1/records") && method === "POST") {
+      return {
+        status: 201,
+        body: { data: { id: 52, customerId: 1, kind: "follow_up", happenedAt: 1750000000000, content: "x", createdAt: 1600, updatedAt: 1600, createdBy: { id: 1, nickname: "管理员" }, updatedBy: null } },
+      };
+    }
+    if (url.includes("/customers/1/records/") && method === "DELETE") {
+      return { status: 204, body: "" };
     }
     if (url.includes("/customers/1/overview")) {
       return { status: 200, body: { data: makeOverview(over) } };
@@ -148,7 +165,7 @@ describe("客户总览页", () => {
     renderApp("/customers/1");
     await screen.findByText("张三");
 
-    fireEvent.click(screen.getByRole("button", { name: "+ 已成交" }));
+    fireEvent.click(screen.getByRole("button", { name: "已成交" }));
     fireEvent.click(screen.getByRole("button", { name: "保存" }));
 
     await waitFor(() => {
@@ -181,7 +198,7 @@ describe("客户总览页", () => {
   });
 
   it("空成交/空圈子显示占位文案", async () => {
-    mockOverviewApi(adminMe, { stats: { dealCount: 0, paidTotalCents: 0, lastDealAt: null, materialCount: 0 }, deals: [], circles: [] });
+    mockOverviewApi(adminMe, { stats: { dealCount: 0, paidTotalCents: 0, lastDealAt: null, materialCount: 0, maintenanceRecordCount: 0 }, deals: [], circles: [] });
     renderApp("/customers/1");
     expect(await screen.findByText("暂无成交记录")).toBeTruthy();
     expect(screen.getByText("暂无当前有效的交付圈子")).toBeTruthy();
@@ -204,7 +221,7 @@ describe("客户总览页", () => {
       updatedBy: null,
     };
     const calls = mockOverviewApi(adminMe, {
-      stats: { dealCount: 2, paidTotalCents: 19900, lastDealAt: 1500, materialCount: 1 },
+      stats: { dealCount: 2, paidTotalCents: 19900, lastDealAt: 1500, materialCount: 1, maintenanceRecordCount: 0 },
       materials: [material],
     });
     renderApp("/customers/1");
@@ -227,5 +244,81 @@ describe("客户总览页", () => {
     mockOverviewApi(adminMe);
     renderApp("/customers/1");
     expect(await screen.findByText("暂无资料")).toBeTruthy();
+  });
+
+  it("K55 维护记录：admin 可新增/编辑/删除；assistant 只读", async () => {
+    const record = {
+      id: 51,
+      customerId: 1,
+      kind: "lead",
+      happenedAt: 1750000000000,
+      content: "对1v1感兴趣",
+      createdAt: 1600,
+      updatedAt: 1600,
+      createdBy: { id: 1, nickname: "管理员" },
+      updatedBy: null,
+    };
+    const calls = mockOverviewApi(adminMe, {
+      stats: { dealCount: 2, paidTotalCents: 19900, lastDealAt: 1500, materialCount: 0, maintenanceRecordCount: 1 },
+      maintenanceRecords: [record],
+    });
+    renderApp("/customers/1");
+
+    expect(await screen.findByText("对1v1感兴趣")).toBeTruthy();
+    expect(screen.getByText("线索意向")).toBeTruthy(); // kind badge label
+    expect(screen.getByText("维护记录（1）")).toBeTruthy();
+
+    // 新增
+    fireEvent.click(screen.getByRole("button", { name: "新增记录" }));
+    const dialog = await screen.findByRole("dialog", { name: "新增维护记录" });
+    fireEvent.change(within(dialog).getByLabelText(/内容/), { target: { value: "新记录内容" } });
+    fireEvent.click(within(dialog).getByRole("button", { name: "创建" }));
+    await waitFor(() =>
+      expect(calls.some((c) => c.method === "POST" && c.url === "/api/v1/customers/1/records")).toBe(true),
+    );
+
+    // 编辑
+    fireEvent.click(screen.getByRole("button", { name: "编辑" }));
+    const editDialog = await screen.findByRole("dialog", { name: "编辑维护记录" });
+    fireEvent.click(within(editDialog).getByRole("button", { name: "保存" }));
+    await waitFor(() =>
+      expect(
+        calls.some((c) => c.method === "PATCH" && c.url === "/api/v1/customers/1/records/51"),
+      ).toBe(true),
+    );
+
+    // 删除（复用 ConfirmDialog）：
+    fireEvent.click(screen.getByRole("button", { name: "删除" }));
+    const delDialog = screen.getByRole("dialog", { name: "删除维护记录" });
+    fireEvent.click(within(delDialog).getByRole("button", { name: "删除" }));
+    await waitFor(() =>
+      expect(
+        calls.some((c) => c.method === "DELETE" && c.url === "/api/v1/customers/1/records/51"),
+      ).toBe(true),
+    );
+  });
+
+  it("K55 维护记录：assistant 只读（无新增/编辑/删除），但仍渲染记录", async () => {
+    const record = {
+      id: 51,
+      customerId: 1,
+      kind: "lead",
+      happenedAt: 1750000000000,
+      content: "对1v1感兴趣",
+      createdAt: 1600,
+      updatedAt: 1600,
+      createdBy: { id: 2, nickname: "兼职助手" },
+      updatedBy: null,
+    };
+    mockOverviewApi(assistantMe, {
+      stats: { dealCount: 2, paidTotalCents: 19900, lastDealAt: 1500, materialCount: 0, maintenanceRecordCount: 1 },
+      maintenanceRecords: [record],
+    });
+    renderApp("/customers/1");
+
+    expect(await screen.findByText("对1v1感兴趣")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "新增记录" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "编辑" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "删除" })).toBeNull();
   });
 });

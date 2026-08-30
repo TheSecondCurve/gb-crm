@@ -12,6 +12,7 @@ import { authRoutes } from "./modules/auth/routes.js";
 import { agentRoutes } from "./modules/agent/routes.js";
 import { channelsRoutes } from "./modules/channels/routes.js";
 import { customersRoutes } from "./modules/customers/routes.js";
+import { customerRecordsRoutes } from "./modules/customer-records/routes.js";
 import { dealsRoutes } from "./modules/deals/routes.js";
 import { deliveriesRoutes } from "./modules/deliveries/routes.js";
 import { productsRoutes } from "./modules/products/routes.js";
@@ -79,6 +80,7 @@ export function buildApp(options: BuildAppOptions): FastifyInstance {
     channelsRoutes(instance, { db, now: clock });
     productsRoutes(instance, { db, now: clock });
     customersRoutes(instance, { db, now: clock, llmFetch });
+    customerRecordsRoutes(instance, { db, now: clock });
     dealsRoutes(instance, { db, now: clock });
     deliveriesRoutes(instance, { db, now: clock });
     tagsRoutes(instance, { db, now: clock });
