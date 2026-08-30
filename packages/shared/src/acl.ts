@@ -35,6 +35,7 @@ export const actionSchema = z.enum([
   "impersonate",
   "cancel",
   "cancelAny",
+  "revoke",
 ]);
 export type Action = z.infer<typeof actionSchema>;
 
@@ -91,7 +92,8 @@ const MATRIX: Record<SystemRole, Readonly<Partial<Record<Resource, readonly Acti
     jobs: ALL_JOB_ACTIONS,
     jobSchedules: ALL_JOB_SCHEDULE_ACTIONS,
     // K49：扮演用户（act as user）仅 admin
-    auth: ["setPassword", "impersonate"],
+    // 授权管理（PAT 令牌）：admin 可查看全部/吊销任意（K35 后台治理）
+    auth: ["setPassword", "impersonate", "list", "revoke"],
   },
   operator: {
     // users 全部写操作仅 admin（operator 只能 list/read）

@@ -396,6 +396,10 @@ select:focus, textarea:focus { outline: 1px solid var(--ink); }
 
 .card-head h2 { font-size: 15px; margin: 0; }
 
+.card-head .filters { display: flex; align-items: center; gap: 8px; }
+
+.token-name { margin-left: 8px; font-size: 12px; color: var(--muted); }
+
 .item-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 16px; border-bottom: 1px solid var(--hairline); }
 
 .item-row:last-child { border-bottom: none; }

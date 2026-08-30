@@ -538,6 +538,7 @@ export function can(role: SystemRole | null, resource: Resource, action: Action)
 | system read/update | ✓ | ✗ | ✗ | K46：LLM 打标配置，仅 admin |
 | auth 改自己密码 | ✓ | ✓ | ✓ | `PATCH /auth/password` |
 | auth impersonate | ✓ | ✗ | ✗ | K49：扮演用户。stop 例外——不查角色，以会话处于扮演中为唯一准入（否则弱角色无法自行退出） |
+| auth list/revoke | ✓ | ✗ | ✗ | K35 后台治理「授权管理」：admin 列全部 Agent PAT 令牌、吊销任意令牌（系统菜单 `/tokens`）。吊销记 `revoked_at`+`revoked_by`（`0022` 迁移） |
 
 路由：`preHandler: requireCan('customers', 'update')`。PATCH customers 若 body **含** `ownerId`，再加 `requireCan('customers','updateOwners')`。PATCH channels 若含密钥键，再加 `updateChannelSecrets`。测试必须锁住矩阵每一格，至少包括：
 

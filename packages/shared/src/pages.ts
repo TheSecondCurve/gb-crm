@@ -50,6 +50,7 @@ export const PAGE_REGISTRY: readonly PageDef[] = [
   // ── 系统 ──
   { key: "users", path: "/users", label: "团队成员", group: "系统", order: 0, menu: true, required: { resource: "users", action: "list" } },
   { key: "settings", path: "/settings", label: "系统设置", group: "系统", order: 1, menu: true, required: { resource: "jobs", action: "list" } },
+  { key: "auth-tokens", path: "/tokens", label: "授权管理", group: "系统", order: 2, menu: true, required: { resource: "auth", action: "list" } },
   // ── 业务设置 ──
   { key: "business-settings", path: "/business-settings", label: "客户标签词表", group: "业务设置", order: 0, menu: true, required: { resource: "tags", action: "read" } },
 ];

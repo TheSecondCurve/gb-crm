@@ -50,7 +50,7 @@ K45/K46/K50/K51/K53 补充：`modules/tags` 词表三层（admin 写、其余只
 
 ### Web
 
-- 路由：`/login` `/my/customers` `/my/deals` `/customers` `/customers/:id`（总览）`/channels` `/products` `/deals` `/deliveries` `/deliveries/:id` `/deliveries/:id/circle` `/deliveries/:id/gantt` `/deliveries/:id/matrix` `/delivery-types` `/materials`（资料专区）`/users` `/settings`（系统设置，tab：LLM 打标配置 admin + 角色权限 admin + 远程备份 admin + 后台任务全角色 + 定时任务 admin）`/business-settings`（业务设置，客户标签词表）（默认进客户）
+- 路由：`/login` `/my/customers` `/my/deals` `/customers` `/customers/:id`（总览）`/channels` `/products` `/deals` `/deliveries` `/deliveries/:id` `/deliveries/:id/circle` `/deliveries/:id/gantt` `/deliveries/:id/matrix` `/delivery-types` `/materials`（资料专区）`/users` `/settings`（系统设置，tab：LLM 打标配置 admin + 角色权限 admin + 远程备份 admin + 后台任务全角色 + 定时任务 admin）`/tokens`（授权管理，仅 admin：列全部 Agent PAT 令牌 + 吊销任意，见 K35 治理）`/business-settings`（业务设置，客户标签词表）（默认进客户）
 - 页面权限：菜单/路由统一由 `packages/shared/src/pages.ts` 的 `PAGE_REGISTRY` + `/auth/me.pages` 驱动（安全层 can() ∩ 配置允许集）；无权访问的路由被 `PageGuard` 重定向到该角色第一张可看菜单页；详情型页面（`/customers/:id`、`/deliveries/:id/*`）不单独配，跟随父页面。改菜单/新增页只改注册表，不要再在 Sidebar/App 手写显隐。
 - 表格：`components/DataGrid/`（双击编辑 + 行内 PATCH 队列）
 - 表格体验（评审后固化）：列表容器 `.data-grid-scroll` 竖向滚动 + 表头吸顶；`selectable` + 受控 `selectedIds` 供列表页做行多选批量操作（客户页 = 批量改归属人，逐行 PATCH 带各自 `updatedAt`）；分页含「跳转到第几页」；搜索框按 `/` 聚焦，全局 `Cmd/Ctrl+K` 打开客户快速搜索（`components/CommandPalette`）。
@@ -114,7 +114,7 @@ Workspace 依赖写法：`"@gb-crm/shared": "*"`（npm 不支持 `workspace:*`�
 - 服务端 session + 签名 httpOnly cookie（HMAC = `SESSION_SECRET`）。不做 JWT、不做飞书登录。
 - 密码 argon2id。登录还要求 `system_role ∈ {admin, operator, assistant}`。
 - Session 最多每 30 分钟 touch 一次（或剩余 idle < 11h）。禁用账户立即删 session **并撤销 PAT**。
-- Agent PAT（K35）与 cookie **并行**：`Authorization: Bearer`；有 Bearer 不回落 cookie。签发：`curl -fsSL http://<host>/agent/login.sh | sh` → `~/.gb-crm/credentials.json`。REST 资源路由 `read`/`write` ∩ `can()`。Skill 在 `skills/gb-crm/`，**不含**密钥。Agent 数据访问走单一自由 SQL 端点 `POST /api/v1/agent/sql`（仅 Bearer PAT，cookie 403）：better-sqlite3 `stmt.readonly` 判读写——只读语句任意 scope/角色放行（含渠道密钥列），写语句必须 write scope + admin；单语句；读上限 1000 行截断。
+- Agent PAT（K35）与 cookie **并行**：`Authorization: Bearer`；有 Bearer 不回落 cookie。签发：`curl -fsSL http://<host>/agent/login.sh | sh` → `~/.gb-crm/credentials.json`。REST 资源路由 `read`/`write` ∩ `can()`。Skill 在 `skills/gb-crm/`，**不含**密钥。Agent 数据访问走单一自由 SQL 端点 `POST /api/v1/agent/sql`（仅 Bearer PAT，cookie 403）：better-sqlite3 `stmt.readonly` 判读写——只读语句任意 scope/角色放行（含渠道密钥列），写语句必须 write scope + admin；单语句；读上限 1000 行截断。**后台治理**（系统菜单 `/tokens` 授权管理，admin）：`GET /api/v1/auth/tokens/admin`（分页+`status=active|revoked|expired`/`scope`/`userId` 过滤，回 `{data,meta}`）+ `DELETE /api/v1/auth/tokens/admin/:id`（吊销任意令牌），ACL `auth.list`/`auth.revoke`（仅 admin）。吊销置 `revoked_at`+`revoked_by`（`0022_api_token_revoked_by.sql`），行不删除，历史可查。
 - **扮演用户（K49）**：admin 可把当前 cookie session 切到任一可加载用户，用于测试「我的运营」等按人过滤功能。`sessions.impersonated_by` 记录原身份，单层不可嵌套；端点 `/api/v1/auth/impersonate/{targets,:id,stop}` 仅 cookie session（Bearer 403），targets/start 需 `auth.impersonate`，stop 不查角色（会话处于扮演中即准入，否则弱角色无法自行退出）。`/auth/me` 带 `impersonatedBy`。禁止扮演自己；目标须未软删/enabled/有角色。Web 右上角用户菜单「切换身份」，扮演中显示徽标 + 「退出扮演」。
 - 登录限流 10 次/分钟/IP；仅 `TRUST_PROXY=true` 时才信 `X-Forwarded-For`。
 - 权限唯一来源：`packages/shared` 的 `can(role, resource, action)`。缺席 = deny。`role===null` → false。路由用 `requireCan`，不要在 service 再抄一套角色判断。
