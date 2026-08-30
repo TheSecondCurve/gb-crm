@@ -55,4 +55,26 @@ describe("Pagination（K25）", () => {
     fireEvent.click(screen.getByRole("button", { name: "上一页" }));
     expect(queryFn).toHaveBeenLastCalledWith(2, 25);
   });
+
+  it("跳转页码：合法输入跳转，越界/空输入不跳转", () => {
+    const queryFn = vi.fn();
+    render(<PagedHarness queryFn={queryFn} total={60} />);
+
+    const input = screen.getByLabelText("跳转到第几页");
+    fireEvent.change(input, { target: { value: "2" } });
+    fireEvent.click(screen.getByRole("button", { name: "跳转" }));
+    expect(queryFn).toHaveBeenLastCalledWith(2, 25);
+    // 输入清空
+    expect((input as HTMLInputElement).value).toBe("");
+
+    // 越界（>3 页）不跳转
+    fireEvent.change(input, { target: { value: "9" } });
+    fireEvent.click(screen.getByRole("button", { name: "跳转" }));
+    expect(queryFn).toHaveBeenLastCalledWith(2, 25);
+
+    // Enter 键触发跳转（合法值）
+    fireEvent.change(input, { target: { value: "1" } });
+    fireEvent.keyDown(input, { key: "Enter" });
+    expect(queryFn).toHaveBeenLastCalledWith(1, 25);
+  });
 });

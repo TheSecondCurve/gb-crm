@@ -1,4 +1,6 @@
-/** 分页（design.md §7.10 / K25）：共 N 条 + 上一页/下一页 + 页码 + pageSize <select> 25/50/100 */
+/** 分页（design.md §7.10 / K25）：共 N 条 + 上一页/下一页 + 页码 + pageSize <select> 25/50/100 + 跳转页码 */
+
+import { useState } from "react";
 
 export const PAGE_SIZE_OPTIONS = [25, 50, 100] as const;
 
@@ -32,6 +34,13 @@ function pageNumbers(page: number, pageCount: number): (number | "…")[] {
 
 export function Pagination({ page, pageSize, total, onChange }: PaginationProps) {
   const pageCount = Math.max(1, Math.ceil(total / pageSize));
+  const [jump, setJump] = useState("");
+
+  const jumpTo = () => {
+    const n = Number(jump);
+    if (Number.isInteger(n) && n >= 1 && n <= pageCount) onChange(n, pageSize);
+    setJump("");
+  };
 
   return (
     <div className="pagination">
@@ -72,6 +81,24 @@ export function Pagination({ page, pageSize, total, onChange }: PaginationProps)
           </option>
         ))}
       </select>
+      <span className="pagination-jump">
+        <input
+          type="number"
+          inputMode="numeric"
+          aria-label="跳转到第几页"
+          min={1}
+          max={pageCount}
+          value={jump}
+          placeholder={`1-${pageCount}`}
+          onChange={(e) => setJump(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") jumpTo();
+          }}
+        />
+        <button type="button" onClick={jumpTo}>
+          跳转
+        </button>
+      </span>
     </div>
   );
 }

@@ -53,6 +53,9 @@ K45/K46/K50/K51/K53 补充：`modules/tags` 词表三层（admin 写、其余只
 - 路由：`/login` `/my/customers` `/my/deals` `/customers` `/customers/:id`（总览）`/channels` `/products` `/deals` `/deliveries` `/deliveries/:id` `/deliveries/:id/circle` `/deliveries/:id/gantt` `/deliveries/:id/matrix` `/delivery-types` `/materials`（资料专区）`/users` `/settings`（系统设置，tab：LLM 打标配置 admin + 角色权限 admin + 远程备份 admin + 后台任务全角色 + 定时任务 admin）`/business-settings`（业务设置，客户标签词表）（默认进客户）
 - 页面权限：菜单/路由统一由 `packages/shared/src/pages.ts` 的 `PAGE_REGISTRY` + `/auth/me.pages` 驱动（安全层 can() ∩ 配置允许集）；无权访问的路由被 `PageGuard` 重定向到该角色第一张可看菜单页；详情型页面（`/customers/:id`、`/deliveries/:id/*`）不单独配，跟随父页面。改菜单/新增页只改注册表，不要再在 Sidebar/App 手写显隐。
 - 表格：`components/DataGrid/`（双击编辑 + 行内 PATCH 队列）
+- 表格体验（评审后固化）：列表容器 `.data-grid-scroll` 竖向滚动 + 表头吸顶；`selectable` + 受控 `selectedIds` 供列表页做行多选批量操作（客户页 = 批量改归属人，逐行 PATCH 带各自 `updatedAt`）；分页含「跳转到第几页」；搜索框按 `/` 聚焦，全局 `Cmd/Ctrl+K` 打开客户快速搜索（`components/CommandPalette`）。
+- 侧栏分组可点击折叠（`localStorage` 持久化）；面包屑由 `layout/breadcrumb.ts` 沿 `PAGE_REGISTRY` 推导（勿再手写路径→标题映射）。
+- 图标统一 `@phosphor-icons/react`，禁止字符 glyph（`☰ ▾ × ✓ +`）当控件图标；小图标 `weight="bold"` + `aria-hidden`。
 - 列定义：`src/columns/`；列表页：`src/pages/` + `useResourceList.ts`
 - 开发：Vite `:5173`，`server.proxy."/api"` → `:3001`
 - 生产：Fastify 托管 `apps/web/dist`；非 `/api/*` 且非静态文件的 GET → `index.html`

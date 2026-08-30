@@ -1,24 +1,18 @@
 import { useState } from "react";
+import { CaretDown, List } from "@phosphor-icons/react";
 import { can, systemRoleLabels } from "@gb-crm/shared";
 import { useLocation } from "react-router-dom";
 
 import { useAuth } from "../auth/AuthProvider";
 import { ImpersonateModal } from "../components/ImpersonateModal";
-
-/** 与 v1 导航（design.md §4）一致的路径 → 面包屑 */
-const PATH_LABELS: Record<string, string> = {
-  "/customers": "客户信息",
-  "/channels": "渠道资产",
-  "/products": "产品目录",
-  "/users": "团队成员",
-};
+import { breadcrumbLabel } from "./breadcrumb";
 
 export function Header({ onToggleSidebar }: { onToggleSidebar: () => void }) {
   const { me, logout, stopImpersonation } = useAuth();
   const [menuOpen, setMenuOpen] = useState(false);
   const [impersonateOpen, setImpersonateOpen] = useState(false);
   const location = useLocation();
-  const label = PATH_LABELS[location.pathname] ?? "";
+  const label = breadcrumbLabel(location.pathname);
 
   const canImpersonate = can(me?.systemRole ?? null, "auth", "impersonate");
   const impersonating = me?.impersonatedBy != null;
@@ -27,7 +21,7 @@ export function Header({ onToggleSidebar }: { onToggleSidebar: () => void }) {
   return (
     <header className="app-header">
       <button type="button" className="sidebar-toggle" aria-label="折叠侧栏" onClick={onToggleSidebar}>
-        ☰
+        <List size={18} weight="bold" aria-hidden="true" />
       </button>
       <div className="breadcrumb">{label}</div>
       <div className="navbar-user">
@@ -56,7 +50,7 @@ export function Header({ onToggleSidebar }: { onToggleSidebar: () => void }) {
                 >
                   {me?.nickname}
                   <span className="navbar-caret" aria-hidden="true">
-                    ▾
+                    <CaretDown size={10} weight="bold" />
                   </span>
                 </button>
                 {menuOpen && (

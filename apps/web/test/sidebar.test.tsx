@@ -44,4 +44,24 @@ describe("侧栏", () => {
     expect(aside?.classList.contains("sidebar-hidden")).toBe(false);
     expect(localStorage.getItem("gb-crm:sidebar-hidden")).toBe("0");
   });
+
+  it("分组标题可折叠：点击「系统」收起「团队成员」，再点展开", async () => {
+    mockMe(adminMe);
+    renderApp("/customers");
+    await screen.findByRole("heading", { name: "客户信息" });
+
+    const groupBtn = screen.getByRole("button", { name: "系统" });
+    expect(groupBtn.getAttribute("aria-expanded")).toBe("true");
+    expect(screen.getByRole("link", { name: "团队成员" })).toBeTruthy();
+
+    fireEvent.click(groupBtn);
+    expect(groupBtn.getAttribute("aria-expanded")).toBe("false");
+    expect(screen.queryByRole("link", { name: "团队成员" })).toBeNull();
+    expect(localStorage.getItem("gb-crm:sidebar:group:系统")).toBe("1");
+
+    fireEvent.click(groupBtn);
+    expect(groupBtn.getAttribute("aria-expanded")).toBe("true");
+    expect(screen.getByRole("link", { name: "团队成员" })).toBeTruthy();
+    expect(localStorage.getItem("gb-crm:sidebar:group:系统")).toBe("0");
+  });
 });

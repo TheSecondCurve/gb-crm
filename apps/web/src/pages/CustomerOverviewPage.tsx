@@ -1,5 +1,6 @@
 // 客户总览页（K45–K48）：基本信息 + AI 打标 + 客户统计 + 消费记录 + 当前有效交付圈子。
 import { useMemo, useState } from "react";
+import { Check, Plus, X } from "@phosphor-icons/react";
 import { useQuery } from "@tanstack/react-query";
 import { can, customerTypeLabels, maintenanceKindLabels, materialKindLabels } from "@gb-crm/shared";
 import { useNavigate, useParams } from "react-router-dom";
@@ -13,6 +14,7 @@ import type {
 } from "../api/types";
 import { useAuth } from "../auth/AuthProvider";
 import { badge, centsToYuan, enumBadge, epochMsToDate, formatDateTime, type BadgeTone } from "../columns/common";
+import { ConfirmDialog } from "../components/ConfirmDialog";
 import { MaintenanceRecordFormModal } from "../components/MaintenanceRecordFormModal";
 import { MaterialViewModal } from "../components/MaterialViewModal";
 import { useToast } from "../components/Toast";
@@ -64,6 +66,8 @@ export function CustomerOverviewPage() {
   const [recordFormOpen, setRecordFormOpen] = useState(false);
   const [editingRecord, setEditingRecord] = useState<CustomerMaintenanceRecordDto | null>(null);
   const [recordBusy, setRecordBusy] = useState(false);
+  // K55：删除确认（复用 ConfirmDialog，与列表页删除一致；替代原生 window.confirm）
+  const [deletingRecord, setDeletingRecord] = useState<CustomerMaintenanceRecordDto | null>(null);
 
   const openMaterial = async (id: number) => {
     try {
@@ -162,14 +166,17 @@ export function CustomerOverviewPage() {
     }
   };
 
-  const removeRecord = async (r: CustomerMaintenanceRecordDto) => {
-    if (!window.confirm(`删除这条维护记录？`)) return;
+  const confirmRemoveRecord = async (r: CustomerMaintenanceRecordDto) => {
+    setRecordBusy(true);
     try {
       await api.delete(`/customers/${customerId}/records/${r.id}`);
+      setDeletingRecord(null);
       await refetch();
       showToast("已删除记录");
     } catch (err) {
       toastError(err, "删除记录失败，请稍后重试");
+    } finally {
+      setRecordBusy(false);
     }
   };
 
@@ -212,7 +219,7 @@ export function CustomerOverviewPage() {
                       disabled={saving}
                       onClick={() => removeTag(t.id)}
                     >
-                      ×
+                      <X size={10} weight="bold" aria-hidden="true" />
                     </button>
                   )}
                 </span>
@@ -234,7 +241,11 @@ export function CustomerOverviewPage() {
                       )
                     }
                   >
-                    {picked.includes(t.id) ? "✓ " : "+ "}
+                    {picked.includes(t.id) ? (
+                      <Check size={12} weight="bold" aria-hidden="true" />
+                    ) : (
+                      <Plus size={12} weight="bold" aria-hidden="true" />
+                    )}
                     {t.name}
                   </button>
                 ))}
@@ -423,7 +434,7 @@ export function CustomerOverviewPage() {
                   <button type="button" onClick={() => openEditRecord(r)}>
                     编辑
                   </button>
-                  <button type="button" className="link-button" onClick={() => void removeRecord(r)}>
+                  <button type="button" className="link-button" onClick={() => setDeletingRecord(r)}>
                     删除
                   </button>
                 </div>
@@ -447,6 +458,17 @@ export function CustomerOverviewPage() {
             setEditingRecord(null);
           }}
           onSubmit={submitRecord}
+        />
+      )}
+
+      {deletingRecord && (
+        <ConfirmDialog
+          title="删除维护记录"
+          message={`确定删除这条维护记录吗？删除后无法恢复。`}
+          confirmText="删除"
+          loading={recordBusy}
+          onConfirm={() => void confirmRemoveRecord(deletingRecord)}
+          onCancel={() => setDeletingRecord(null)}
         />
       )}
     </>
