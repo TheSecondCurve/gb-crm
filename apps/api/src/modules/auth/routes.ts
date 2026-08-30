@@ -1,12 +1,18 @@
 // /api/v1/auth/* 路由（API / Interface Changes 鉴权表）。
 // 注意：session-auth 的 onRequest 钩子在路由注册前挂到 root scope，
 // login / POST tokens / health 免登录；GET /agent/login.sh 不在 /api/v1 下，钩子不拦。
-import { changePasswordSchema, loginSchema, mintTokenSchema } from "@gb-crm/shared";
+import {
+  adminTokenListQuerySchema,
+  changePasswordSchema,
+  loginSchema,
+  mintTokenSchema,
+} from "@gb-crm/shared";
 import type { FastifyInstance, preHandlerHookHandler } from "fastify";
 import { z } from "zod";
 
 import type { AppEnv } from "../../env.js";
 import type { Db } from "../../db/client.js";
+import { listMeta } from "../../lib/pagination.js";
 import { clearSessionCookie, setSessionCookie } from "../../plugins/cookie.js";
 import { ApiError, forbidden } from "../../plugins/error-handler.js";
 import { requireCan } from "../../plugins/rbac.js";
@@ -27,7 +33,13 @@ import {
   verifyLogin,
 } from "./service.js";
 import { getEffectivePages } from "../system/service.js";
-import { listOwnTokens, mintToken, revokeOwnToken } from "./token-service.js";
+import {
+  adminRevokeToken,
+  listAdminTokenResult,
+  listOwnTokens,
+  mintToken,
+  revokeOwnToken,
+} from "./token-service.js";
 
 const tokenIdParamSchema = z.object({ id: z.coerce.number().int().positive() });
 const impersonateIdParamSchema = z.object({ id: z.coerce.number().int().positive() });
@@ -167,6 +179,27 @@ export function authRoutes(app: FastifyInstance, opts: AuthRoutesOptions): void 
     revokeOwnToken(db, req.user!.id, id, now());
     return reply.code(204).send();
   });
+
+  // ── 后台「授权管理」（K35 治理；仅 admin：auth.list / auth.revoke）──
+  app.get(
+    "/api/v1/auth/tokens/admin",
+    { preHandler: requireCan("auth", "list") },
+    async (req) => {
+      const query = adminTokenListQuerySchema.parse(req.query ?? {});
+      const { data, total } = listAdminTokenResult(db, query, now());
+      return { data, meta: listMeta(query.page, query.pageSize, total) };
+    },
+  );
+
+  app.delete(
+    "/api/v1/auth/tokens/admin/:id",
+    { preHandler: requireCan("auth", "revoke") },
+    async (req, reply) => {
+      const { id } = tokenIdParamSchema.parse(req.params);
+      adminRevokeToken(db, id, req.user!.id, now());
+      return reply.code(204).send();
+    },
+  );
 
   app.get("/agent/login.sh", async (req, reply) => {
     const script = renderLoginScript(publicBaseUrl(req));

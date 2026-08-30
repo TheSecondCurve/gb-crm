@@ -7,6 +7,7 @@ import { LoginPage } from "./pages/LoginPage";
 import { CustomersPage } from "./pages/CustomersPage";
 import { CustomerOverviewPage } from "./pages/CustomerOverviewPage";
 import { SettingsPage } from "./pages/SettingsPage";
+import { AuthTokensPage } from "./pages/AuthTokensPage";
 import { BusinessSettingsPage } from "./pages/BusinessSettingsPage";
 import { ChannelsPage } from "./pages/ChannelsPage";
 import { ProductsPage } from "./pages/ProductsPage";
@@ -81,6 +82,14 @@ export default function App() {
           element={
             <PageGuard pageKey="settings">
               <SettingsPage />
+            </PageGuard>
+          }
+        />
+        <Route
+          path="/tokens"
+          element={
+            <PageGuard pageKey="auth-tokens">
+              <AuthTokensPage />
             </PageGuard>
           }
         />

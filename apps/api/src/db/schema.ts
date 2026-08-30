@@ -97,6 +97,7 @@ export const apiTokens = sqliteTable(
     expiresAt: integer("expires_at").notNull(),
     lastUsedAt: integer("last_used_at"),
     revokedAt: integer("revoked_at"),
+    revokedBy: integer("revoked_by"),
   },
   (t) => [
     check("api_tokens_scope_check", sql`"scope" IN ('read', 'write')`),

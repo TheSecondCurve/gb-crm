@@ -19,6 +19,7 @@ import type {
   SystemRole,
   TagScope,
 } from "./enums.js";
+import type { TokenScope } from "./schemas/auth.js";
 
 // code → 中文 label，全量对应 docs/design.md Appendix A.5（K11：禁止节选）。
 
@@ -164,4 +165,10 @@ export const maintenanceKindLabels: Record<MaintenanceKind, string> = {
   lead: "线索意向",
   note: "一般备注",
   other: "其他",
+};
+
+/** Agent PAT 令牌范围（K35）：read = 只读；write = 走 REST，仍受 can() 约束 */
+export const tokenScopeLabels: Record<TokenScope, string> = {
+  read: "只读",
+  write: "读写",
 };

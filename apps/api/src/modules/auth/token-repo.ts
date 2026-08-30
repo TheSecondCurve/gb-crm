@@ -3,7 +3,7 @@ import { createHash, randomBytes } from "node:crypto";
 
 import { and, desc, eq, isNull } from "drizzle-orm";
 
-import type { TokenScope } from "@gb-crm/shared";
+import type { TokenScope, TokenStatus } from "@gb-crm/shared";
 
 import type { Db } from "../../db/client.js";
 import { apiTokens } from "../../db/schema.js";
@@ -95,4 +95,107 @@ export function revokeAllTokensByUserId(db: Db, userId: number, now: number): vo
 
 export function touchTokenLastUsed(db: Db, id: number, now: number): void {
   db.update(apiTokens).set({ lastUsedAt: now }).where(eq(apiTokens.id, id)).run();
+}
+
+// ── 后台「授权管理」（K35 治理）：admin 列全部令牌 + 吊销任意令牌 ──
+
+export interface AdminTokenRow {
+  id: number;
+  userId: number;
+  tokenPrefix: string;
+  scope: string;
+  name: string | null;
+  createdAt: number;
+  expiresAt: number;
+  lastUsedAt: number | null;
+  revokedAt: number | null;
+  revokedBy: number | null;
+  userNickname: string | null;
+  revokedByNickname: string | null;
+}
+
+export interface AdminTokenListParams {
+  page: number;
+  pageSize: number;
+  scope?: TokenScope;
+  status?: TokenStatus;
+  userId?: number;
+  now: number;
+}
+
+/**
+ * 列全部令牌（后台治理，含用户/吊销人昵称）。状态为派生视图：
+ * active = 未吊销且未过期；revoked = 吊销过；expired = 未吊销但已过期。
+ * 走原生连接（多 join + 派生状态过滤），只读。
+ */
+export function listAdminTokens(
+  db: Db,
+  p: AdminTokenListParams,
+): { rows: AdminTokenRow[]; total: number } {
+  const sqlite = db.$client;
+  const cond: string[] = [];
+  const params: unknown[] = [];
+  if (p.scope !== undefined) {
+    cond.push("t.scope = ?");
+    params.push(p.scope);
+  }
+  if (p.userId !== undefined) {
+    cond.push("t.user_id = ?");
+    params.push(p.userId);
+  }
+  if (p.status === "active") {
+    cond.push("t.revoked_at IS NULL AND t.expires_at > ?");
+    params.push(p.now);
+  } else if (p.status === "revoked") {
+    cond.push("t.revoked_at IS NOT NULL");
+  } else if (p.status === "expired") {
+    cond.push("t.revoked_at IS NULL AND t.expires_at <= ?");
+    params.push(p.now);
+  }
+  const where = cond.length > 0 ? `WHERE ${cond.join(" AND ")}` : "";
+  const total = (
+    sqlite.prepare(`SELECT COUNT(*) AS n FROM api_tokens t ${where}`).get(...params) as {
+      n: number;
+    }
+  ).n;
+  const offset = (p.page - 1) * p.pageSize;
+  const rows = (
+    sqlite
+      .prepare(
+        `SELECT
+           t.id, t.user_id AS userId, t.token_prefix AS tokenPrefix, t.scope, t.name,
+           t.created_at AS createdAt, t.expires_at AS expiresAt, t.last_used_at AS lastUsedAt,
+           t.revoked_at AS revokedAt, t.revoked_by AS revokedBy,
+           u.nickname AS userNickname, r.nickname AS revokedByNickname
+         FROM api_tokens t
+         LEFT JOIN users u ON u.id = t.user_id
+         LEFT JOIN users r ON r.id = t.revoked_by
+         ${where}
+         ORDER BY t.created_at DESC, t.id DESC
+         LIMIT ? OFFSET ?`,
+      )
+      .all(...params, p.pageSize, offset) as unknown[]
+  ) as AdminTokenRow[];
+  return { rows, total };
+}
+
+/**
+ * admin 吊销任意令牌：不存在 → false；已吊销 → 幂等 true（保持原 revoked_by 不变）；
+ * 否则 SET revoked_at=now, revoked_by=revokerId。
+ */
+export function revokeTokenByAdmin(
+  db: Db,
+  id: number,
+  revokerId: number,
+  now: number,
+): boolean {
+  const row = findTokenById(db, id);
+  if (!row) return false;
+  if (row.revokedAt === null) {
+    db.update(apiTokens)
+      .set({ revokedAt: now, revokedBy: revokerId })
+      .where(eq(apiTokens.id, id))
+      .run();
+  }
+  return true;
 }
