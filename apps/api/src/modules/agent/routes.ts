@@ -20,6 +20,8 @@ import { z } from "zod";
 
 import type { Db } from "../../db/client.js";
 import { ApiError, forbidden } from "../../plugins/error-handler.js";
+import { publicBaseUrl } from "../auth/login-script.js";
+import { readSkillFile, renderSkillInstallScript, skillFileExists } from "./skill-install.js";
 
 /** 读查询行数上限，超出截断并 truncated=true */
 export const AGENT_SQL_MAX_ROWS = 1000;
@@ -120,5 +122,29 @@ export function agentRoutes(app: FastifyInstance, opts: AgentRoutesOptions): voi
     } catch (err) {
       throw toSqlError(err);
     }
+  });
+
+  // ── 渠道 A：skill 下发（K35；内网可用、无需 GitHub；/agent/* 不走 session-auth）──
+  // 安装器 + 两个源文件。skill 不含密钥，端点为公开（与 /agent/login.sh 同信任面）。
+  app.get("/agent/skill/gb-crm/install.sh", async (req, reply) => {
+    const script = renderSkillInstallScript(publicBaseUrl(req));
+    return reply
+      .header("Content-Type", "text/x-shellscript; charset=utf-8")
+      .header("Content-Disposition", 'inline; filename="install.sh"')
+      .send(script);
+  });
+
+  app.get("/agent/skill/gb-crm/SKILL.md", async (_req, reply) => {
+    if (!skillFileExists("SKILL.md")) throw new ApiError(404, "NOT_FOUND", "skill 文件缺失");
+    return reply.header("Content-Type", "text/markdown; charset=utf-8").send(readSkillFile("SKILL.md"));
+  });
+
+  app.get("/agent/skill/gb-crm/scripts/gb-crm.py", async (_req, reply) => {
+    if (!skillFileExists("scripts/gb-crm.py")) {
+      throw new ApiError(404, "NOT_FOUND", "skill 脚本缺失");
+    }
+    return reply
+      .header("Content-Type", "text/x-python; charset=utf-8")
+      .send(readSkillFile("scripts/gb-crm.py"));
   });
 }

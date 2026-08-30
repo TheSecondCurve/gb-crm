@@ -17,6 +17,16 @@ metadata:
 
 `SKILL_DIR` = 本文件所在目录。所有 HTTP **只**走脚本，不要自己拼 `Authorization`，不要 Read `~/.gb-crm/credentials.json`，不要把 token / 密码写进对话或命令行。
 
+## 安装 / 更新（内网，免 GitHub）
+
+若本 skill 尚未安装或需更新，让用户**自己**在终端跑一条命令（安装器会装入 skill 文件并在本机授权，密码只在终端输入、不经 AGENT）：
+
+```bash
+curl -fsSL http://<crm-host>/agent/skill/gb-crm/install.sh | sh
+```
+
+装完即本说明所在目录的上级可用：AGENT 调用本 skill 即可。更新：重新跑上面命令（会覆盖 `SKILL.md`/`gb-crm.py`，并可 `GB_CRM_SKIP_LOGIN=1` 跳过重复授权）。
+
 ## 用法（主路径：一条 SQL）
 
 ```bash
