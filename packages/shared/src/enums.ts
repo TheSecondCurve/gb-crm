@@ -117,3 +117,13 @@ export type TagScope = z.infer<typeof tagScopeSchema>;
 /** 资料类型（K54：录音文字稿 / 文本资料全文入库；音视频/链接只存 url + 说明） */
 export const materialKindSchema = z.enum(["transcript", "text", "audio", "video", "link"]);
 export type MaterialKind = z.infer<typeof materialKindSchema>;
+
+/** 客户维护记录类型（K55：跟进联系 / 状态变化 / 线索意向 / 一般备注 / 其他） */
+export const maintenanceKindSchema = z.enum([
+  "follow_up",
+  "status_change",
+  "lead",
+  "note",
+  "other",
+]);
+export type MaintenanceKind = z.infer<typeof maintenanceKindSchema>;

@@ -1,13 +1,19 @@
 // 客户总览页（K45–K48）：基本信息 + AI 打标 + 客户统计 + 消费记录 + 当前有效交付圈子。
 import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { can, customerTypeLabels, materialKindLabels } from "@gb-crm/shared";
+import { can, customerTypeLabels, maintenanceKindLabels, materialKindLabels } from "@gb-crm/shared";
 import { useNavigate, useParams } from "react-router-dom";
 
 import { api, ApiError } from "../api/client";
-import type { CustomerOverviewDto, MaterialDetailDto, TagDto } from "../api/types";
+import type {
+  CustomerMaintenanceRecordDto,
+  CustomerOverviewDto,
+  MaterialDetailDto,
+  TagDto,
+} from "../api/types";
 import { useAuth } from "../auth/AuthProvider";
 import { badge, centsToYuan, enumBadge, epochMsToDate, formatDateTime, type BadgeTone } from "../columns/common";
+import { MaintenanceRecordFormModal } from "../components/MaintenanceRecordFormModal";
 import { MaterialViewModal } from "../components/MaterialViewModal";
 import { useToast } from "../components/Toast";
 
@@ -19,6 +25,14 @@ const TAG_SCOPE_TONES: Record<string, BadgeTone> = {
 };
 
 const DEAL_STAGE_TONES: Record<string, BadgeTone> = { paid: "accent", refunded: "muted", closed: "muted" };
+
+const MAINTENANCE_KIND_TONES: Record<string, BadgeTone> = {
+  follow_up: "accent",
+  status_change: "danger",
+  lead: "accent",
+  note: "plain",
+  other: "muted",
+};
 
 export function CustomerOverviewPage() {
   const { id } = useParams();
@@ -45,6 +59,11 @@ export function CustomerOverviewPage() {
   const [picked, setPicked] = useState<number[]>([]);
   // K54：查看资料（先 GET /materials/:id 拉完整 content 再开只读弹窗）
   const [viewingMaterial, setViewingMaterial] = useState<MaterialDetailDto | null>(null);
+
+  // K55：维护记录弹窗（新增/编辑/删除）
+  const [recordFormOpen, setRecordFormOpen] = useState(false);
+  const [editingRecord, setEditingRecord] = useState<CustomerMaintenanceRecordDto | null>(null);
+  const [recordBusy, setRecordBusy] = useState(false);
 
   const openMaterial = async (id: number) => {
     try {
@@ -107,6 +126,51 @@ export function CustomerOverviewPage() {
   const addPicked = () => {
     if (!customer) return;
     void saveTags([...customer.tags.map((t) => t.id), ...picked]);
+  };
+
+  // K55 维护记录
+  const canCreateRecord = can(role, "customerRecords", "create");
+  const canWriteRecord = can(role, "customerRecords", "update");
+
+  const openNewRecord = () => {
+    setEditingRecord(null);
+    setRecordFormOpen(true);
+  };
+  const openEditRecord = (r: CustomerMaintenanceRecordDto) => {
+    setEditingRecord(r);
+    setRecordFormOpen(true);
+  };
+
+  const submitRecord = async (body: Record<string, unknown>) => {
+    if (!customer) return;
+    setRecordBusy(true);
+    const isEdit = editingRecord != null;
+    try {
+      if (isEdit) {
+        await api.patch(`/customers/${customerId}/records/${editingRecord!.id}`, body);
+      } else {
+        await api.post(`/customers/${customerId}/records`, body);
+      }
+      setRecordFormOpen(false);
+      setEditingRecord(null);
+      await refetch();
+      showToast(isEdit ? "已更新记录" : "已新增记录");
+    } catch (err) {
+      toastError(err, isEdit ? "更新记录失败，请稍后重试" : "新增记录失败，请稍后重试");
+    } finally {
+      setRecordBusy(false);
+    }
+  };
+
+  const removeRecord = async (r: CustomerMaintenanceRecordDto) => {
+    if (!window.confirm(`删除这条维护记录？`)) return;
+    try {
+      await api.delete(`/customers/${customerId}/records/${r.id}`);
+      await refetch();
+      showToast("已删除记录");
+    } catch (err) {
+      toastError(err, "删除记录失败，请稍后重试");
+    }
   };
 
   if (!overview) {
@@ -332,8 +396,58 @@ export function CustomerOverviewPage() {
         </div>
       </div>
 
+      <div className="card">
+        <div className="card-head">
+          <h2>维护记录（{stats.maintenanceRecordCount}）</h2>
+          {canCreateRecord && (
+            <button type="button" className="btn-primary" onClick={openNewRecord}>
+              新增记录
+            </button>
+          )}
+        </div>
+        <div className="card-body-flush">
+          {(overview.maintenanceRecords ?? []).length === 0 && <div className="task-empty">暂无维护记录</div>}
+          {(overview.maintenanceRecords ?? []).map((r) => (
+            <div className="item-row" key={r.id}>
+              <div className="item-main">
+                <div className="item-title">
+                  {badge(maintenanceKindLabels[r.kind as keyof typeof maintenanceKindLabels] ?? r.kind, MAINTENANCE_KIND_TONES[r.kind] ?? "plain")}
+                  {r.content || <span className="muted-text">（无内容）</span>}
+                </div>
+                <div className="item-meta">
+                  {`记录于 ${epochMsToDate(r.happenedAt)} · ${r.createdBy?.nickname ?? "系统"}`}
+                </div>
+              </div>
+              {canWriteRecord && (
+                <div className="row-actions">
+                  <button type="button" onClick={() => openEditRecord(r)}>
+                    编辑
+                  </button>
+                  <button type="button" className="link-button" onClick={() => void removeRecord(r)}>
+                    删除
+                  </button>
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      </div>
+
       {viewingMaterial && (
         <MaterialViewModal material={viewingMaterial} onClose={() => setViewingMaterial(null)} />
+      )}
+
+      {recordFormOpen && (
+        <MaintenanceRecordFormModal
+          title={editingRecord ? "编辑维护记录" : "新增维护记录"}
+          record={editingRecord ?? undefined}
+          busy={recordBusy}
+          onClose={() => {
+            setRecordFormOpen(false);
+            setEditingRecord(null);
+          }}
+          onSubmit={submitRecord}
+        />
       )}
     </>
   );

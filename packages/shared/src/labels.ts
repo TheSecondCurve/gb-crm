@@ -10,6 +10,7 @@ import type {
   DeliveryTypeStatus,
   EmploymentStatus,
   JobTitle,
+  MaintenanceKind,
   MaterialKind,
   Platform,
   ProductStatus,
@@ -155,4 +156,12 @@ export const materialKindLabels: Record<MaterialKind, string> = {
   audio: "音频",
   video: "视频",
   link: "其他链接",
+};
+
+export const maintenanceKindLabels: Record<MaintenanceKind, string> = {
+  follow_up: "跟进联系",
+  status_change: "状态变化",
+  lead: "线索意向",
+  note: "一般备注",
+  other: "其他",
 };

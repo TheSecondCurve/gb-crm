@@ -189,4 +189,39 @@ describe("GET /api/v1/customers/:id/overview", () => {
     expect(data.materials[1].contentLength).toBe(7);
     expect(data.materials[1].excerpt).toBe("第一次咨询纪要");
   });
+
+  // K55：总览携带该客户的维护记录（happenedAt desc，最新在前）+ stats.maintenanceRecordCount
+  it("maintenanceRecords：live 记录 + stats.maintenanceRecordCount；软删不出现", async () => {
+    const cookie = await loginAsRole("admin");
+    const cid = await createCustomerAsAdmin(cookie, "维护客户");
+
+    const r1 = (
+      await post(`/api/v1/customers/${cid}/records`, cookie, { kind: "follow_up", happenedAt: 1000 })
+    ).json().data;
+    const r2 = (
+      await post(`/api/v1/customers/${cid}/records`, cookie, {
+        kind: "lead",
+        happenedAt: 2000,
+        content: "新线索",
+      })
+    ).json().data;
+    const r3 = (
+      await post(`/api/v1/customers/${cid}/records`, cookie, { kind: "note", happenedAt: 3000 })
+    ).json().data;
+    // 软删一条：不出现
+    await app.inject({
+      method: "DELETE",
+      url: `/api/v1/customers/${cid}/records/${r3.id}`,
+      headers: { cookie },
+    });
+
+    const res = await get(`/api/v1/customers/${cid}/overview`, cookie);
+    expect(res.statusCode).toBe(200);
+    const data = res.json().data;
+
+    expect(data.stats.maintenanceRecordCount).toBe(2);
+    // happenedAt desc：最新在前
+    expect(data.maintenanceRecords.map((r: { id: number }) => r.id)).toEqual([r2.id, r1.id]);
+    expect(data.maintenanceRecords[0]).toMatchObject({ kind: "lead", content: "新线索" });
+  });
 });

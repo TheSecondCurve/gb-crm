@@ -146,6 +146,8 @@ export interface CustomerStatsDto {
   lastDealAt: number | null;
   /** K54：关联资料数 */
   materialCount: number;
+  /** K55：该客户维护记录数 */
+  maintenanceRecordCount: number;
 }
 
 export interface CustomerOverviewDto {
@@ -155,6 +157,22 @@ export interface CustomerOverviewDto {
   circles: DeliveryDto[];
   /** K54：关联资料 */
   materials: MaterialDto[];
+  /** K55：该客户维护记录（happenedAt desc，最新在前） */
+  maintenanceRecords: CustomerMaintenanceRecordDto[];
+}
+
+/** K55 客户维护记录（时序时间线） */
+export interface CustomerMaintenanceRecordDto {
+  id: number;
+  customerId: number;
+  kind: string;
+  /** epoch ms UTC；记录对应的时间点（可回补） */
+  happenedAt: number;
+  content: string | null;
+  createdAt: number;
+  updatedAt: number;
+  createdBy: UserRefDto | null;
+  updatedBy: UserRefDto | null;
 }
 
 /** K54 交付资料上的交付单 ref（软删交付 → null） */

@@ -13,6 +13,7 @@ export const resourceSchema = z.enum([
   "deliveries",
   "tags",
   "materials",
+  "customerRecords",
   "system",
   "jobs",
   "jobSchedules",
@@ -65,6 +66,8 @@ const ALL_DELIVERY_ACTIONS: readonly Action[] = ["list", "read", "create", "upda
 const ALL_TAG_ACTIONS: readonly Action[] = ["list", "read", "create", "update", "delete"];
 // K54：交付资料——admin/operator 全量，assistant 只读（同 deliveries）
 const ALL_MATERIAL_ACTIONS: readonly Action[] = ["list", "read", "create", "update", "delete"];
+// K55：客户维护记录（时序时间线）——admin/operator 全量，assistant 只读（同 deals/deliveries/materials）
+const ALL_CUSTOMER_RECORD_ACTIONS: readonly Action[] = ["list", "read", "create", "update", "delete"];
 // K46：系统配置（LLM 打标）——仅 admin
 const SYSTEM_ACTIONS: readonly Action[] = ["read", "update"];
 // K51：后台任务——全角色可创建/查看/取消自己的；取消他人任务需 cancelAny（仅 admin）。
@@ -83,6 +86,7 @@ const MATRIX: Record<SystemRole, Readonly<Partial<Record<Resource, readonly Acti
     deliveries: ALL_DELIVERY_ACTIONS,
     tags: ALL_TAG_ACTIONS,
     materials: ALL_MATERIAL_ACTIONS,
+    customerRecords: ALL_CUSTOMER_RECORD_ACTIONS,
     system: SYSTEM_ACTIONS,
     jobs: ALL_JOB_ACTIONS,
     jobSchedules: ALL_JOB_SCHEDULE_ACTIONS,
@@ -99,6 +103,7 @@ const MATRIX: Record<SystemRole, Readonly<Partial<Record<Resource, readonly Acti
     deliveries: ALL_DELIVERY_ACTIONS,
     tags: ["list", "read"],
     materials: ALL_MATERIAL_ACTIONS,
+    customerRecords: ALL_CUSTOMER_RECORD_ACTIONS,
     jobs: ["list", "read", "create", "cancel"],
     auth: ["setPassword"],
   },
@@ -113,6 +118,7 @@ const MATRIX: Record<SystemRole, Readonly<Partial<Record<Resource, readonly Acti
     deliveries: ["list", "read"],
     tags: ["list", "read"],
     materials: ["list", "read"],
+    customerRecords: ["list", "read"],
     jobs: ["list", "read", "create", "cancel"],
     auth: ["setPassword"],
   },

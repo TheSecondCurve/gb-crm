@@ -35,6 +35,11 @@ import { assembleDeliveries } from "../deliveries/assemble.js";
 import { listActiveCircleRowsByCustomer } from "../deliveries/repo.js";
 import { assembleMaterials } from "../materials/assemble.js";
 import { countLiveMaterialsByCustomer, listLiveMaterialsByCustomer } from "../materials/repo.js";
+import { assembleCustomerMaintenanceRecords } from "../customer-records/assemble.js";
+import {
+  countRecordsByCustomer,
+  listRecentRecordsByCustomer,
+} from "../customer-records/repo.js";
 import { getAiConfig } from "../system/repo.js";
 import { findLiveTagIds, getLiveTagByName, insertTag, listEnabledLiveTags, maxTagSort } from "../tags/repo.js";
 import {
@@ -517,9 +522,11 @@ export function getCustomerOverviewResult(
       paidTotalCents: paidTotalCentsByCustomer(db, id),
       lastDealAt: lastDealAtByCustomer(db, id),
       materialCount: countLiveMaterialsByCustomer(db, id),
+      maintenanceRecordCount: countRecordsByCustomer(db, id),
     },
     deals: assembleDeals(db, listLiveDealsByCustomer(db, id)),
     circles: assembleDeliveries(db, listActiveCircleRowsByCustomer(db, id, now)),
     materials: assembleMaterials(db, listLiveMaterialsByCustomer(db, id)),
+    maintenanceRecords: assembleCustomerMaintenanceRecords(db, listRecentRecordsByCustomer(db, id)),
   };
 }

@@ -8,6 +8,9 @@ import {
   materialListQuerySchema,
   materialPatchSchema,
   materialWriteSchema,
+  maintenanceRecordListQuerySchema,
+  maintenanceRecordPatchSchema,
+  maintenanceRecordWriteSchema,
   mintTokenSchema,
   pageQuerySchema,
   productListQuerySchema,
@@ -190,6 +193,47 @@ describe("material schemas（K54）", () => {
     expect(materialListQuerySchema.safeParse({ orphan: "true" }).success).toBe(false);
     expect(materialListQuerySchema.parse({ sort: "title" }).sort).toBe("title");
     expect(materialListQuerySchema.safeParse({ sort: "nickname" }).success).toBe(false);
+  });
+});
+
+describe("maintenance record schemas（K55）", () => {
+  it("write：kind/happenedAt 必填；content 可空", () => {
+    expect(
+      maintenanceRecordWriteSchema.safeParse({ kind: "follow_up", happenedAt: 1724000000000 }).success,
+    ).toBe(true);
+    expect(
+      maintenanceRecordWriteSchema.parse({
+        kind: "lead",
+        happenedAt: 1,
+        content: "对 1v1 咨询感兴趣",
+      }).content,
+    ).toBe("对 1v1 咨询感兴趣");
+    expect(maintenanceRecordWriteSchema.safeParse({ happenedAt: 1 }).success).toBe(false);
+    expect(maintenanceRecordWriteSchema.safeParse({ kind: "follow_up" }).success).toBe(false);
+  });
+
+  it("write：kind 枚举拒绝非法值；content 可为 null", () => {
+    expect(maintenanceRecordWriteSchema.safeParse({ kind: "vip", happenedAt: 1 }).success).toBe(
+      false,
+    );
+    expect(maintenanceRecordWriteSchema.parse({ kind: "note", happenedAt: 1, content: null }).content).toBeNull();
+  });
+
+  it("patch：键可缺席不绑默认值；缺 updatedAt 失败", () => {
+    const r = maintenanceRecordPatchSchema.parse({ updatedAt: 1 });
+    expect("kind" in r).toBe(false);
+    expect("happenedAt" in r).toBe(false);
+    expect("content" in r).toBe(false);
+    expect(maintenanceRecordPatchSchema.safeParse({ kind: "note" }).success).toBe(false);
+  });
+
+  it("list query：camelCase 过滤 + 本资源 sort", () => {
+    expect(
+      maintenanceRecordListQuerySchema.parse({ kind: "lead", sort: "happenedAt" }),
+    ).toMatchObject({ kind: "lead", sort: "happenedAt" });
+    expect(maintenanceRecordListQuerySchema.parse({ sort: "createdAt" }).sort).toBe("createdAt");
+    expect(maintenanceRecordListQuerySchema.parse({ sort: "updatedAt" }).sort).toBe("updatedAt");
+    expect(maintenanceRecordListQuerySchema.safeParse({ sort: "nickname" }).success).toBe(false);
   });
 });
 

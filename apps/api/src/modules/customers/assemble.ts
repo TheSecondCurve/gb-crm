@@ -9,6 +9,7 @@ import { channels, users } from "../../db/schema.js";
 import type { DealDto } from "../deals/assemble.js";
 import type { DeliveryDto } from "../deliveries/assemble.js";
 import type { MaterialDto } from "../materials/assemble.js";
+import type { CustomerMaintenanceRecordDto } from "../customer-records/assemble.js";
 import type { UserRef } from "../users/assemble.js";
 import {
   listCustomerSocialAccountRows,
@@ -159,13 +160,15 @@ export function assembleCustomer(db: Db, row: CustomerRow): CustomerDto {
   return assembleCustomers(db, [row])[0]!;
 }
 
-// K47 客户总览 DTO（customer + 统计 + 消费记录 + 当前有效圈子；K54 + 交付资料）
+// K47 客户总览 DTO（customer + 统计 + 消费记录 + 当前有效圈子；K54 + 交付资料；K55 + 维护记录）
 export interface CustomerStatsDto {
   dealCount: number;
   paidTotalCents: number;
   lastDealAt: number | null;
   /** K54：该客户 M2M 关联的 live 资料数 */
   materialCount: number;
+  /** K55：该客户的 live 维护记录数 */
+  maintenanceRecordCount: number;
 }
 
 export interface CustomerOverviewDto {
@@ -175,4 +178,6 @@ export interface CustomerOverviewDto {
   circles: DeliveryDto[];
   /** K54：该客户的 live 交付资料（updatedAt desc，列表版 DTO 不含 content） */
   materials: MaterialDto[];
+  /** K55：该客户 live 维护记录（happenedAt desc，最新 N 条） */
+  maintenanceRecords: CustomerMaintenanceRecordDto[];
 }
