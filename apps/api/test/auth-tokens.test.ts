@@ -471,6 +471,8 @@ describe("GET /agent/login.ps1", () => {
     expect(res.body).toContain("/api/v1/auth/tokens");
     expect(res.body).toContain(".gb-crm");
     expect(res.body).toContain("credentials.json");
+    // UTF-8 BOM：PS5.1 对无 BOM 的 .ps1 按 ANSI 读，中文注释乱码/吞引号 → ParseException
+    expect(res.rawPayload.subarray(0, 3)).toEqual(Buffer.from([0xef, 0xbb, 0xbf]));
   });
 
   it("非法 Host 不写入脚本（防注入），回退本地默认", async () => {
