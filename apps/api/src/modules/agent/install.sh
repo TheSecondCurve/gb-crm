@@ -3,7 +3,9 @@
 # 步骤：确定目标目录（当前 AGENT 的项目级/用户级 + codex 全局 + claude 全局）→ 逐个下载
 #       SKILL.md + scripts/gb-crm.py → 引导授权（用户名/密码 → PAT）。
 # 安全：skill 不含任何密钥；凭证只写入 ~/.gb-crm/credentials.json(600)；密码只在你的终端里输入。
-set -eu
+# 只用 set -e（下载失败即中止）；不用 set -u：macOS /bin/sh（bash 3.2）的 nounset 在不同 shell 变体
+# 间行为不一，会把已赋值的 $CRED 误报「unbound variable」而中止安装（详见 k35 渠道A 安装器）。
+set -e
 
 BASE="__GB_CRM_BASE_URL__"
 BASE="${BASE%/}"
