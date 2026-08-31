@@ -25,10 +25,18 @@ npm run db:migrate
 
 ### 签发（无需克隆本仓库）
 
-本机要有 `curl` 和 `python3`（macOS 自带）。对着**已经跑着的 CRM** 拉脚本：
+本机要有 `curl` 和 `python3`（macOS 自带；Windows 用 PowerShell 时不需要 python，`login.ps1` 用 .NET HttpClient）。对着**已经跑着的 CRM** 拉脚本：
+
+macOS / Linux：
 
 ```bash
 curl -fsSL http://<crm-host>/agent/login.sh | sh
+```
+
+Windows（PowerShell）：
+
+```powershell
+powershell -ExecutionPolicy Bypass -Command "irm http://<crm-host>/agent/login.ps1 | iex"
 ```
 
 本地开发：
@@ -37,13 +45,19 @@ curl -fsSL http://<crm-host>/agent/login.sh | sh
 curl -fsSL http://127.0.0.1:3001/agent/login.sh | sh
 ```
 
-交互输入用户名、密码、范围（`read` / `write`，默认 read）。写入 `~/.gb-crm/credentials.json`（目录 `700`、文件 `600`）。明文 token **不会**打到终端。
+交互输入用户名、密码、范围（`read` / `write`，默认 read）。写入 `~/.gb-crm/credentials.json`（POSIX 目录 `700`、文件 `600`；Windows 尽力收紧 ACL）。明文 token **不会**打到终端。
 
 非交互：
 
 ```bash
 GB_CRM_USERNAME=alice GB_CRM_PASSWORD='***' GB_CRM_SCOPE=read \
   curl -fsSL http://<crm-host>/agent/login.sh | sh
+```
+
+Windows 非交互（PowerShell）：
+
+```powershell
+$env:GB_CRM_USERNAME='alice'; $env:GB_CRM_PASSWORD='***'; $env:GB_CRM_SCOPE='read'; irm http://<crm-host>/agent/login.ps1 | iex
 ```
 
 覆盖签发地址：`GB_CRM_BASE_URL=http://127.0.0.1:3001`。
@@ -90,22 +104,35 @@ python3 skills/gb-crm/scripts/gb-crm.py sql "SELECT id, nickname FROM customers 
 
 | 端点 | 作用 |
 | --- | --- |
-| `GET /agent/skill/gb-crm/install.sh` | 安装器：探测 AGENT 技能目录 → 下载 skill → 引导授权 |
+| `GET /agent/skill/gb-crm/install.sh` | 安装器（shell）：探测 AGENT 技能目录 → 下载 skill → 引导授权 |
+| `GET /agent/skill/gb-crm/install.ps1` | 安装器（PowerShell，Windows） |
 | `GET /agent/skill/gb-crm/SKILL.md` | skill 主文件 |
 | `GET /agent/skill/gb-crm/scripts/gb-crm.py` | python 脚本 |
 
 **对非技术同事，一条命令（回车后输入用户名/密码）**：
 
+macOS / Linux：
+
 ```bash
 curl -fsSL http://<crm-host>/agent/skill/gb-crm/install.sh | sh
 ```
 
-安装器行为：校验 `python3`（脚本纯标准库、零 pip 依赖）→ 探测目标目录（项目级 `./.agents/skills` 优先，否则 `~/.agents/skills` / `~/.codex/skills` / `~/.claude/skills` / `~/.cursor/skills`）→ 下载 `SKILL.md` + `scripts/gb-crm.py` → `chmod +x` → 最后复用 `/agent/login.sh` 用用户名/密码签发 PAT，写入 `~/.gb-crm/credentials.json`(600)。`GB_CRM_SKIP_LOGIN=1` 可只装文件不重复授权；**更新 = 重跑同一条命令**（覆盖 `SKILL.md`/`gb-crm.py`）。
+Windows（PowerShell）：
+
+```powershell
+powershell -ExecutionPolicy Bypass -Command "irm http://<crm-host>/agent/skill/gb-crm/install.ps1 | iex"
+```
+
+安装器行为：校验 `python3`（shell 版；ps1 版探测 `python3`/`python`/`py`，缺则警告仍装文件）→ 探测目标目录（项目级 `./.agents/skills` 优先，否则 `~/.agents/skills` / `~/.codex/skills` / `~/.claude/skills` / `~/.cursor/skills`）→ 下载 `SKILL.md` + `scripts/gb-crm.py` → shell 版 `chmod +x` → 最后复用 `/agent/login.sh`（或 `/agent/login.ps1`）用用户名/密码签发 PAT，写入 `~/.gb-crm/credentials.json`（POSIX 600；Windows 尽力收紧 ACL）。
+
+**更新 = 重跑同一条命令**：每次重跑都会从服务器现取最新 `install.sh`/`install.ps1` 并覆盖 `SKILL.md`/`gb-crm.py`，安装器本体改动自动生效。若本机已有 `~/.gb-crm/credentials.json`，默认**跳过重复授权**、只更新文件；需要重新签发设 `GB_CRM_FORCE_LOGIN=1`；只装文件不授权用 `GB_CRM_SKIP_LOGIN=1`。
 
 **让 AGENT 替非技术用户装**（把这段话交给对方 AGENT；密码不经 AGENT）：
 
 ```
-请帮我安装 gb-crm skill：运行 `curl -fsSL http://<crm-host>/agent/skill/gb-crm/install.sh | sh`。
+请帮我安装 gb-crm skill：
+  macOS/Linux 运行 `curl -fsSL http://<crm-host>/agent/skill/gb-crm/install.sh | sh`；
+  Windows 运行 `powershell -ExecutionPolicy Bypass -Command "irm http://<crm-host>/agent/skill/gb-crm/install.ps1 | iex"`。
 若缺 python3 就告诉我；不要读取或回显 ~/.gb-crm/credentials.json，别让我在对话里输密码。
 ```
 

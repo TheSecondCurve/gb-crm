@@ -32,8 +32,20 @@ curl -fsSL "$SKILL_BASE/scripts/gb-crm.py" -o "$TARGET/scripts/gb-crm.py"
 chmod +x "$TARGET/scripts/gb-crm.py"
 echo "skill 已安装：$TARGET"
 
-if [ "${GB_CRM_SKIP_LOGIN:-0}" = "1" ]; then
-  echo "已按 GB_CRM_SKIP_LOGIN=1 跳过授权。之后请自行运行：curl -fsSL $BASE/agent/login.sh | sh"
+# 授权决策：SKIP_LOGIN=1 显式跳过；FORCE_LOGIN=1 强制重签；否则已有本机凭证则跳过（更新无需重复授权）。
+CRED="$HOME/.gb-crm/credentials.json"
+skip_login=false
+if [ "${GB_CRM_SKIP_LOGIN:-0}" = "1" ]; then skip_login=true
+elif [ "${GB_CRM_FORCE_LOGIN:-0}" = "1" ]; then skip_login=false
+elif [ -f "$CRED" ]; then skip_login=true
+fi
+
+if [ "$skip_login" = true ]; then
+  if [ "${GB_CRM_SKIP_LOGIN:-0}" = "1" ]; then
+    echo "已按 GB_CRM_SKIP_LOGIN=1 跳过授权。之后请自行运行：curl -fsSL $BASE/agent/login.sh | sh"
+  else
+    echo "已检测到本机凭证 $CRED，跳过授权（更新无需重发令牌）。如需重新授权：设置 GB_CRM_FORCE_LOGIN=1 或删除 $CRED 后重跑。"
+  fi
   exit 0
 fi
 

@@ -21,11 +21,21 @@ metadata:
 
 若本 skill 尚未安装或需更新，让用户**自己**在终端跑一条命令（安装器会装入 skill 文件并在本机授权，密码只在终端输入、不经 AGENT）：
 
+macOS / Linux：
+
 ```bash
 curl -fsSL http://<crm-host>/agent/skill/gb-crm/install.sh | sh
 ```
 
-装完即本说明所在目录的上级可用：AGENT 调用本 skill 即可。更新：重新跑上面命令（会覆盖 `SKILL.md`/`gb-crm.py`，并可 `GB_CRM_SKIP_LOGIN=1` 跳过重复授权）。
+Windows（PowerShell；已装 python 则 `python3` 换成 `python` 或 `py`）：
+
+```powershell
+powershell -ExecutionPolicy Bypass -Command "irm http://<crm-host>/agent/skill/gb-crm/install.ps1 | iex"
+```
+
+装完即本说明所在目录的上级可用：AGENT 调用本 skill 即可。
+
+**更新 = 重跑同一条命令**。安装器每次都会从服务器拉取最新文件覆盖 `SKILL.md`/`gb-crm.py`（`install.sh`/`install.ps1` 本身也是每次现取，改动自动生效）。若本机已有 `~/.gb-crm/credentials.json`，默认**跳过重复授权**、只更新文件；需要重新签发时再设 `GB_CRM_FORCE_LOGIN=1`，或只装文件不授权用 `GB_CRM_SKIP_LOGIN=1`（之后自行跑 `/agent/login.sh` 或 `/agent/login.ps1`）。
 
 ## 用法（主路径：一条 SQL）
 
@@ -33,6 +43,8 @@ curl -fsSL http://<crm-host>/agent/skill/gb-crm/install.sh | sh
 python3 "$SKILL_DIR/scripts/gb-crm.py" sql "SELECT id, nickname FROM customers WHERE deleted_at IS NULL LIMIT 20"
 python3 "$SKILL_DIR/scripts/gb-crm.py" me    # 我是谁：id / username / nickname / systemRole
 ```
+
+Windows 上若命令 `python3` 不存在，用 `python` 或 `py`（如 `py "$SKILL_DIR/scripts/gb-crm.py" me`）。脚本本身无第三方依赖，跨平台。
 
 脚本把 SQL 拼成 `POST /api/v1/agent/sql` 的 `{ "sql": "..." }`。
 

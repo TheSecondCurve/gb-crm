@@ -45,7 +45,7 @@ CI 使用官方 Node 24 环境，无需额外处理。
 curl -fsSL http://<crm-host>/agent/login.sh | sh
 ```
 
-交互输入用户名、密码、范围（`read` / `write`），写入 `~/.gb-crm/credentials.json`（目录 `700`、文件 `600`）。之后 skill 读这个文件，请求头：
+交互输入用户名、密码、范围（`read` / `write`），写入 `~/.gb-crm/credentials.json`（目录 `700`、文件 `600`）。Windows 用 PowerShell：`powershell -ExecutionPolicy Bypass -Command "irm http://<crm-host>/agent/login.ps1 | iex"`。之后 skill 读这个文件，请求头：
 
 ```
 Authorization: Bearer gbcrm_ro_…

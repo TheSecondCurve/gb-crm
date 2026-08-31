@@ -22,7 +22,7 @@ import {
   gcSessions,
   SESSION_IDLE_TTL_MS,
 } from "./session-repo.js";
-import { publicBaseUrl, renderLoginScript } from "./login-script.js";
+import { publicBaseUrl, renderLoginScript, renderLoginScriptPs1 } from "./login-script.js";
 import {
   changeOwnPassword,
   getSessionImpersonator,
@@ -206,6 +206,14 @@ export function authRoutes(app: FastifyInstance, opts: AuthRoutesOptions): void 
     return reply
       .header("Content-Type", "text/x-shellscript; charset=utf-8")
       .header("Content-Disposition", 'inline; filename="login.sh"')
+      .send(script);
+  });
+
+  app.get("/agent/login.ps1", async (req, reply) => {
+    const script = renderLoginScriptPs1(publicBaseUrl(req));
+    return reply
+      .header("Content-Type", "text/x-powershell; charset=utf-8")
+      .header("Content-Disposition", 'inline; filename="login.ps1"')
       .send(script);
   });
 

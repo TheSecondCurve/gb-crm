@@ -11,7 +11,12 @@ import urllib.parse
 import urllib.request
 
 CRED_PATH = pathlib.Path.home() / ".gb-crm" / "credentials.json"
-LOGIN_HINT = "curl -fsSL {base}/agent/login.sh | sh"
+
+
+def _login_hint(base: str) -> str:
+    if sys.platform == "win32":
+        return f'powershell -ExecutionPolicy Bypass -Command "irm {base}/agent/login.ps1 | iex"'
+    return f"curl -fsSL {base}/agent/login.sh | sh"
 
 
 def die(msg: str, code: int = 1) -> None:
@@ -28,7 +33,7 @@ def load_creds() -> tuple[str, str, str | None]:
     if not CRED_PATH.is_file():
         die(
             "未找到本机令牌。请先签发（会写入 ~/.gb-crm/credentials.json）：\n"
-            "  curl -fsSL http://<crm-host>/agent/login.sh | sh\n"
+            f"  {_login_hint('http://<crm-host>')}\n"
             "或设置环境变量 GB_CRM_TOKEN 与 GB_CRM_BASE_URL。",
             2,
         )
@@ -141,7 +146,7 @@ def main() -> None:
     print(f"HTTP {status}", file=sys.stderr)
     if status == 401:
         print(
-            f"令牌无效或已过期。请重新签发（不要把密码发给我）：\n  {LOGIN_HINT.format(base=base)}",
+            f"令牌无效或已过期。请重新签发（不要把密码发给我）：\n  {_login_hint(base)}",
             file=sys.stderr,
         )
     if text:
