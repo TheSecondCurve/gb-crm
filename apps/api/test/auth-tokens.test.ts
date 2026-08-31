@@ -11,7 +11,7 @@ import type { FastifyInstance } from "fastify";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { buildApp } from "../src/app.js";
-import { renderLoginScript } from "../src/modules/auth/login-script.js";
+import { renderLoginScript, renderLoginScriptPs1 } from "../src/modules/auth/login-script.js";
 import { TOKEN_TTL_MS } from "../src/modules/auth/token-repo.js";
 import { loginAs, seedUser, setAccountStatus, testEnv } from "./helpers/auth.js";
 import { createTmpDb, type TmpDb } from "./helpers/tmp-db.js";
@@ -455,6 +455,39 @@ describe("GET /agent/login.sh", () => {
       fs.rmSync(home, { recursive: true, force: true });
       await listening.close();
     }
+  });
+});
+
+describe("GET /agent/login.ps1", () => {
+  it("免登录返回 PowerShell 脚本，并把 Host 写成默认 baseUrl", async () => {
+    const res = await app.inject({
+      method: "GET",
+      url: "/agent/login.ps1",
+      headers: { host: "crm.internal:3001" },
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.headers["content-type"]).toContain("text/x-powershell");
+    expect(res.body).toContain("http://crm.internal:3001");
+    expect(res.body).toContain("/api/v1/auth/tokens");
+    expect(res.body).toContain(".gb-crm");
+    expect(res.body).toContain("credentials.json");
+  });
+
+  it("非法 Host 不写入脚本（防注入），回退本地默认", async () => {
+    const res = await app.inject({
+      method: "GET",
+      url: "/agent/login.ps1",
+      headers: { host: "evil.com; rm -rf /" },
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.body).not.toContain("rm -rf");
+    expect(res.body).toContain("http://127.0.0.1:3001");
+  });
+
+  it("renderLoginScriptPs1 拒绝非 http(s) URL", () => {
+    const script = renderLoginScriptPs1("javascript:alert(1)");
+    expect(script).toContain("http://127.0.0.1:3001");
+    expect(script).not.toContain("javascript:");
   });
 });
 

@@ -1,4 +1,4 @@
-// 渲染 GET /agent/login.sh：把当前请求的 origin 写进脚本默认 baseUrl。
+// 渲染 GET /agent/login.sh 与 /agent/login.ps1：把当前请求的 origin 写进脚本默认 baseUrl。
 // Host 必须是合法 host[:port]，否则回退 127.0.0.1:3001，避免注入 shell。
 import fs from "node:fs";
 
@@ -9,7 +9,8 @@ const FALLBACK_BASE_URL = "http://127.0.0.1:3001";
 const HOST_RE = /^[a-zA-Z0-9.-]+(?::\d{1,5})?$/;
 const BASE_URL_RE = /^https?:\/\/[a-zA-Z0-9.-]+(?::\d{1,5})?$/;
 
-const template = fs.readFileSync(new URL("./login.sh", import.meta.url), "utf8");
+const shTemplate = fs.readFileSync(new URL("./login.sh", import.meta.url), "utf8");
+const ps1Template = fs.readFileSync(new URL("./login.ps1", import.meta.url), "utf8");
 
 export function publicBaseUrl(req: FastifyRequest): string {
   const host = req.headers.host;
@@ -20,5 +21,10 @@ export function publicBaseUrl(req: FastifyRequest): string {
 
 export function renderLoginScript(baseUrl: string): string {
   const safe = BASE_URL_RE.test(baseUrl) ? baseUrl : FALLBACK_BASE_URL;
-  return template.replaceAll(PLACEHOLDER, safe);
+  return shTemplate.replaceAll(PLACEHOLDER, safe);
+}
+
+export function renderLoginScriptPs1(baseUrl: string): string {
+  const safe = BASE_URL_RE.test(baseUrl) ? baseUrl : FALLBACK_BASE_URL;
+  return ps1Template.replaceAll(PLACEHOLDER, safe);
 }
