@@ -1,6 +1,7 @@
 // K35 渠道 A：由 gb-crm 服务器下发 skill（内网可用，无需 GitHub）。
 // - /agent/skill/gb-crm/install.sh 与 /agent/skill/gb-crm/install.ps1：安装器（shell / PowerShell），
-//   探测 AGENT 技能目录、下载 skill 文件，最后引导用用户名/密码授权
+//   确定目标目录（当前 AGENT 的项目级/用户级 skills，外加 codex 全局 ~/.codex/skills、
+//   claude 全局 ~/.claude/skills）→ 逐个下载 skill 文件，最后引导用用户名/密码授权
 //   （复用 /agent/login.sh / /agent/login.ps1 → PAT → ~/.gb-crm/credentials.json）。
 // - /agent/skill/gb-crm/SKILL.md 与 /agent/skill/gb-crm/scripts/gb-crm.py：供安装器下载的源文件。
 // 技能源目录 = 模块相对仓库根 5 层上溯到 skills/gb-crm（开发/容器一致；容器经 COPY skills ./skills）。

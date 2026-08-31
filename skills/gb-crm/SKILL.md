@@ -19,7 +19,7 @@ metadata:
 
 ## 安装 / 更新（内网，免 GitHub）
 
-若本 skill 尚未安装或需更新，让用户**自己**在终端跑一条命令（安装器会装入 skill 文件并在本机授权，密码只在终端输入、不经 AGENT）：
+若本 skill 尚未安装或需更新，让用户**自己**在终端跑一条命令（安装器会把 skill 文件装到当前 AGENT、codex 全局 `~/.codex/skills`、claude 全局 `~/.claude/skills` 三处，并在本机授权；密码只在终端输入、不经 AGENT）：
 
 macOS / Linux：
 
@@ -33,7 +33,7 @@ Windows（PowerShell；已装 python 则 `python3` 换成 `python` 或 `py`）�
 powershell -ExecutionPolicy Bypass -Command "irm http://<crm-host>/agent/skill/gb-crm/install.ps1 | iex"
 ```
 
-装完即本说明所在目录的上级可用：AGENT 调用本 skill 即可。
+装完即可用：当前 AGENT 调用本 skill；codex / claude 也能在同一台机器的各自全局 SKILL 目录里发现并加载它。
 
 **更新 = 重跑同一条命令**。安装器每次都会从服务器拉取最新文件覆盖 `SKILL.md`/`gb-crm.py`（`install.sh`/`install.ps1` 本身也是每次现取，改动自动生效）。若本机已有 `~/.gb-crm/credentials.json`，默认**跳过重复授权**、只更新文件；需要重新签发时再设 `GB_CRM_FORCE_LOGIN=1`，或只装文件不授权用 `GB_CRM_SKIP_LOGIN=1`（之后自行跑 `/agent/login.sh` 或 `/agent/login.ps1`）。
 

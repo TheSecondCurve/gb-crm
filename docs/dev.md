@@ -104,7 +104,7 @@ python3 skills/gb-crm/scripts/gb-crm.py sql "SELECT id, nickname FROM customers 
 
 | 端点 | 作用 |
 | --- | --- |
-| `GET /agent/skill/gb-crm/install.sh` | 安装器（shell）：探测 AGENT 技能目录 → 下载 skill → 引导授权 |
+| `GET /agent/skill/gb-crm/install.sh` | 安装器（shell）：确定目标目录（当前 AGENT + codex/claude 全局）→ 逐个下载 skill → 引导授权 |
 | `GET /agent/skill/gb-crm/install.ps1` | 安装器（PowerShell，Windows） |
 | `GET /agent/skill/gb-crm/SKILL.md` | skill 主文件 |
 | `GET /agent/skill/gb-crm/scripts/gb-crm.py` | python 脚本 |
@@ -123,7 +123,7 @@ Windows（PowerShell）：
 powershell -ExecutionPolicy Bypass -Command "irm http://<crm-host>/agent/skill/gb-crm/install.ps1 | iex"
 ```
 
-安装器行为：校验 `python3`（shell 版；ps1 版探测 `python3`/`python`/`py`，缺则警告仍装文件）→ 探测目标目录（项目级 `./.agents/skills` 优先，否则 `~/.agents/skills` / `~/.codex/skills` / `~/.claude/skills` / `~/.cursor/skills`）→ 下载 `SKILL.md` + `scripts/gb-crm.py` → shell 版 `chmod +x` → 最后复用 `/agent/login.sh`（或 `/agent/login.ps1`）用用户名/密码签发 PAT，写入 `~/.gb-crm/credentials.json`（POSIX 600；Windows 尽力收紧 ACL）。
+安装器行为：校验 `python3`（shell 版；ps1 版探测 `python3`/`python`/`py`，缺则警告仍装文件）→ 确定目标目录并逐个安装（当前 AGENT 项目级 `./.agents/skills` 否则 `~/.agents/skills`，外加 codex 全局 `~/.codex/skills` 与 claude 全局 `~/.claude/skills`）→ 每目录各下载一份 `SKILL.md` + `scripts/gb-crm.py` → shell 版 `chmod +x` → 最后复用 `/agent/login.sh`（或 `/agent/login.ps1`）用用户名/密码签发 PAT，写入 `~/.gb-crm/credentials.json`（POSIX 600；Windows 尽力收紧 ACL）。
 
 **更新 = 重跑同一条命令**：每次重跑都会从服务器现取最新 `install.sh`/`install.ps1` 并覆盖 `SKILL.md`/`gb-crm.py`，安装器本体改动自动生效。若本机已有 `~/.gb-crm/credentials.json`，默认**跳过重复授权**、只更新文件；需要重新签发设 `GB_CRM_FORCE_LOGIN=1`；只装文件不授权用 `GB_CRM_SKIP_LOGIN=1`。
 
