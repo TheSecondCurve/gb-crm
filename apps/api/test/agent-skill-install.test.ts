@@ -73,6 +73,8 @@ describe("渠道 A：/agent/skill/gb-crm/* 下发", () => {
     expect(res.body).toContain("/agent/skill/gb-crm"); // skillBase 来源
     expect(res.body).toContain("gb-crm.py");
     expect(res.body).toContain("/agent/login.ps1");
+    // UTF-8 BOM：PS5.1 对无 BOM 的 .ps1 按 ANSI 读，中文注释乱码/吞引号 → ParseException
+    expect(res.rawPayload.subarray(0, 3)).toEqual(Buffer.from([0xef, 0xbb, 0xbf]));
   });
 
   it("install.ps1 非法 Host 不写入脚本（防注入），回退本地默认", async () => {
