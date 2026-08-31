@@ -1,17 +1,24 @@
-// 交付资料只读查看弹窗（K54）：标题 + kind 徽章 + 关联交付/客户 + 可点链接 + 完整 content（预格式化滚动区）。
-// 调用方先 GET /materials/:id 拿 DetailDto 再打开。
+// 交付资料只读查看弹窗（K54 改造）：标题 + kind 徽章 + 关联交付/客户 + 可点链接 + Markdown 渲染的完整 content。
+// 调用方先 GET /materials/:id 拿 DetailDto 再打开；canUpdate + 文本类时底部给「编辑全文」入口。
+import { useNavigate } from "react-router-dom";
 import { materialKindLabels } from "@gb-crm/shared";
 
 import type { MaterialDetailDto } from "../api/types";
 import { badge, epochMsToDate, formatDateTime } from "../columns/common";
+import { MarkdownView } from "./MarkdownView";
 import { Modal } from "./Modal";
+
+const TEXT_KINDS: readonly string[] = ["transcript", "text"];
 
 interface MaterialViewModalProps {
   material: MaterialDetailDto;
+  /** 有 materials.update 权限时文本类资料显示「编辑全文」按钮 */
+  canUpdate?: boolean;
   onClose: () => void;
 }
 
-export function MaterialViewModal({ material, onClose }: MaterialViewModalProps) {
+export function MaterialViewModal({ material, canUpdate = false, onClose }: MaterialViewModalProps) {
+  const navigate = useNavigate();
   const delivery = material.delivery;
   const deliveryLabel = delivery
     ? `${delivery.deliveryType?.name ?? "交付"} #${delivery.id}${
@@ -56,7 +63,7 @@ export function MaterialViewModal({ material, onClose }: MaterialViewModalProps)
         <div className="detail-row">
           <span className="detail-label">内容</span>
           <span style={{ flex: 1, minWidth: 0 }}>
-            <div className="material-content">{material.content}</div>
+            <MarkdownView source={material.content} className="material-content" />
           </span>
         </div>
       )}
@@ -64,6 +71,13 @@ export function MaterialViewModal({ material, onClose }: MaterialViewModalProps)
         <span className="detail-label">更新时间</span>
         <span className="muted-text">{formatDateTime(material.updatedAt)}</span>
       </div>
+      {canUpdate && TEXT_KINDS.includes(material.kind) && (
+        <div className="modal-actions">
+          <button type="button" onClick={() => navigate(`/materials/${material.id}/edit`)}>
+            编辑全文
+          </button>
+        </div>
+      )}
     </Modal>
   );
 }

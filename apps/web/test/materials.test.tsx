@@ -85,6 +85,13 @@ function mockMaterialsApi(me: Me, rows: MaterialDto[] = [m1, m2]) {
     if (url === "/api/v1/materials/1" && method === "GET") {
       return { status: 200, body: { data: detail1 } };
     }
+    // 创建成功后前端跳 /materials/99/edit → 编辑页拉详情
+    if (url === "/api/v1/materials/99" && method === "GET") {
+      return {
+        status: 200,
+        body: { data: { ...m2, id: 99, kind: "text", title: "复盘纪要", content: "", customers: [] } },
+      };
+    }
     if (url.startsWith("/api/v1/materials")) {
       if (method === "GET") {
         return { status: 200, body: { data: rows, meta: { page: 1, pageSize: 25, total: rows.length } } };
@@ -186,16 +193,17 @@ describe("资料专区", () => {
     fireEvent.click(screen.getByRole("button", { name: "新增资料" }));
     const dialog = screen.getByRole("dialog", { name: "新增资料" });
 
-    // 默认文本类：内容必填可见、链接不可见
+    // 默认文本类：内容（可选初稿）可见、链接不可见
     expect(within(dialog).getByLabelText(/内容/)).toBeTruthy();
     expect(within(dialog).queryByLabelText(/链接/)).toBeNull();
 
-    // 填文本类字段 + 关联交付/客户
+    // 填文本类字段 + 关联交付/客户（EntityPicker：搜索 → 点候选）
     fireEvent.change(within(dialog).getByLabelText(/标题/), { target: { value: "复盘纪要" } });
     fireEvent.change(within(dialog).getByLabelText(/内容/), { target: { value: "本周复盘正文" } });
-    await within(dialog).findByRole("option", { name: /私董圈子 #11/ });
-    fireEvent.change(within(dialog).getByLabelText("关联交付单"), { target: { value: "11" } });
-    fireEvent.click(await within(dialog).findByLabelText("张三"));
+    fireEvent.change(within(dialog).getByLabelText("关联交付单"), { target: { value: "私董" } });
+    fireEvent.mouseDown(await within(dialog).findByRole("option", { name: /私董圈子 #11/ }));
+    fireEvent.change(within(dialog).getByLabelText("搜索客户"), { target: { value: "张" } });
+    fireEvent.mouseDown(await within(dialog).findByRole("option", { name: "张三" }));
 
     fireEvent.click(within(dialog).getByRole("button", { name: "创建" }));
     await waitFor(() => {
@@ -212,20 +220,46 @@ describe("资料专区", () => {
       });
     });
 
-    // 再开一次：切到音频 → 内容消失、链接出现并必填
+    // 创建成功后自动跳全文编辑页（GET /materials/99 → 编辑器渲染）
+    expect(await screen.findByLabelText("正文内容")).toBeTruthy();
+  });
+
+  it("新增媒体类资料：切到音频 → 内容消失、链接出现并必填；创建成功跳编辑页（无正文提示）", async () => {
+    const calls = mockMaterialsApi(adminMe);
+    renderApp("/materials");
+    await screen.findByText("开营录音文字稿");
+
     fireEvent.click(screen.getByRole("button", { name: "新增资料" }));
-    const dialog2 = screen.getByRole("dialog", { name: "新增资料" });
-    fireEvent.change(within(dialog2).getByLabelText(/资料类型/), { target: { value: "audio" } });
-    expect(within(dialog2).queryByLabelText(/内容/)).toBeNull();
-    fireEvent.change(within(dialog2).getByLabelText(/标题/), { target: { value: "播客" } });
-    fireEvent.change(within(dialog2).getByLabelText(/链接/), { target: { value: "https://example.com/p.mp3" } });
-    fireEvent.click(within(dialog2).getByRole("button", { name: "创建" }));
+    const dialog = screen.getByRole("dialog", { name: "新增资料" });
+    fireEvent.change(within(dialog).getByLabelText(/资料类型/), { target: { value: "audio" } });
+    expect(within(dialog).queryByLabelText(/内容/)).toBeNull();
+    fireEvent.change(within(dialog).getByLabelText(/标题/), { target: { value: "播客" } });
+    fireEvent.change(within(dialog).getByLabelText(/链接/), { target: { value: "https://example.com/p.mp3" } });
+    fireEvent.click(within(dialog).getByRole("button", { name: "创建" }));
     await waitFor(() => {
       const posts = calls.filter((c) => c.method === "POST" && c.url === "/api/v1/materials");
-      const body = JSON.parse(String(posts[1]?.body)) as Record<string, unknown>;
+      const body = JSON.parse(String(posts[0]?.body)) as Record<string, unknown>;
       expect(body.kind).toBe("audio");
       expect(body.url).toBe("https://example.com/p.mp3");
       expect(body.content).toBeNull();
+    });
+  });
+
+  it("文本类内容可空：不填内容也可创建（全文后补）", async () => {
+    const calls = mockMaterialsApi(adminMe);
+    renderApp("/materials");
+    await screen.findByText("开营录音文字稿");
+
+    fireEvent.click(screen.getByRole("button", { name: "新增资料" }));
+    const dialog = screen.getByRole("dialog", { name: "新增资料" });
+    fireEvent.change(within(dialog).getByLabelText(/标题/), { target: { value: "占位资料" } });
+    // 不填内容直接创建
+    fireEvent.click(within(dialog).getByRole("button", { name: "创建" }));
+    await waitFor(() => {
+      const post = calls.find((c) => c.method === "POST" && c.url === "/api/v1/materials");
+      const body = JSON.parse(String(post?.body)) as Record<string, unknown>;
+      expect(body.content).toBe("");
+      expect(body.title).toBe("占位资料");
     });
   });
 

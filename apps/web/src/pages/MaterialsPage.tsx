@@ -2,6 +2,7 @@
 // 筛选：按关联交付类型分组 tab（useResourceList secondaryFilterKey="deliveryKind"）+ q +
 // kind 下拉（filterKey="kind"）+ 「仅看未关联」checkbox（受控 state 拼进 fixedQuery，不改 hook）。
 import { useMemo, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { can, deliveryTypeKindLabels, materialKindLabels } from "@gb-crm/shared";
 
 import { api, ApiError } from "../api/client";
@@ -18,6 +19,8 @@ import { useResourceList } from "./useResourceList";
 
 const KIND_TONES: Record<string, BadgeTone> = { transcript: "accent" };
 
+const TEXT_KINDS: readonly string[] = ["transcript", "text"];
+
 /** 资料专区 tab：按关联交付类型分组。consulting/activity/circle 对应类型；other 兜底（未关联 + 类型为 other）。 */
 const DELIVERY_KIND_TABS: { value: string; label: string }[] = [
   { value: "consulting", label: deliveryTypeKindLabels.consulting },
@@ -31,6 +34,7 @@ export function MaterialsPage() {
   const { me } = useAuth();
   const role = me?.systemRole ?? null;
   const showToast = useToast();
+  const navigate = useNavigate();
   // orphan=1 不在 hook 的 filterKey 体系内：受控 state → fixedQuery（并入 query 与 queryKey）
   const [orphanOnly, setOrphanOnly] = useState(false);
   const fixedQuery = useMemo(() => (orphanOnly ? { orphan: 1 } : undefined), [orphanOnly]);
@@ -61,13 +65,19 @@ export function MaterialsPage() {
     try {
       if (existing) {
         await api.patch<{ data: MaterialDetailDto }>(`/materials/${existing.id}`, body);
+        setCreating(false);
+        setEditing(null);
+        await list.invalidate();
+        showToast("已保存");
       } else {
-        await api.post<{ data: MaterialDetailDto }>("/materials", body);
+        const res = await api.post<{ data: MaterialDetailDto }>("/materials", body);
+        setCreating(false);
+        setEditing(null);
+        await list.invalidate();
+        showToast("已创建资料");
+        // 新建成功后直接进全文编辑页补录正文（文本类 content 可空）
+        if (res?.data) navigate(`/materials/${res.data.id}/edit`);
       }
-      setCreating(false);
-      setEditing(null);
-      await list.invalidate();
-      showToast(existing ? "已保存" : "已创建资料");
     } catch (err) {
       showToast(
         err instanceof ApiError && err.status === 409
@@ -194,6 +204,11 @@ export function MaterialsPage() {
                         <button type="button" onClick={() => void openDetail(row.id, setViewing)}>
                           查看
                         </button>
+                        {canUpdate && TEXT_KINDS.includes(row.kind) && (
+                          <button type="button" onClick={() => navigate(`/materials/${row.id}/edit`)}>
+                            编辑内容
+                          </button>
+                        )}
                         {canUpdate && (
                           <button type="button" onClick={() => void openDetail(row.id, setEditing)}>
                             修改
@@ -233,7 +248,7 @@ export function MaterialsPage() {
           onSubmit={(body) => saveMaterial(body, editing)}
         />
       )}
-      {viewing && <MaterialViewModal material={viewing} onClose={() => setViewing(null)} />}
+      {viewing && <MaterialViewModal material={viewing} canUpdate={canUpdate} onClose={() => setViewing(null)} />}
       {deleting && (
         <ConfirmDialog
           title="删除资料"
