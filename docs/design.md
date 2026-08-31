@@ -142,7 +142,7 @@ Phase 2 表（本设计不建表、不导入）：活动交付 12、内容资产
 | K32 | **内网 + Docker**。提供 `Dockerfile` 与 `docker-compose.yml`（PR 14 **必做**）。SQLite **volume 挂载**，不进镜像。可 `HOST=0.0.0.0` 跟在内网 Caddy 后；推荐 `COOKIE_SECURE=true` + HTTPS + `TRUST_PROXY=true`。非 loopback 且未 Secure 仍启动 warn。**不**暴露公网，不追加公网威胁加固 | 2026-08-21 产品/运维拍板（原 Q7）。 |
 | K33 | UI「删除」= 软删。v1 **无**回收站、**无**管理员硬删。`ON DELETE CASCADE`/`SET NULL` 仅 schema 预留，v1 路径永不触发 | 2026-08-21 产品拍板（原 Q9）。 |
 | K34 | 侧栏与登录标题品牌文案锁定为 **「女商 私域运营管理端」** | 2026-08-21 产品拍板（原 Q13）。2026-08-23 品牌改文案；PR 8 曾用「闪光 · 客户运营」。 |
-| K35 | Agent 访问：**PAT 与 cookie session 并行**，不做 JWT。已部署 CRM 托管 `GET /agent/login.sh`（`curl \| sh` 签发）；明文 token 只返回一次，本机 `~/.gb-crm/credentials.json`（目录 700 / 文件 600）。范围 `read`/`write`（REST 资源路由仍 **∩** `can()`）。Skill 包在仓库 `skills/gb-crm/` 备用（脚本发 Bearer，skill 不含密钥）。Agent 数据访问收敛为单一端点 **`POST /api/v1/agent/sql`**（自由 SQL，仅 Bearer PAT，cookie 403）：用 better-sqlite3 `stmt.readonly` 判读写——只读语句任意 scope / 角色放行（含渠道密钥列，产品接受）；写语句必须 `write` scope + admin。读上限 1000 行截断；单语句。REST 资源路由保留给 web 管理端 | Agent 用不了 HttpOnly cookie；JWT 难作废（K5）。**2026-08-21 产品拍板推翻旧决定「不开放任意 SQL」**：换 token 节省与取数灵活性；写 SQL 绕过 PATCH 内核 / OCC / 软删 / RBAC 的风险由「仅 admin+write 可写」与 SKILL.md 工作守则兜底 |
+| K35 | Agent 访问：**PAT 与 cookie session 并行**，不做 JWT。已部署 CRM 托管 `GET /agent/login.sh`（macOS/Linux `curl \| sh` 签发）与 `GET /agent/login.ps1`（`irm \| iex`）；明文 token 只返回一次，本机 `~/.gb-crm/credentials.json`（目录 700 / 文件 600）。范围 `read`/`write`（REST 资源路由仍 **∩** `can()`）。Skill 包在仓库 `skills/gb-crm/` 备用（脚本发 Bearer，skill 不含密钥）。Agent 数据访问收敛为单一端点 **`POST /api/v1/agent/sql`**（自由 SQL，仅 Bearer PAT，cookie 403）：用 better-sqlite3 `stmt.readonly` 判读写——只读语句任意 scope / 角色放行（含渠道密钥列，产品接受）；写语句必须 `write` scope + admin。读上限 1000 行截断；单语句。REST 资源路由保留给 web 管理端 | Agent 用不了 HttpOnly cookie；JWT 难作废（K5）。**2026-08-21 产品拍板推翻旧决定「不开放任意 SQL」**：换 token 节省与取数灵活性；写 SQL 绕过 PATCH 内核 / OCC / 软删 / RBAC 的风险由「仅 admin+write 可写」与 SKILL.md 工作守则兜底 |
 | K36 | 客户表删除 父记录 / 档案页 / 所在社群 / 升单人 / 飞书记录（`parent_id` / `profile_url` / `feishu_record_id` 列 + `customer_upsell_owners` / `customer_community_channels` join 表） | 2026-08-22 产品决策。`0002_drop_customer_fields.sql` 迁移删除 |
 | K37 | users / channels / products 删除 飞书记录（`feishu_record_id` 列 + 各表 partial unique 索引） | 2026-08-22 产品决策。`0003_drop_feishu_record_ids.sql` 迁移删除 |
 | K38 | 清理最后三个飞书历史列：users.feishu_user_id / products.feishu_created_date / customers.feishu_created_date | 2026-08-22 产品决策。`0004_drop_feishu_remnants.sql` 迁移删除 |
@@ -240,11 +240,14 @@ gb-crm/
         plugins/static-spa.ts      # 生产：非 /api、非文件 → index.html
         modules/auth/{routes,service,session-repo,token-repo,token-service,login-script}.ts
         modules/auth/login.sh      # GET /agent/login.sh 模板
+        modules/auth/login.ps1     # GET /agent/login.ps1 模板（Windows）
         modules/users/{routes,service,repo}.ts
         modules/channels/{routes,service,repo}.ts
         modules/products/{routes,service,repo}.ts
         modules/customers/{routes,service,repo}.ts
-        modules/agent/routes.ts    # K35：POST /api/v1/agent/sql（单文件，直连 db.$client）
+        modules/agent/{routes,skill-install}.ts   # K35：POST /api/v1/agent/sql + /agent/skill/gb-crm/* 下发
+        modules/agent/install.sh   # /agent/skill/gb-crm/install.sh 模板
+        modules/agent/install.ps1  # /agent/skill/gb-crm/install.ps1 模板（Windows）
         lib/{pagination,fuzzy,audit,errors,patch-kernel,assemble}.ts
       test/
         helpers/{tmp-db,build-test-app,auth}.ts
@@ -791,7 +794,8 @@ HTTP：401 / 403 / 404 / 409 / 422 / 429。校验失败 422。
 | POST | `/api/v1/auth/tokens` | 免 cookie。body `{ username, password, scope: "read"\|"write", name? }`；201，明文 token **只返回一次**。限流与 login 同档 |
 | GET | `/api/v1/auth/tokens` | 当前用户的令牌列表（prefix/scope，无 hash） |
 | DELETE | `/api/v1/auth/tokens/:id` | 撤销自己的令牌；204 |
-| GET | `/agent/login.sh` | 免登录。本机 `curl … \| sh` 签发脚本（写入 `~/.gb-crm/credentials.json`） |
+| GET | `/agent/login.sh` | 免登录。macOS/Linux 本机 `curl … \| sh` 签发脚本（写入 `~/.gb-crm/credentials.json`） |
+| GET | `/agent/login.ps1` | 免登录。Windows `irm … \| iex` 签发脚本 |
 | POST | `/api/v1/agent/sql` | Agent 自由 SQL（仅 Bearer PAT，cookie 403）。`{ sql }`；只读任意 scope/角色，写需 admin + write scope；单语句；读上限 1000 行截断 |
 
 签发命令、凭证文件、Skill 用法见 `docs/dev.md` 与仓库 `skills/gb-crm/SKILL.md`。行为决策见上文 §5「Agent 个人令牌（K35）」。

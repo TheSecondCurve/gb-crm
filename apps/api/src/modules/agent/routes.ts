@@ -21,7 +21,12 @@ import { z } from "zod";
 import type { Db } from "../../db/client.js";
 import { ApiError, forbidden } from "../../plugins/error-handler.js";
 import { publicBaseUrl } from "../auth/login-script.js";
-import { readSkillFile, renderSkillInstallScript, skillFileExists } from "./skill-install.js";
+import {
+  readSkillFile,
+  renderSkillInstallScript,
+  renderSkillInstallScriptPs1,
+  skillFileExists,
+} from "./skill-install.js";
 
 /** 读查询行数上限，超出截断并 truncated=true */
 export const AGENT_SQL_MAX_ROWS = 1000;
@@ -131,6 +136,14 @@ export function agentRoutes(app: FastifyInstance, opts: AgentRoutesOptions): voi
     return reply
       .header("Content-Type", "text/x-shellscript; charset=utf-8")
       .header("Content-Disposition", 'inline; filename="install.sh"')
+      .send(script);
+  });
+
+  app.get("/agent/skill/gb-crm/install.ps1", async (req, reply) => {
+    const script = renderSkillInstallScriptPs1(publicBaseUrl(req));
+    return reply
+      .header("Content-Type", "text/x-powershell; charset=utf-8")
+      .header("Content-Disposition", 'inline; filename="install.ps1"')
       .send(script);
   });
 
