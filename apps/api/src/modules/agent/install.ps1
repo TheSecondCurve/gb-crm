@@ -1,11 +1,12 @@
-# gb-crm skill 安装器（Windows / PowerShell），由 CRM 服务器 /agent/skill/gb-crm/install.ps1 下发，仅需内网、不需 GitHub。
-# 步骤：确定目标目录（当前 AGENT 的项目级/用户级 + codex 全局 + claude 全局）→ 逐个下载
-#       SKILL.md + scripts/gb-crm.py → 引导授权（用户名/密码 → PAT）。
-# 安全：skill 不含任何密钥；凭证只写入 %USERPROFILE%\.gb-crm\credentials.json；密码只在你的终端里输入。
+# gb-crm skill installer (Windows / PowerShell), served by the CRM server /agent/skill/gb-crm/install.ps1, intranet only, no GitHub needed.
+# Steps: resolve target dirs (current AGENT project/user + codex global + claude global) -> download
+#        SKILL.md + scripts/gb-crm.py to each -> prompt for authorization (username/password -> PAT).
+# Security: the skill contains no secrets; credentials are written only to %USERPROFILE%\.gb-crm\credentials.json;
+#           password is typed only in your terminal.
 #
-# 安装（Windows PowerShell）：
+# Install (Windows PowerShell):
 #   powershell -ExecutionPolicy Bypass -Command "irm http://<crm-host>/agent/skill/gb-crm/install.ps1 | iex"
-# 或下载后运行（更稳）：
+# Or download then run (more reliable):
 #   curl.exe -fsSL http://<crm-host>/agent/skill/gb-crm/install.ps1 -o $env:TEMP\gb-crm-install.ps1
 #   powershell -ExecutionPolicy Bypass -File $env:TEMP\gb-crm-install.ps1
 $ErrorActionPreference = "Stop"
@@ -26,23 +27,23 @@ function Install-Skill {
   param([string]$target)
   $t = Join-Path $target "gb-crm"
   New-Item -ItemType Directory -Force -Path (Join-Path $t "scripts") | Out-Null
-  # 覆盖即更新：每次重跑都会用服务端最新 SKILL.md / gb-crm.py 替换
+  # Overwrite = update: each rerun replaces with the latest SKILL.md / gb-crm.py from the server
   Invoke-WebRequest -UseBasicParsing -Uri "$skillBase/SKILL.md" -OutFile (Join-Path $t "SKILL.md")
   Invoke-WebRequest -UseBasicParsing -Uri "$skillBase/scripts/gb-crm.py" -OutFile (Join-Path $t "scripts\gb-crm.py")
-  Write-Host "skill 已安装：$t"
+  Write-Host "skill installed: $t"
 }
 
 $py = Resolve-Python
 if (-not $py) {
-  Write-Host "未找到 python3 / python / py。本 skill 需要 Python 3，安装文件仍将继续，但脚本之后无法运行。" -ForegroundColor Yellow
-  Write-Host "请安装 Python（https://www.python.org/downloads/ 或 Microsoft Store 中的 Python 3）。" -ForegroundColor Yellow
+  Write-Host "python3 / python / py not found. This skill needs Python 3; files are still installed, but the script will not run." -ForegroundColor Yellow
+  Write-Host "Please install Python (https://www.python.org/downloads/ or Microsoft Store Python 3)." -ForegroundColor Yellow
 }
 
-# 当前 AGENT 技能目录：项目级 .agents/skills 优先（跟在项目里用这本 AGENT 一致），否则用户级
+# Current AGENT skill dir: project .agents/skills first (matches this AGENT inside the project), else user-level
 $agentDir = if (Test-Path ".\.agents\skills") { ".\.agents\skills" } else { (Join-Path $HOME ".agents\skills") }
 
-Write-Host "从 $base 下载 skill 文件 ..."
-# 除当前 AGENT 外，同时装到 codex / claude 的全局 SKILL 目录，便于跨 agent 复用本 skill
+Write-Host "Downloading skill files from $base ..."
+# Besides the current AGENT, also install into codex / claude global SKILL dirs for cross-agent reuse
 Install-Skill $agentDir
 Install-Skill (Join-Path $HOME ".codex\skills")
 Install-Skill (Join-Path $HOME ".claude\skills")
@@ -55,12 +56,12 @@ elseif (Test-Path $credFile) { $skipLogin = $true }
 
 if ($skipLogin) {
   if ($env:GB_CRM_SKIP_LOGIN -eq "1") {
-    Write-Host "已按 GB_CRM_SKIP_LOGIN=1 跳过授权。之后请自行运行：irm $base/agent/login.ps1 | iex"
+    Write-Host "Skipped authorization (GB_CRM_SKIP_LOGIN=1). Run it manually later: irm $base/agent/login.ps1 | iex"
   } else {
-    Write-Host "已检测到本机凭证，跳过授权（更新无需重发令牌）。如需重新授权：设置 GB_CRM_FORCE_LOGIN=1 或删除 $credFile 后重跑。"
+    Write-Host "Local credentials found, skipped authorization (update does not reissue a token). To reissue: set GB_CRM_FORCE_LOGIN=1 or delete $credFile and rerun."
   }
 } else {
-  Write-Host "接下来在 CRM 授权（输入用户名/密码），以领取本机可用的访问令牌："
+  Write-Host "Next: authorize in CRM (enter username/password) to get a local access token:"
   $loginTmp = Join-Path $env:TEMP "gb-crm-login-$PID.ps1"
   try {
     Invoke-WebRequest -UseBasicParsing -Uri "$base/agent/login.ps1" -OutFile $loginTmp
@@ -71,11 +72,11 @@ if ($skipLogin) {
 }
 
 Write-Host ""
-Write-Host "完成。现在可验证："
+Write-Host "Done. Verify with:"
 if ($py) {
   $verify = Join-Path $agentDir "gb-crm\scripts\gb-crm.py"
   Write-Host "  & '$py' '$verify' me"
 } else {
-  Write-Host "  安装 Python 3 后运行: python3 '$agentDir\gb-crm\scripts\gb-crm.py' me"
+  Write-Host "  After installing Python 3: python3 '$agentDir\gb-crm\scripts\gb-crm.py' me"
 }
-Write-Host "提示：不要把 %USERPROFILE%\.gb-crm\credentials.json 的内容发给任何人 / 不要写进对话。"
+Write-Host "Tip: do not share %USERPROFILE%\.gb-crm\credentials.json with anyone / do not paste it into chat."

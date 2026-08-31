@@ -471,8 +471,11 @@ describe("GET /agent/login.ps1", () => {
     expect(res.body).toContain("/api/v1/auth/tokens");
     expect(res.body).toContain(".gb-crm");
     expect(res.body).toContain("credentials.json");
-    // UTF-8 BOM：PS5.1 对无 BOM 的 .ps1 按 ANSI 读，中文注释乱码/吞引号 → ParseException
-    expect(res.rawPayload.subarray(0, 3)).toEqual(Buffer.from([0xef, 0xbb, 0xbf]));
+    // 纯 ASCII：Windows PS 5.1 对无 BOM 的 .ps1 按 ANSI 读、有 BOM 又让 `irm|iex` 首行报错；
+    // 纯 ASCII 则 iex / -File / & 三种执行方式都无编码歧义。
+    let maxByte = 0;
+    for (const b of res.rawPayload) if (b > maxByte) maxByte = b;
+    expect(maxByte).toBeLessThanOrEqual(0x7f);
   });
 
   it("非法 Host 不写入脚本（防注入），回退本地默认", async () => {
