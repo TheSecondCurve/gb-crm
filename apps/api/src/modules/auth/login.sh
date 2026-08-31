@@ -11,8 +11,9 @@
 #   GB_CRM_BASE_URL=http://127.0.0.1:3001
 #
 # 密码不落盘、不进脚本参数列表以外的文件；token 不打印到 stdout。
+# 只用 set -e；不用 set -u：macOS /bin/sh（bash 3.2）的 nounset 在不同 shell 变体间行为不一致。
 
-set -eu
+set -e
 
 BASE_URL="${GB_CRM_BASE_URL:-__GB_CRM_BASE_URL__}"
 BASE_URL="${BASE_URL%/}"
