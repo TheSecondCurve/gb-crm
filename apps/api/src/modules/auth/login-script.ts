@@ -26,5 +26,8 @@ export function renderLoginScript(baseUrl: string): string {
 
 export function renderLoginScriptPs1(baseUrl: string): string {
   const safe = BASE_URL_RE.test(baseUrl) ? baseUrl : FALLBACK_BASE_URL;
-  return ps1Template.replaceAll(PLACEHOLDER, safe);
+  // 前置 UTF-8 BOM：PowerShell 5.1 对无 BOM 的 .ps1 默认按 ANSI(系统区域码) 读取，
+  // 会把 UTF-8 中文注释读成乱码、吞掉引号导致 ParseException（`& $loginTmp` / `-File` 路径）。
+  // BOM 让 PS5.1 按 UTF-8 解析；`irm | iex` 路径因 charset=utf-8 解码不受影响。
+  return "\uFEFF" + ps1Template.replaceAll(PLACEHOLDER, safe);
 }

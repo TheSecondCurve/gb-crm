@@ -37,5 +37,7 @@ export function renderSkillInstallScript(baseUrl: string): string {
 export function renderSkillInstallScriptPs1(baseUrl: string): string {
   const safe = BASE_URL_RE.test(baseUrl) ? baseUrl : FALLBACK_BASE_URL;
   const template = fs.readFileSync(INSTALL_PS1_PATH, "utf8");
-  return template.replaceAll(INSTALL_PLACEHOLDER, safe);
+  // 前置 UTF-8 BOM：PowerShell 5.1 对无 BOM 的 .ps1 默认按 ANSI(系统区域码) 读取，会乱码/吞引号。
+  // 让 PS5.1 按 UTF-8 解析；`irm | iex` 路径因 charset=utf-8 解码不受影响。
+  return "\uFEFF" + template.replaceAll(INSTALL_PLACEHOLDER, safe);
 }
