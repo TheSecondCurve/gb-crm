@@ -1,6 +1,7 @@
 #!/bin/sh
 # gb-crm skill 安装器（渠道 A，由 CRM 服务器 /agent/skill/gb-crm/install.sh 下发，仅需内网、不需 GitHub）。
-# 步骤：探测 AGENT 技能目录 → 下载 SKILL.md + scripts/gb-crm.py → 引导授权（用户名/密码 → PAT）。
+# 步骤：确定目标目录（当前 AGENT 的项目级/用户级 + codex 全局 + claude 全局）→ 逐个下载
+#       SKILL.md + scripts/gb-crm.py → 引导授权（用户名/密码 → PAT）。
 # 安全：skill 不含任何密钥；凭证只写入 ~/.gb-crm/credentials.json(600)；密码只在你的终端里输入。
 set -eu
 
@@ -13,24 +14,28 @@ if ! command -v python3 >/dev/null 2>&1; then
   exit 1
 fi
 
-choose_dir() {
-  # 项目级 .agents/skills 优先（跟在项目里用这本 AGENT 一致），否则用户级
-  if [ -d "./.agents/skills" ]; then echo "./.agents/skills"; return; fi
-  for d in "$HOME/.agents/skills" "$HOME/.codex/skills" "$HOME/.claude/skills" "$HOME/.cursor/skills"; do
-    if [ -d "$d" ]; then echo "$d"; return; fi
-  done
-  echo "$HOME/.agents/skills"
+install_to() {
+  # $1 = 目标 skill 根目录（其下再建 gb-crm/ 并写入文件）
+  target="$1"
+  mkdir -p "$target/gb-crm/scripts"
+  curl -fsSL "$SKILL_BASE/SKILL.md" -o "$target/gb-crm/SKILL.md"
+  curl -fsSL "$SKILL_BASE/scripts/gb-crm.py" -o "$target/gb-crm/scripts/gb-crm.py"
+  chmod +x "$target/gb-crm/scripts/gb-crm.py"
+  echo "skill 已安装：$target/gb-crm"
 }
 
-DIR="$(choose_dir)"
-TARGET="$DIR/gb-crm"
-mkdir -p "$TARGET/scripts"
+# 当前 AGENT 技能目录：项目级 .agents/skills 优先（跟在项目里用这本 AGENT 一致），否则用户级
+if [ -d "./.agents/skills" ]; then
+  agent_dir="./.agents/skills"
+else
+  agent_dir="$HOME/.agents/skills"
+fi
 
-echo "从 $BASE 下载 skill 文件到 $TARGET ..."
-curl -fsSL "$SKILL_BASE/SKILL.md" -o "$TARGET/SKILL.md"
-curl -fsSL "$SKILL_BASE/scripts/gb-crm.py" -o "$TARGET/scripts/gb-crm.py"
-chmod +x "$TARGET/scripts/gb-crm.py"
-echo "skill 已安装：$TARGET"
+echo "从 $BASE 下载 skill 文件 ..."
+# 除当前 AGENT 外，同时装到 codex / claude 的全局 SKILL 目录，便于跨 agent 复用本 skill
+install_to "$agent_dir"
+install_to "$HOME/.codex/skills"
+install_to "$HOME/.claude/skills"
 
 # 授权决策：SKIP_LOGIN=1 显式跳过；FORCE_LOGIN=1 强制重签；否则已有本机凭证则跳过（更新无需重复授权）。
 CRED="$HOME/.gb-crm/credentials.json"
@@ -55,5 +60,5 @@ curl -fsSL "$BASE/agent/login.sh" -o "$tmp"
 sh "$tmp"
 rm -f "$tmp"
 
-echo "完成。现在可验证：python3 \"$TARGET/scripts/gb-crm.py\" me"
+echo "完成。现在可验证：python3 \"$agent_dir/gb-crm/scripts/gb-crm.py\" me"
 echo "提示：不要把 ~/.gb-crm/credentials.json 的内容发给任何人 / 不要写进对话。"

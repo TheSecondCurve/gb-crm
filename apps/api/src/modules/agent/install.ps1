@@ -1,5 +1,6 @@
 # gb-crm skill 安装器（Windows / PowerShell），由 CRM 服务器 /agent/skill/gb-crm/install.ps1 下发，仅需内网、不需 GitHub。
-# 步骤：探测 AGENT 技能目录 → 下载 SKILL.md + scripts/gb-crm.py → 引导授权（用户名/密码 → PAT）。
+# 步骤：确定目标目录（当前 AGENT 的项目级/用户级 + codex 全局 + claude 全局）→ 逐个下载
+#       SKILL.md + scripts/gb-crm.py → 引导授权（用户名/密码 → PAT）。
 # 安全：skill 不含任何密钥；凭证只写入 %USERPROFILE%\.gb-crm\credentials.json；密码只在你的终端里输入。
 #
 # 安装（Windows PowerShell）：
@@ -21,18 +22,14 @@ function Resolve-Python {
   return $null
 }
 
-function Select-SkillDir {
-  # 项目级 .agents/skills 优先（跟在项目里用这本 AGENT 一致），否则用户级
-  if (Test-Path ".\.agents\skills") { return ".\.agents\skills" }
-  foreach ($d in @(
-    (Join-Path $HOME ".agents\skills")
-    (Join-Path $HOME ".codex\skills")
-    (Join-Path $HOME ".claude\skills")
-    (Join-Path $HOME ".cursor\skills")
-  )) {
-    if (Test-Path $d) { return $d }
-  }
-  return (Join-Path $HOME ".agents\skills")
+function Install-Skill {
+  param([string]$target)
+  $t = Join-Path $target "gb-crm"
+  New-Item -ItemType Directory -Force -Path (Join-Path $t "scripts") | Out-Null
+  # 覆盖即更新：每次重跑都会用服务端最新 SKILL.md / gb-crm.py 替换
+  Invoke-WebRequest -UseBasicParsing -Uri "$skillBase/SKILL.md" -OutFile (Join-Path $t "SKILL.md")
+  Invoke-WebRequest -UseBasicParsing -Uri "$skillBase/scripts/gb-crm.py" -OutFile (Join-Path $t "scripts\gb-crm.py")
+  Write-Host "skill 已安装：$t"
 }
 
 $py = Resolve-Python
@@ -41,15 +38,14 @@ if (-not $py) {
   Write-Host "请安装 Python（https://www.python.org/downloads/ 或 Microsoft Store 中的 Python 3）。" -ForegroundColor Yellow
 }
 
-$dir = Select-SkillDir
-$target = Join-Path $dir "gb-crm"
-New-Item -ItemType Directory -Force -Path (Join-Path $target "scripts") | Out-Null
+# 当前 AGENT 技能目录：项目级 .agents/skills 优先（跟在项目里用这本 AGENT 一致），否则用户级
+$agentDir = if (Test-Path ".\.agents\skills") { ".\.agents\skills" } else { (Join-Path $HOME ".agents\skills") }
 
-Write-Host "从 $base 下载 skill 文件到 $target ..."
-# 覆盖即更新：每次重跑都会用服务端最新 SKILL.md / gb-crm.py 替换
-Invoke-WebRequest -UseBasicParsing -Uri "$skillBase/SKILL.md" -OutFile (Join-Path $target "SKILL.md")
-Invoke-WebRequest -UseBasicParsing -Uri "$skillBase/scripts/gb-crm.py" -OutFile (Join-Path $target "scripts\gb-crm.py")
-Write-Host "skill 已安装：$target"
+Write-Host "从 $base 下载 skill 文件 ..."
+# 除当前 AGENT 外，同时装到 codex / claude 的全局 SKILL 目录，便于跨 agent 复用本 skill
+Install-Skill $agentDir
+Install-Skill (Join-Path $HOME ".codex\skills")
+Install-Skill (Join-Path $HOME ".claude\skills")
 
 $credFile = Join-Path $HOME ".gb-crm\credentials.json"
 $skipLogin = $false
@@ -77,8 +73,9 @@ if ($skipLogin) {
 Write-Host ""
 Write-Host "完成。现在可验证："
 if ($py) {
-  Write-Host "  & '$py' '$target\scripts\gb-crm.py' me"
+  $verify = Join-Path $agentDir "gb-crm\scripts\gb-crm.py"
+  Write-Host "  & '$py' '$verify' me"
 } else {
-  Write-Host "  安装 Python 3 后运行: python3 '$target\scripts\gb-crm.py' me"
+  Write-Host "  安装 Python 3 后运行: python3 '$agentDir\gb-crm\scripts\gb-crm.py' me"
 }
 Write-Host "提示：不要把 %USERPROFILE%\.gb-crm\credentials.json 的内容发给任何人 / 不要写进对话。"
