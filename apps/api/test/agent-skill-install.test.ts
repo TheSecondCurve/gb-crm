@@ -158,6 +158,13 @@ describe("渠道 A：/agent/skill/gb-crm/* 下发", () => {
       expect(fs.existsSync(py)).toBe(true);
       expect(fs.statSync(py).mode & 0o111).not.toBe(0); // 可执行
 
+      // 多目标安装：codex / claude 全局 SKILL 目录也各落一份
+      for (const extra of [".codex", ".claude"]) {
+        const extraDir = path.join(home, extra, "skills", "gb-crm");
+        expect(fs.existsSync(path.join(extraDir, "SKILL.md"))).toBe(true);
+        expect(fs.existsSync(path.join(extraDir, "scripts", "gb-crm.py"))).toBe(true);
+      }
+
       // 授权凭证已写入
       const cred = JSON.parse(fs.readFileSync(path.join(home, ".gb-crm", "credentials.json"), "utf8")) as {
         baseUrl: string;
