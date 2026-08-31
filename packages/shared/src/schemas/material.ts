@@ -4,7 +4,7 @@ import { deliveryTypeKindSchema, materialKindSchema } from "../enums.js";
 import { epochMsSchema, pageQuerySchema } from "./common.js";
 
 // K54 交付资料（delivery_materials 表，camelCase）。
-// 文本类（transcript/text）content 必填（全文入库）；媒体类（audio/video/link）url 必填。
+// 文本类（transcript/text）content 可空（创建后可在全文编辑器页补写）；媒体类（audio/video/link）url 必填。
 // 关联可空：deliveryId 可空（孤儿资料），customerIds M2M 0..N（PATCH：缺席不动、[] 清空）。
 
 const TEXT_KINDS: readonly string[] = ["transcript", "text"];
@@ -20,9 +20,6 @@ const materialBaseSchema = z.object({
 
 export const materialWriteSchema = materialBaseSchema.superRefine((v, ctx) => {
   const textKind = TEXT_KINDS.includes(v.kind);
-  if (textKind && !v.content?.trim()) {
-    ctx.addIssue({ code: "custom", path: ["content"], message: "文本类资料必须填写内容" });
-  }
   if (!textKind && !v.url) {
     ctx.addIssue({ code: "custom", path: ["url"], message: "媒体类资料必须填写链接" });
   }

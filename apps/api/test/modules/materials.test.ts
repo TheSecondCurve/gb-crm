@@ -108,14 +108,24 @@ describe("RBAC（materials 资源，K54）", () => {
 });
 
 describe("POST /api/v1/materials 创建", () => {
-  it("文本类 content 必填、媒体类 url 必填 → 422 VALIDATION；url 合法时 201", async () => {
+  it("文本类 content 可空（创建后全文编辑器补写）；媒体类 url 必填 → 422 VALIDATION", async () => {
     const { cookie } = await loginAsRole("admin");
+    // 文本类空 content → 201，content=null / contentLength=0 / excerpt=null
     const noContent = await post("/api/v1/materials", cookie, { kind: "text", title: "无内容" });
-    expect(noContent.statusCode).toBe(422);
-    expect(noContent.json().error.code).toBe("VALIDATION");
+    expect(noContent.statusCode).toBe(201);
+    expect(noContent.json().data.content).toBeNull();
+    expect(noContent.json().data.contentLength).toBe(0);
+
+    const emptyContent = await post("/api/v1/materials", cookie, {
+      kind: "transcript",
+      title: "空串内容",
+      content: "",
+    });
+    expect(emptyContent.statusCode).toBe(201);
 
     const noUrl = await post("/api/v1/materials", cookie, { kind: "video", title: "无链接" });
     expect(noUrl.statusCode).toBe(422);
+    expect(noUrl.json().error.code).toBe("VALIDATION");
 
     const ok = await post("/api/v1/materials", cookie, {
       kind: "link",
@@ -478,7 +488,7 @@ describe("PATCH /api/v1/materials/:id 内核（K24）", () => {
     expect((orphan.json().data as Material[]).map((x) => x.id)).toContain(m.id);
   });
 
-  it("合并后重跑 kind↔content/url 组合校验：只改 kind 违反 → 422；补 url 后 → 200", async () => {
+  it("合并后重跑 kind↔url 组合校验：只改 kind 违反 → 422；补 url 后 → 200；文本类清空 content → 200", async () => {
     const { cookie } = await loginAsRole("admin");
     const m = await createMaterial(cookie, TEXT);
 
@@ -500,14 +510,20 @@ describe("PATCH /api/v1/materials/:id 内核（K24）", () => {
     expect(good.json().data.kind).toBe("audio");
     expect(good.json().data.content).toBe(TEXT.content); // content 保留（PATCH 不清空）
 
-    // 文本类清空 content → 422
+    // 文本类清空 content → 200，持久化为 null
     clock.t += 1000;
     const clearContent = await patch(`/api/v1/materials/${m.id}`, cookie, {
       kind: "text",
       content: null,
       updatedAt: good.json().data.updatedAt,
     });
-    expect(clearContent.statusCode).toBe(422);
+    expect(clearContent.statusCode).toBe(200);
+    expect(clearContent.json().data.kind).toBe("text");
+    expect(clearContent.json().data.content).toBeNull();
+    expect(clearContent.json().data.contentLength).toBe(0);
+
+    const detail = await get(`/api/v1/materials/${m.id}`, cookie);
+    expect(detail.json().data.content).toBeNull();
   });
 
   it("PATCH 预检：deliveryId 软删交付 / customerIds 已删客户 → 422", async () => {

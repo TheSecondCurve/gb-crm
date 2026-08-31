@@ -445,7 +445,11 @@ export function CustomerOverviewPage() {
       </div>
 
       {viewingMaterial && (
-        <MaterialViewModal material={viewingMaterial} onClose={() => setViewingMaterial(null)} />
+        <MaterialViewModal
+          material={viewingMaterial}
+          canUpdate={can(role, "materials", "update")}
+          onClose={() => setViewingMaterial(null)}
+        />
       )}
 
       {recordFormOpen && (
