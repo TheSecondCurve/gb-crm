@@ -139,3 +139,5 @@ powershell -ExecutionPolicy Bypass -Command "irm http://<crm-host>/agent/skill/g
 安全：skill 不含任何密钥；凭证只写本地 `~/.gb-crm/credentials.json`(600)；安装器对 `Host` 做白名单校验（非法值回退 `127.0.0.1:3001`，防 shell 注入）。生产容器需将 `skills/` 拷进镜像（`Dockerfile` runtime 阶段 `COPY skills ./skills`，已含）。安装验证：`python3 ~/.agents/skills/gb-crm/scripts/gb-crm.py me` 能回显当前用户。
 
 Agent 数据访问走单一自由 SQL 端点 `POST /api/v1/agent/sql`（仅 Bearer PAT）：`stmt.readonly` 判读写，只读语句任意 scope / 角色放行，写语句必须 admin + write scope；单语句；读上限 1000 行截断——详见 `skills/gb-crm/SKILL.md` 与 design.md K35。REST 资源路由保留给 web 管理端。
+
+「我的客户 / 我的成交」的语义收敛见 `skills/gb-crm/SKILL.md` 工作守则第 2 条：SQL 查询须按当前令牌账号写 `WHERE owner_id = <me 的 id>`；用户说「所有 / 全部 / 名单」则**不加** owner 过滤（助理 / 运营本就可读全量，这一步只是等值过滤，**不是**权限收紧）。
