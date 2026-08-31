@@ -145,14 +145,17 @@ describe("patch schema（K24：键可缺席，不得绑默认值）", () => {
 });
 
 describe("material schemas（K54）", () => {
-  it("文本类 content 必填；媒体类 url 必填", () => {
+  it("文本类 content 可空（后补）；媒体类 url 必填", () => {
     const base = { title: "咨询记录" };
     expect(
       materialWriteSchema.safeParse({ ...base, kind: "transcript", content: "语料全文" }).success,
     ).toBe(true);
-    expect(materialWriteSchema.safeParse({ ...base, kind: "transcript" }).success).toBe(false);
+    expect(materialWriteSchema.safeParse({ ...base, kind: "transcript" }).success).toBe(true);
+    expect(materialWriteSchema.safeParse({ ...base, kind: "text", content: null }).success).toBe(
+      true,
+    );
     expect(materialWriteSchema.safeParse({ ...base, kind: "text", content: "  " }).success).toBe(
-      false,
+      true,
     );
     expect(
       materialWriteSchema.safeParse({ ...base, kind: "audio", url: "https://x/a.mp3" }).success,

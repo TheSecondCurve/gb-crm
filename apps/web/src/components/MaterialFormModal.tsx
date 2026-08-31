@@ -1,13 +1,15 @@
-// 新增/修改交付资料弹窗（K54）：kind 下拉切换 content/url 显隐（文本类 content 必填、媒体类 url 必填），
-// 交付单单选（可清空；fixedDeliveryId 时锁定不显示）+ 客户多选（.form-picker 搜索 + checkbox）。
+// 新增/修改交付资料弹窗（K54 改造）：kind 下拉切换 content/url 显隐
+//（文本类 content 可空——只是初稿，全文维护走 /materials/:id/edit 编辑页；媒体类 url 必填）。
+// 交付单 / 客户关联统一用 EntityPicker（单选 / 多选；fixedDeliveryId 时锁定不显示）。
 // 修改模式提交带 updatedAt（行级 OCC）；校验失败/409 由调用方 toast。
-import { useEffect, useState, type FormEvent } from "react";
+import { useState, type FormEvent } from "react";
+import { useNavigate } from "react-router-dom";
 import { materialKindLabels } from "@gb-crm/shared";
 
 import type { MaterialDetailDto } from "../api/types";
 import { optionsOf } from "../columns/common";
-import { customerLabelCache, customerOptionsLoader, deliveryOptionsLoader } from "../columns/relation";
-import type { RelationOption } from "./DataGrid/DataGrid";
+import { customerLabelCache, customerOptionsLoader, deliveryLabelCache, deliveryOptionsLoader } from "../columns/relation";
+import { EntityPicker } from "./EntityPicker";
 import { Modal } from "./Modal";
 import { useToast } from "./Toast";
 
@@ -26,55 +28,32 @@ interface MaterialFormModalProps {
 
 export function MaterialFormModal({ title, material, fixedDeliveryId, busy, onClose, onSubmit }: MaterialFormModalProps) {
   const showToast = useToast();
+  const navigate = useNavigate();
   const editing = material != null;
+
+  // 编辑模式：把已有交付/客户 id→label 预填进缓存，EntityPicker chips 直接有名字
+  if (material?.delivery && !deliveryLabelCache.has(material.delivery.id)) {
+    const d = material.delivery;
+    deliveryLabelCache.set(d.id, `${d.deliveryType?.name ?? "交付"} #${d.id}`);
+  }
+  for (const c of material?.customers ?? []) {
+    if (!customerLabelCache.has(c.id)) customerLabelCache.set(c.id, c.nickname);
+  }
 
   const [kind, setKind] = useState(material?.kind ?? "text");
   const [materialTitle, setMaterialTitle] = useState(material?.title ?? "");
   const [content, setContent] = useState(material?.content ?? "");
   const [url, setUrl] = useState(material?.url ?? "");
-  const [deliveryId, setDeliveryId] = useState<string>(material?.deliveryId ? String(material.deliveryId) : "");
+  const [deliveryId, setDeliveryId] = useState<number | null>(material?.deliveryId ?? null);
   const [selected, setSelected] = useState<number[]>(material ? material.customers.map((c) => c.id) : []);
-
-  const [deliveryOptions, setDeliveryOptions] = useState<RelationOption[]>([]);
-  const [customerSearch, setCustomerSearch] = useState("");
-  const [customerOptions, setCustomerOptions] = useState<RelationOption[]>([]);
 
   const textKind = TEXT_KINDS.includes(kind);
   const lockDelivery = fixedDeliveryId !== undefined;
-
-  // 交付单选项（单选下拉）；编辑模式当前行交付若不在前 100 条也要能显示
-  useEffect(() => {
-    if (lockDelivery) return;
-    void deliveryOptionsLoader("").then((opts) => {
-      if (material?.delivery) {
-        const current = material.delivery;
-        if (!opts.some((o) => o.id === current.id)) {
-          opts = [{ id: current.id, label: `${current.deliveryType?.name ?? "交付"} #${current.id}` }, ...opts];
-        }
-      }
-      setDeliveryOptions(opts);
-    });
-  }, [lockDelivery, material]);
-
-  // 客户搜索（300ms 防抖）
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      void customerOptionsLoader(customerSearch).then(setCustomerOptions);
-    }, 300);
-    return () => clearTimeout(timer);
-  }, [customerSearch]);
-
-  const toggle = (id: number) =>
-    setSelected((prev) => (prev.includes(id) ? prev.filter((v) => v !== id) : [...prev, id]));
 
   const handleSubmit = (e: FormEvent) => {
     e.preventDefault();
     if (!materialTitle.trim()) {
       showToast("请填写资料标题");
-      return;
-    }
-    if (textKind && !content.trim()) {
-      showToast("文本类资料必须填写内容");
       return;
     }
     if (!textKind && !url.trim()) {
@@ -89,7 +68,7 @@ export function MaterialFormModal({ title, material, fixedDeliveryId, busy, onCl
       // content/url 总是成对提交：非本类的一律 null 清空，避免 kind 切换后残留脏值
       content: textKind ? content : null,
       url: textKind ? null : url.trim(),
-      deliveryId: lockDelivery ? fixedDeliveryId : deliveryId ? Number(deliveryId) : null,
+      deliveryId: lockDelivery ? fixedDeliveryId : deliveryId,
       customerIds: selected,
     });
   };
@@ -113,8 +92,9 @@ export function MaterialFormModal({ title, material, fixedDeliveryId, busy, onCl
         </label>
         {textKind ? (
           <label className="field field-span">
-            内容<span className="req-star">*</span>
-            <textarea rows={8} value={content} onChange={(e) => setContent(e.target.value)} />
+            内容（初稿，可选）
+            <textarea rows={4} value={content} onChange={(e) => setContent(e.target.value)} />
+            <span className="muted-text">可在创建后进入全文编辑器完善</span>
           </label>
         ) : (
           <label className="field field-span">
@@ -123,45 +103,36 @@ export function MaterialFormModal({ title, material, fixedDeliveryId, busy, onCl
           </label>
         )}
         {!lockDelivery && (
-          <label className="field">
+          <div className="field field-span">
             关联交付单
-            <select value={deliveryId} onChange={(e) => setDeliveryId(e.target.value)}>
-              <option value="">（不关联）</option>
-              {deliveryOptions.map((o) => (
-                <option key={o.id} value={o.id}>
-                  {o.label}
-                </option>
-              ))}
-            </select>
-          </label>
+            <EntityPicker
+              loader={deliveryOptionsLoader}
+              cache={deliveryLabelCache}
+              selectedIds={deliveryId ? [deliveryId] : []}
+              onChange={(ids) => setDeliveryId(ids[0] ?? null)}
+              multiple={false}
+              placeholder="搜索交付单…"
+              ariaLabel="关联交付单"
+            />
+          </div>
         )}
         <div className="field field-span">
           关联客户（{selected.length} 人）
-          <div className="form-picker">
-            <input
-              placeholder="搜索客户…"
-              autoComplete="off"
-              value={customerSearch}
-              onChange={(e) => setCustomerSearch(e.target.value)}
-            />
-            <div className="form-checks">
-              {customerOptions.map((o) => (
-                <label className="inline-field" key={o.id}>
-                  <input
-                    type="checkbox"
-                    checked={selected.includes(o.id)}
-                    onChange={() => {
-                      toggle(o.id);
-                      customerLabelCache.set(o.id, o.label);
-                    }}
-                  />
-                  {o.label}
-                </label>
-              ))}
-            </div>
-          </div>
+          <EntityPicker
+            loader={customerOptionsLoader}
+            cache={customerLabelCache}
+            selectedIds={selected}
+            onChange={setSelected}
+            placeholder="搜索客户…"
+            ariaLabel="搜索客户"
+          />
         </div>
         <div className="modal-actions field-span">
+          {editing && textKind && (
+            <button type="button" onClick={() => navigate(`/materials/${material.id}/edit`)}>
+              编辑全文内容 →
+            </button>
+          )}
           <button type="button" onClick={onClose} disabled={busy}>
             取消
           </button>

@@ -1,5 +1,5 @@
 // materials 业务规则（§3 service 层）：
-// - kind↔content/url 组合校验（K54）：文本类（transcript/text）content 必填、媒体类 url 必填；
+// - kind↔content/url 组合校验（K54）：文本类（transcript/text）content 可空（后补）、媒体类 url 必填；
 //   create 由 Zod superRefine 挡 422，PATCH 在「现有行 + patch」合并后重跑（只改 kind 也会触发）；
 // - 关联预检：deliveryId 非空必须指向 live 交付（软删 → 422）；customerIds 存在时全部 live 客户否则 422；
 // - PATCH 内核（K24）：标量键存在才 SET + updatedAt OCC；customerIds 关系数组缺席不动、[] 清空、
@@ -35,15 +35,9 @@ function inTx<T>(db: Db, fn: (tx: Db) => T): T {
 
 const TEXT_KINDS: ReadonlySet<string> = new Set(["transcript", "text"]);
 
-/** kind↔content/url 组合校验（K54；create/PATCH 合并值后调用） */
-function assertKindCombo(kind: string, content: string | null, url: string | null): void {
-  if (TEXT_KINDS.has(kind)) {
-    if (!content?.trim()) {
-      throw unprocessable("文本类资料必须填写内容", [
-        { path: "content", message: "transcript/text 必须有 content" },
-      ]);
-    }
-  } else if (!url) {
+/** kind↔url 组合校验（K54；create/PATCH 合并值后调用）：文本类 content 可空，媒体类 url 必填 */
+function assertKindCombo(kind: string, url: string | null): void {
+  if (!TEXT_KINDS.has(kind) && !url) {
     throw unprocessable("媒体类资料必须填写链接", [
       { path: "url", message: "audio/video/link 必须有 url" },
     ]);
@@ -96,7 +90,7 @@ export function createMaterial(
   return inTx(db, (tx) => {
     const { customerIds, ...fields } = body;
     // Zod 已挡组合违规，此处与 PATCH 共用同一规则兜底
-    assertKindCombo(fields.kind, fields.content ?? null, fields.url ?? null);
+    assertKindCombo(fields.kind, fields.url ?? null);
     assertLiveDelivery(tx, fields.deliveryId);
     assertLiveCustomers(tx, customerIds);
 
@@ -122,7 +116,6 @@ export function patchMaterial(
     // 组合校验：合并现有行 + patch 后重跑（只改 kind 也会触发；缺席键用现有值）
     assertKindCombo(
       patch.kind ?? existing.kind,
-      patch.content !== undefined ? patch.content : existing.content,
       patch.url !== undefined ? patch.url : existing.url,
     );
     assertLiveDelivery(tx, patch.deliveryId);

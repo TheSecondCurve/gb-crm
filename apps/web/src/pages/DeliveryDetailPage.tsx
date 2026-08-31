@@ -142,13 +142,19 @@ export function DeliveryDetailPage() {
     try {
       if (existing) {
         await api.patch(`/materials/${existing.id}`, body);
+        setCreatingMaterial(false);
+        setEditingMaterial(null);
+        await refetchMaterials();
+        showToast("已保存");
       } else {
-        await api.post("/materials", body);
+        const res = await api.post<{ data: MaterialDetailDto }>("/materials", body);
+        setCreatingMaterial(false);
+        setEditingMaterial(null);
+        await refetchMaterials();
+        showToast("已创建资料");
+        // 新建成功后直接进全文编辑页补录正文
+        if (res?.data) navigate(`/materials/${res.data.id}/edit`);
       }
-      setCreatingMaterial(false);
-      setEditingMaterial(null);
-      await refetchMaterials();
-      showToast(existing ? "已保存" : "已创建资料");
     } catch (err) {
       showToast(
         err instanceof ApiError && err.status === 409
@@ -322,6 +328,11 @@ export function DeliveryDetailPage() {
                 <button type="button" onClick={() => void openMaterial(m.id, setViewingMaterial)}>
                   查看
                 </button>
+                {canUpdateMaterial && (m.kind === "transcript" || m.kind === "text") && (
+                  <button type="button" onClick={() => navigate(`/materials/${m.id}/edit`)}>
+                    编辑内容
+                  </button>
+                )}
                 {canUpdateMaterial && (
                   <button type="button" onClick={() => void openMaterial(m.id, setEditingMaterial)}>
                     修改
@@ -393,7 +404,7 @@ export function DeliveryDetailPage() {
         />
       )}
       {viewingMaterial && (
-        <MaterialViewModal material={viewingMaterial} onClose={() => setViewingMaterial(null)} />
+        <MaterialViewModal material={viewingMaterial} canUpdate={canUpdateMaterial} onClose={() => setViewingMaterial(null)} />
       )}
       {deletingMaterial && (
         <ConfirmDialog

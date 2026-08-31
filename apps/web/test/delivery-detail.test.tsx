@@ -59,7 +59,18 @@ function mockDetailApi(me: Me, items: DeliverableDto[] = [item], materials: Mate
     if (url.startsWith("/api/v1/materials")) {
       if (method === "GET" && /\/materials\/\d+$/.test(url)) {
         const m = materials.find((v) => url.endsWith(`/${v.id}`));
-        return m ? { status: 200, body: { data: { ...m, content: "资料全文" } } } : undefined;
+        if (m) return { status: 200, body: { data: { ...m, content: "资料全文" } } };
+        // 创建成功后前端跳 /materials/:id/edit 拉详情（新建行不在列表 mock 里）
+        return {
+          status: 200,
+          body: {
+            data: {
+              id: 99, kind: "text", title: "新资料", url: null, contentLength: 0, excerpt: null,
+              deliveryId: 1, delivery: null, customers: [],
+              createdAt: 1000, updatedAt: 2000, createdBy: null, updatedBy: null, content: "",
+            },
+          },
+        };
       }
       if (method === "GET") {
         return { status: 200, body: { data: materials, meta: { page: 1, pageSize: 100, total: materials.length } } };
