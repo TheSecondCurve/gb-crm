@@ -11,6 +11,8 @@ BASE="__GB_CRM_BASE_URL__"
 BASE="${BASE%/}"
 SKILL_BASE="$BASE/agent/skill/gb-crm"
 
+echo "gb-crm skill 版本：__GB_CRM_SKILL_VERSION__（由 CRM 服务器下发，重跑即更新到该版本）"
+
 if ! command -v python3 >/dev/null 2>&1; then
   echo "缺少 python3。本 skill 需要 python3（macOS 自带；Linux 请安装 python3）。" >&2
   exit 1

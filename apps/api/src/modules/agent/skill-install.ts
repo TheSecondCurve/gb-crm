@@ -14,8 +14,12 @@ const SKILL_DIR = fileURLToPath(new URL("../../../../../skills/gb-crm", import.m
 const INSTALL_SH_PATH = fileURLToPath(new URL("./install.sh", import.meta.url));
 const INSTALL_PS1_PATH = fileURLToPath(new URL("./install.ps1", import.meta.url));
 const INSTALL_PLACEHOLDER = "__GB_CRM_BASE_URL__";
+const SKILL_VERSION_PLACEHOLDER = "__GB_CRM_SKILL_VERSION__";
 const FALLBACK_BASE_URL = "http://127.0.0.1:3001";
 const BASE_URL_RE = /^https?:\/\/[a-zA-Z0-9.-]+(?::\d{1,5})?$/;
+// 版本号单一真相源：SKILL.md front-matter 的 version 字段（安装器控制台打印它，用户可看到当前最新版本）
+const SKILL_VERSION_RE = /^version:\s*(\S+)/m;
+const FALLBACK_SKILL_VERSION = "0.0.0";
 
 /** skill 源文件是否存在（不存在时应返回 404，而非 500） */
 export function skillFileExists(rel: string): boolean {
@@ -27,11 +31,19 @@ export function readSkillFile(rel: string): string {
   return fs.readFileSync(path.join(SKILL_DIR, rel), "utf8");
 }
 
-/** 渲染安装器：注入安全 baseUrl（非法 Host 回退本地默认，防 shell 注入，仿 login-script） */
+/** 当前 skill 版本号（SKILL.md front-matter 的 version 字段，单一真相源） */
+export function currentSkillVersion(): string {
+  const m = SKILL_VERSION_RE.exec(readSkillFile("SKILL.md"));
+  return m?.[1] ?? FALLBACK_SKILL_VERSION;
+}
+
+/** 渲染安装器：注入安全 baseUrl（非法 Host 回退本地默认，防 shell 注入，仿 login-script）+ 版本号 */
 export function renderSkillInstallScript(baseUrl: string): string {
   const safe = BASE_URL_RE.test(baseUrl) ? baseUrl : FALLBACK_BASE_URL;
   const template = fs.readFileSync(INSTALL_SH_PATH, "utf8");
-  return template.replaceAll(INSTALL_PLACEHOLDER, safe);
+  return template
+    .replaceAll(INSTALL_PLACEHOLDER, safe)
+    .replaceAll(SKILL_VERSION_PLACEHOLDER, currentSkillVersion());
 }
 
 export function renderSkillInstallScriptPs1(baseUrl: string): string {
@@ -39,5 +51,7 @@ export function renderSkillInstallScriptPs1(baseUrl: string): string {
   const template = fs.readFileSync(INSTALL_PS1_PATH, "utf8");
   // 模板必须保持纯 ASCII：Windows PowerShell 5.1 对无 BOM 的 .ps1 按 ANSI(系统区域码) 读，
   // 有 BOM 又会让 `irm | iex` 把首行 `\uFEFF#` 当成命令名报 NotRecognized。纯 ASCII 两种执行方式都稳。
-  return template.replaceAll(INSTALL_PLACEHOLDER, safe);
+  return template
+    .replaceAll(INSTALL_PLACEHOLDER, safe)
+    .replaceAll(SKILL_VERSION_PLACEHOLDER, currentSkillVersion());
 }
