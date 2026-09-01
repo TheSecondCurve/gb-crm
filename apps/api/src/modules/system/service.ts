@@ -2,7 +2,16 @@
 // - GET 只回掩码：secret 永不全量返回（LLM apiKey / S3 secretAccessKey）；
 // - PATCH：单配置、单管理员，有意不做 OCC（偏离 K24 内核：无并发写场景，做了反而要
 //   每次先 GET 拿 updatedAt，纯负担）；secret 空/缺席保留旧值（placeholder 语义）。
-import type { AiConfigGet, AiConfigPatch, S3ConfigGet, S3ConfigPatch, S3TestResult } from "@gb-crm/shared";
+import type {
+  AiConfigGet,
+  AiConfigPatch,
+  CommissionDefaultGet,
+  CommissionDefaultPatch,
+  CommissionDefaultRule,
+  S3ConfigGet,
+  S3ConfigPatch,
+  S3TestResult,
+} from "@gb-crm/shared";
 import {
   canAllowedPageKeys,
   computeEffectivePages,
@@ -16,12 +25,15 @@ import {
 import { s3Probe, S3Error, type S3ClientConfig } from "../../lib/s3.js";
 import { ApiError, s3Error, unprocessable } from "../../plugins/error-handler.js";
 import type { Db } from "../../db/client.js";
+import { findLiveUserIds } from "../deal-commissions/repo.js";
 import {
   getAiConfig,
+  getCommissionDefault,
   getPageAccessConfig,
   getS3Config,
   isS3RemoteReady,
   upsertAiConfig,
+  upsertCommissionDefault,
   upsertPageAccessConfig,
   upsertS3Config,
 } from "./repo.js";
@@ -208,4 +220,42 @@ export async function testS3Connection(
 /** 供 /auth/me 计算当前角色实际可见的菜单页（含安全边界交集） */
 export function getEffectivePages(db: Db, role: SystemRole | null): PageKey[] {
   return computeEffectivePages(role, getPageAccessConfig(db));
+}
+
+// ---- K56 成交分红全局默认方案（仅 admin 经 requireCan("system") 访问）----
+// 未配置的成交动态套用该方案；Σ percentage ≤ 1；source=user 的 userId 必须为 live 用户。
+
+export function getCommissionDefaultResult(db: Db): CommissionDefaultGet {
+  return { rules: getCommissionDefault(db) };
+}
+
+export function patchCommissionDefault(
+  db: Db,
+  patch: CommissionDefaultPatch,
+  ctx: { now: number; userId: number },
+): CommissionDefaultGet {
+  validateCommissionDefault(db, patch.rules);
+  upsertCommissionDefault(db, patch.rules, ctx.now, ctx.userId);
+  return getCommissionDefaultResult(db);
+}
+
+function validateCommissionDefault(db: Db, rules: readonly CommissionDefaultRule[]): void {
+  let sum = 0;
+  const userIds: number[] = [];
+  for (const rule of rules) {
+    sum += rule.percentage;
+    if (rule.userId !== undefined) userIds.push(rule.userId);
+  }
+  if (sum > 1) {
+    throw unprocessable("默认分成比例总和不能超过 100%", [
+      { path: "rules", message: `Σpercentage = ${Math.round(sum * 10000) / 10000} > 1` },
+    ]);
+  }
+  const live = findLiveUserIds(db, [...new Set(userIds)]);
+  const missing = [...new Set(userIds)].filter((id) => !live.has(id));
+  if (missing.length > 0) {
+    throw unprocessable("分成人不存在或已删除", [
+      { path: "rules", message: `无效 user_id: ${missing.join(",")}` },
+    ]);
+  }
 }

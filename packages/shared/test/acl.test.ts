@@ -30,6 +30,7 @@ const EXPECTED: Record<SystemRole, Partial<Record<Resource, readonly Action[]>>>
     tags: ["list", "read", "create", "update", "delete"],
     materials: ["list", "read", "create", "update", "delete"],
     customerRecords: ["list", "read", "create", "update", "delete"],
+    dealCommissions: ["list", "read", "update"],
     system: ["read", "update"],
     jobs: ["list", "read", "create", "cancel", "cancelAny"],
     jobSchedules: ["list", "read", "create", "update", "delete"],
@@ -53,6 +54,7 @@ const EXPECTED: Record<SystemRole, Partial<Record<Resource, readonly Action[]>>>
     tags: ["list", "read"],
     materials: ["list", "read", "create", "update", "delete"],
     customerRecords: ["list", "read", "create", "update", "delete"],
+    dealCommissions: ["list", "read", "update"],
     jobs: ["list", "read", "create", "cancel"],
     auth: ["setPassword"],
   },
@@ -65,6 +67,7 @@ const EXPECTED: Record<SystemRole, Partial<Record<Resource, readonly Action[]>>>
     tags: ["list", "read"],
     materials: ["list", "read"],
     customerRecords: ["list", "read"],
+    dealCommissions: ["list", "read"],
     jobs: ["list", "read", "create", "cancel"],
     auth: ["setPassword"],
   },
@@ -204,6 +207,17 @@ describe("§6 必测场景", () => {
     for (const action of ["create", "update", "delete"] as const) {
       expect(can("assistant", "customerRecords", action)).toBe(false);
     }
+  });
+
+  it("dealCommissions 成交分红：admin/operator 可配置，assistant 只读（K56）", () => {
+    for (const role of ["admin", "operator"] as const) {
+      for (const action of ["list", "read", "update"] as const) {
+        expect(can(role, "dealCommissions", action)).toBe(true);
+      }
+    }
+    expect(can("assistant", "dealCommissions", "list")).toBe(true);
+    expect(can("assistant", "dealCommissions", "read")).toBe(true);
+    expect(can("assistant", "dealCommissions", "update")).toBe(false);
   });
 
   it("system 配置：仅 admin（K46）", () => {

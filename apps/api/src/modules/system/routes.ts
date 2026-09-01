@@ -1,15 +1,22 @@
 // /api/v1/system 路由（K46/K50：LLM 打标配置；K53：S3 远程备份配置——均仅 admin）。
 // 存储为 system_configs code='llm'/'s3'；GET 掩码返回；PATCH 单管理员、有意不做 OCC（见 service.ts 注释）。
-import { aiConfigPatchSchema, pageAccessPatchSchema, s3ConfigPatchSchema } from "@gb-crm/shared";
+import {
+  aiConfigPatchSchema,
+  commissionDefaultPatchSchema,
+  pageAccessPatchSchema,
+  s3ConfigPatchSchema,
+} from "@gb-crm/shared";
 import type { FastifyInstance } from "fastify";
 
 import type { Db } from "../../db/client.js";
 import { requireCan } from "../../plugins/rbac.js";
 import {
   getAiConfigResult,
+  getCommissionDefaultResult,
   getPageAccessMatrix,
   getS3ConfigResult,
   patchAiConfig,
+  patchCommissionDefault,
   patchPageAccess,
   patchS3Config,
   testS3Connection,
@@ -58,6 +65,22 @@ export function systemRoutes(app: FastifyInstance, opts: SystemRoutesOptions): v
     async (req) => {
       const patch = pageAccessPatchSchema.parse(req.body ?? {});
       return { data: patchPageAccess(db, patch, auditCtx(req)) };
+    },
+  );
+
+  // K56 成交分红全局默认方案（仅 admin；未配置成交动态套用）
+  app.get(
+    "/api/v1/system/commission-default",
+    { preHandler: requireCan("system", "read") },
+    async () => ({ data: getCommissionDefaultResult(db) }),
+  );
+
+  app.patch(
+    "/api/v1/system/commission-default",
+    { preHandler: requireCan("system", "update") },
+    async (req) => {
+      const patch = commissionDefaultPatchSchema.parse(req.body ?? {});
+      return { data: patchCommissionDefault(db, patch, auditCtx(req)) };
     },
   );
 

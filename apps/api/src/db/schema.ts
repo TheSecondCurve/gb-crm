@@ -403,6 +403,39 @@ export const deals = sqliteTable(
   ],
 );
 
+// K56 成交分成：以「成交」为粒度一张配置表（deal_id 唯一、懒生成——只存被配置过的成交），
+// 每个成交人一行明细（deal_commission_items）。分成金额 = amount_cents × after_tax_ratio × percentage。
+export const dealCommissions = sqliteTable(
+  "deal_commissions",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    dealId: integer("deal_id").notNull().unique().references(() => deals.id),
+    configuredBy: integer("configured_by").references(() => users.id, { onDelete: "set null" }),
+    configuredAt: integer("configured_at"),
+    createdAt: integer("created_at").notNull(),
+    updatedAt: integer("updated_at").notNull(),
+    createdBy: integer("created_by").references(() => users.id, { onDelete: "set null" }),
+    updatedBy: integer("updated_by").references(() => users.id, { onDelete: "set null" }),
+  },
+);
+
+export const dealCommissionItems = sqliteTable(
+  "deal_commission_items",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    dealCommissionId: integer("deal_commission_id")
+      .notNull()
+      .references(() => dealCommissions.id),
+    userId: integer("user_id").notNull().references(() => users.id),
+    percentage: real("percentage").notNull(),
+    createdAt: integer("created_at").notNull(),
+    updatedAt: integer("updated_at").notNull(),
+    createdBy: integer("created_by").references(() => users.id, { onDelete: "set null" }),
+    updatedBy: integer("updated_by").references(() => users.id, { onDelete: "set null" }),
+  },
+  (t) => [index("deal_commission_items_commission_idx").on(t.dealCommissionId)],
+);
+
 // K44 交付类型配置表：分类 kind + 状态 status + 默认动作模板（多行文本，创建交付项时预填）。
 export const deliveryTypes = sqliteTable(
   "delivery_types",
