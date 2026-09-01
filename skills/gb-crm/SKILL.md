@@ -187,6 +187,18 @@ WHERE m.deleted_at IS NULL
 - 常用过滤：`kind = 'transcript'`、孤儿资料 `delivery_id IS NULL OR NOT EXISTS (SELECT 1 FROM delivery_material_customers mc WHERE mc.material_id = m.id)`、某客户的资料 `JOIN delivery_material_customers mc ON mc.material_id = m.id AND mc.customer_id = ?`。
 - 写资料时同守则 4 补审计列；软删走 `UPDATE ... SET deleted_at = <now>`（触发器会清 FTS，不用管）。
 
+### 客户维护记录（K55）
+
+销售为每个客户随手记录跟进触点，纯时间线表达客户状态（**不新增 `customers.status` 列**）。一张记录对应一个客户（`customer_id` → `customers.id`），单表标量时间线，**无父子 / 无 M2M / 无多态 / 无 FTS**。
+
+- `customer_maintenance_records`（维护记录，软删）：`customer_id`（必填，指向客户）/ `kind`（必填，枚举见下）/ `happened_at`（记录对应的时间点，epoch 毫秒，**可回填**补录旧记录，与 `created_at` 分开）/ `content`（自由文本，可空）；审计四列 + `deleted_at` 软删。
+- kind 枚举（CHECK 限定）：`follow_up` 跟进 / `status_change` 状态变化 / `lead` 线索 / `note` 备注 / `other` 其他。
+
+**写记录约定**：skill 直写 SQL，绕过了 service 层，需手动对齐管理端行为——
+
+- 同守则 4/5：软删只更新 `deleted_at`，不硬删；补 `created_at`/`created_by`、`updated_at`/`updated_by`。
+- `kind` 为 `follow_up` / `lead`（跟进/线索）时，**同步刷新该客户的 `customers.last_followed_at`**，取「当前值与本次 `happened_at` 的较大者」——与「最近跟进」展示保持一致。
+
 ### 系统表（别动）
 
 `sessions`（cookie 会话）、`api_tokens`（PAT，只有 hash）——认证用，看一眼结构即可，**不要写**。
@@ -209,6 +221,7 @@ WHERE m.deleted_at IS NULL
 - deliverable dimension：`project` 项目 / `customer` 客户
 - delivery_type kind：`consulting` 咨询类 / `activity` 活动类 / `circle` 圈子类 / `other` 其他类；status：`active` 有效 / `inactive` 失效
 - material kind（K54）：`transcript` 录音文字稿 / `text` 文本资料 / `audio` 音频 / `video` 视频 / `link` 其他链接
+- maintenance kind（K55）：`follow_up` 跟进 / `status_change` 状态变化 / `lead` 线索 / `note` 备注 / `other` 其他
 
 对用户列出结果时用昵称/名称与中文 label，不要甩一堆 id 和 code；需要跟进时再附 id。
 
