@@ -10,7 +10,11 @@ import type { FastifyInstance } from "fastify";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { buildApp } from "../src/app.js";
-import { renderSkillInstallScript, renderSkillInstallScriptPs1 } from "../src/modules/agent/skill-install.js";
+import {
+  currentSkillVersion,
+  renderSkillInstallScript,
+  renderSkillInstallScriptPs1,
+} from "../src/modules/agent/skill-install.js";
 import { seedUser, testEnv } from "./helpers/auth.js";
 import { createTmpDb, type TmpDb } from "./helpers/tmp-db.js";
 
@@ -42,6 +46,8 @@ describe("渠道 A：/agent/skill/gb-crm/* 下发", () => {
     expect(res.body).toContain("/agent/skill/gb-crm"); // SKILL_BASE 来源
     expect(res.body).toContain("gb-crm.py");
     expect(res.body).toContain("/agent/login.sh");
+    expect(res.body).toContain(currentSkillVersion()); // 版本号注入，用户可见当前最新版本
+    expect(res.body).not.toContain("__GB_CRM_SKILL_VERSION__"); // 占位符已替换
   });
 
   it("非法 Host 不写入脚本（防注入），回退本地默认", async () => {
@@ -61,6 +67,12 @@ describe("渠道 A：/agent/skill/gb-crm/* 下发", () => {
     expect(script).not.toContain("javascript:");
   });
 
+  it("currentSkillVersion 读取 SKILL.md front-matter 的 version", () => {
+    const version = currentSkillVersion();
+    expect(version).toMatch(/^\d+\.\d+\.\d+$/); // semver 形式，未读到则回退 0.0.0 也应匹配
+    expect(version).not.toBe("");
+  });
+
   it("install.ps1：200 + powershell 类型 + 注入 Host 作 baseUrl + 指向 ps1 端点", async () => {
     const res = await app.inject({
       method: "GET",
@@ -73,6 +85,8 @@ describe("渠道 A：/agent/skill/gb-crm/* 下发", () => {
     expect(res.body).toContain("/agent/skill/gb-crm"); // skillBase 来源
     expect(res.body).toContain("gb-crm.py");
     expect(res.body).toContain("/agent/login.ps1");
+    expect(res.body).toContain(currentSkillVersion()); // 版本号注入，用户可见当前最新版本
+    expect(res.body).not.toContain("__GB_CRM_SKILL_VERSION__"); // 占位符已替换
     // 纯 ASCII：Windows PS 5.1 对无 BOM 的 .ps1 按 ANSI 读、有 BOM 又让 `irm|iex` 首行报错；
     // 纯 ASCII 则 iex / -File / & 三种执行方式都无编码歧义。
     let maxByte = 0;

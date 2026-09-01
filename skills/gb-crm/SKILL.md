@@ -1,10 +1,13 @@
 ---
 name: gb-crm
+version: 0.8.1
 description: >
   女商 私域运营管理端（gb-crm）本机 HTTP 客户端。用 ~/.gb-crm/credentials.json 的 PAT
   通过单一 SQL 端点查询或维护客户、渠道、产品、团队成员、成交记录、交付管理与咨询资料。
-  当用户提到 CRM、客户名单、渠道资产、产品目录、团队成员、成交、交付、咨询资料、语料、gb-crm、
-  女商私域运营管理端，或要查/改客户时使用。
+  当用户提到 CRM 查找（查客户/名单/资料/语料）、CRM 更新（增改删客户/渠道/产品/成交/交付/
+  咨询资料/维护记录）、客户跟进、新增客户维护（给客户记一条维护记录/状态变化/线索/备注）
+  这类对系统的增删改查操作，或提到 CRM、客户名单、渠道资产、产品目录、团队成员、成交、交付、
+  咨询资料、语料、gb-crm、女商私域运营管理端，或要查/改客户时使用。
   Use when the user runs /gb-crm.
 metadata:
   short-description: 用本机 PAT 对 gb-crm 跑 SQL
@@ -193,6 +196,8 @@ WHERE m.deleted_at IS NULL
 
 - `customer_maintenance_records`（维护记录，软删）：`customer_id`（必填，指向客户）/ `kind`（必填，枚举见下）/ `happened_at`（记录对应的时间点，epoch 毫秒，**可回填**补录旧记录，与 `created_at` 分开）/ `content`（自由文本，可空）；审计四列 + `deleted_at` 软删。
 - kind 枚举（CHECK 限定）：`follow_up` 跟进 / `status_change` 状态变化 / `lead` 线索 / `note` 备注 / `other` 其他。
+
+**触发与指令**：用户说「**客户跟进**」「**新增客户维护**」「给客户记一条跟进/记录」「客户状态变化」「补一条线索/备注」等，一律走本表**新增一条记录**，不要往 `customers` 塞列。`kind` 按语义取（无需用户说枚举值）：跟进/回访/联系 → `follow_up`；状态变了（改主意/转介绍）→ `status_change`；新意向/线索 → `lead`；随手记 → `note`/`other`。`content` = 用户描述的事；`happened_at` 未说明则用现在，说明「补记周五那次/上次」就给对应时间点（可回填）。一律落在某个 `customer_id` 上——先按昵称找到对应客户，找不到就明确告知。
 
 **写记录约定**：skill 直写 SQL，绕过了 service 层，需手动对齐管理端行为——
 

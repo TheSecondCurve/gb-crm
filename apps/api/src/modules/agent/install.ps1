@@ -16,6 +16,8 @@ if (-not $base) { $base = "__GB_CRM_BASE_URL__" }
 $base = $base.TrimEnd("/")
 $skillBase = "$base/agent/skill/gb-crm"
 
+Write-Host "gb-crm skill version: __GB_CRM_SKILL_VERSION__ (re-run to get this latest version)"
+
 function Resolve-Python {
   foreach ($cmd in @("python3", "python", "py")) {
     if (Get-Command $cmd -ErrorAction SilentlyContinue) { return $cmd }
