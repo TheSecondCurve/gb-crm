@@ -3,7 +3,8 @@
 // S3 远程备份配置 code='s3'（K53：enabled/endpoint/region/bucket/prefix/accessKeyId/secretAccessKey）。
 import { eq } from "drizzle-orm";
 
-import type { PageAccessConfig, PageKey } from "@gb-crm/shared";
+import type { CommissionDefaultRule, PageAccessConfig, PageKey } from "@gb-crm/shared";
+import { commissionDefaultGetSchema } from "@gb-crm/shared";
 
 import type { Db } from "../../db/client.js";
 import { systemConfigs } from "../../db/schema.js";
@@ -13,6 +14,8 @@ export const LLM_CONFIG_CODE = "llm";
 export const PAGE_ACCESS_CONFIG_CODE = "pageAccess";
 /** S3 兼容对象存储远程备份（K53） */
 export const S3_CONFIG_CODE = "s3";
+/** K56 成交分成的全局默认方案 */
+export const COMMISSION_DEFAULT_CODE = "commissionDefault";
 
 export interface SystemConfigRow {
   code: string;
@@ -221,4 +224,29 @@ export function isS3RemoteReady(cfg: S3ConfigValue): boolean {
   return (
     cfg.endpoint !== null && cfg.bucket !== null && cfg.accessKeyId !== null && cfg.secretAccessKey !== null
   );
+}
+
+// ---- 成交分红全局默认方案（code='commissionDefault'，K56）编解码 ----
+// value = { rules: [{ source, percentage, userId? }] }；source ∈ owner/dealOwner/user。
+// 未配置的成交动态套用该方案；解析失败/缺席 → []（默认无分红）。
+
+export function getCommissionDefault(db: Db): CommissionDefaultRule[] {
+  const row = getConfigRow(db, COMMISSION_DEFAULT_CODE);
+  if (!row) return [];
+  try {
+    const parsed: unknown = JSON.parse(row.value);
+    const result = commissionDefaultGetSchema.safeParse(parsed);
+    return result.success ? result.data.rules : [];
+  } catch {
+    return [];
+  }
+}
+
+export function upsertCommissionDefault(
+  db: Db,
+  rules: readonly CommissionDefaultRule[],
+  updatedAt: number,
+  updatedBy: number | null,
+): void {
+  upsertConfigRow(db, COMMISSION_DEFAULT_CODE, JSON.stringify({ rules }), updatedAt, updatedBy);
 }

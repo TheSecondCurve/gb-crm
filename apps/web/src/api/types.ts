@@ -175,6 +175,50 @@ export interface CustomerMaintenanceRecordDto {
   updatedBy: UserRefDto | null;
 }
 
+/** K56 成交分红：单个成交人的分成项（金额单位为分） */
+export interface CommissionItemDto {
+  userId: number;
+  nickname: string | null;
+  /** 占税后基数的比例（0~1） */
+  percentage: number;
+  /** 该成交人分成金额（分）：round(税后基数 × percentage)；基数不可算 → null */
+  amountCents: number | null;
+}
+
+/** K56 成交分红：一笔成交的最终分成（未配置=套默认方案） */
+export interface DealCommissionDto {
+  dealId: number;
+  customer: DealCustomerRefDto | null;
+  owner: UserRefDto | null;
+  stage: string;
+  orderNo: string | null;
+  deliveryDate: number | null;
+  /** 金额，整数分（K13）；null = 未填 */
+  amountCents: number | null;
+  /** 税后金额比例 0~1；null = 未填 */
+  afterTaxRatio: number | null;
+  /** 税后基数（分）：round(amountCents × afterTaxRatio)；缺一 → null */
+  baseAmountCents: number | null;
+  /** 是否已被特殊配置（false = 套默认方案） */
+  isCustomized: boolean;
+  items: CommissionItemDto[];
+  /** Σ items.percentage */
+  totalPercentage: number;
+  /** Σ items.amountCents；基数不可算 → null */
+  totalAmountCents: number | null;
+}
+
+/** K56 全局默认方案规则（source=user 时 userId 必填） */
+export interface CommissionDefaultRuleDto {
+  source: "owner" | "dealOwner" | "user";
+  percentage: number;
+  userId?: number;
+}
+
+export interface CommissionDefaultDto {
+  rules: CommissionDefaultRuleDto[];
+}
+
 /** K54 交付资料上的交付单 ref（软删交付 → null） */
 export interface MaterialDeliveryRefDto {
   id: number;
