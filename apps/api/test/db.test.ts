@@ -35,6 +35,8 @@ describe("migration", () => {
       "customer_source_channels",
       "customer_tags",
       "customers",
+      "deal_commission_items",
+      "deal_commissions",
       "deals",
       "deliverables",
       "deliveries",

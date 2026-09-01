@@ -13,6 +13,7 @@ import { agentRoutes } from "./modules/agent/routes.js";
 import { channelsRoutes } from "./modules/channels/routes.js";
 import { customersRoutes } from "./modules/customers/routes.js";
 import { customerRecordsRoutes } from "./modules/customer-records/routes.js";
+import { dealCommissionsRoutes } from "./modules/deal-commissions/routes.js";
 import { dealsRoutes } from "./modules/deals/routes.js";
 import { deliveriesRoutes } from "./modules/deliveries/routes.js";
 import { productsRoutes } from "./modules/products/routes.js";
@@ -81,6 +82,8 @@ export function buildApp(options: BuildAppOptions): FastifyInstance {
     productsRoutes(instance, { db, now: clock });
     customersRoutes(instance, { db, now: clock, llmFetch });
     customerRecordsRoutes(instance, { db, now: clock });
+    // K56：先注册 /deals/commissions（静态），避免被 /deals/:id 捕获（find-my-way 静态优先，双保险）
+    dealCommissionsRoutes(instance, { db, now: clock });
     dealsRoutes(instance, { db, now: clock });
     deliveriesRoutes(instance, { db, now: clock });
     tagsRoutes(instance, { db, now: clock });

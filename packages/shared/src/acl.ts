@@ -14,6 +14,7 @@ export const resourceSchema = z.enum([
   "tags",
   "materials",
   "customerRecords",
+  "dealCommissions",
   "system",
   "jobs",
   "jobSchedules",
@@ -69,6 +70,9 @@ const ALL_TAG_ACTIONS: readonly Action[] = ["list", "read", "create", "update", 
 const ALL_MATERIAL_ACTIONS: readonly Action[] = ["list", "read", "create", "update", "delete"];
 // K55：客户维护记录（时序时间线）——admin/operator 全量，assistant 只读（同 deals/deliveries/materials）
 const ALL_CUSTOMER_RECORD_ACTIONS: readonly Action[] = ["list", "read", "create", "update", "delete"];
+// K56：成交分成（财务）——admin/operator 可查看+配置，assistant 只读（同 deals 角色边界）。
+// 默认方案（commissionDefault）走 system 资源（仅 admin），admin 在此矩阵不额外区分。
+const ALL_DEAL_COMMISSION_ACTIONS: readonly Action[] = ["list", "read", "update"];
 // K46：系统配置（LLM 打标）——仅 admin
 const SYSTEM_ACTIONS: readonly Action[] = ["read", "update"];
 // K51：后台任务——全角色可创建/查看/取消自己的；取消他人任务需 cancelAny（仅 admin）。
@@ -88,6 +92,7 @@ const MATRIX: Record<SystemRole, Readonly<Partial<Record<Resource, readonly Acti
     tags: ALL_TAG_ACTIONS,
     materials: ALL_MATERIAL_ACTIONS,
     customerRecords: ALL_CUSTOMER_RECORD_ACTIONS,
+    dealCommissions: ALL_DEAL_COMMISSION_ACTIONS,
     system: SYSTEM_ACTIONS,
     jobs: ALL_JOB_ACTIONS,
     jobSchedules: ALL_JOB_SCHEDULE_ACTIONS,
@@ -106,6 +111,7 @@ const MATRIX: Record<SystemRole, Readonly<Partial<Record<Resource, readonly Acti
     tags: ["list", "read"],
     materials: ALL_MATERIAL_ACTIONS,
     customerRecords: ALL_CUSTOMER_RECORD_ACTIONS,
+    dealCommissions: ALL_DEAL_COMMISSION_ACTIONS,
     jobs: ["list", "read", "create", "cancel"],
     auth: ["setPassword"],
   },
@@ -121,6 +127,7 @@ const MATRIX: Record<SystemRole, Readonly<Partial<Record<Resource, readonly Acti
     tags: ["list", "read"],
     materials: ["list", "read"],
     customerRecords: ["list", "read"],
+    dealCommissions: ["list", "read"],
     jobs: ["list", "read", "create", "cancel"],
     auth: ["setPassword"],
   },
