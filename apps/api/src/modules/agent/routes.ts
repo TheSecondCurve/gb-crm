@@ -5,7 +5,7 @@
 //   (1) stmt.readonly === true 且 (2) SQL 以 SELECT / WITH / VALUES 开头。
 //   sqlite3_stmt_readonly 对 PRAGMA / BEGIN 等也返回 true，而它们能改连接级状态
 //   （locking_mode / busy_timeout / foreign_keys…），会卡死备份与第二连接，
-//   故任一条件不满足即落写分支（write scope + admin）。
+//   故任一条件不满足即落写分支（write scope + admin/operator）。
 //   注意：better-sqlite3 的 prepare() 会立即执行 PRAGMA（实测），所以非查询词形的
 //   SQL 必须先过写门、再 prepare，否则 read 令牌会在「被拒绝前」已改掉连接状态。
 // - 读路径凭据黑名单（M2）：结果列含 password_hash / token_hash，或 SQL 引用
@@ -17,6 +17,8 @@
 import Database from "better-sqlite3";
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
+
+import type { SystemRole, TokenScope } from "@gb-crm/shared";
 
 import type { Db } from "../../db/client.js";
 import { ApiError, forbidden } from "../../plugins/error-handler.js";
@@ -32,6 +34,35 @@ import {
 export const AGENT_SQL_MAX_ROWS = 1000;
 
 const sqlBodySchema = z.object({ sql: z.string().min(1) });
+
+// 写 SQL 权限：write scope 且角色为 admin 或 operator（K35「运营可写」）。
+const WRITE_SQL_ROLES: readonly SystemRole[] = ["admin", "operator"];
+function canWriteSql(tokenScope: TokenScope | null, systemRole: SystemRole): boolean {
+  return tokenScope === "write" && WRITE_SQL_ROLES.includes(systemRole);
+}
+
+// DDL 全局禁止：无论 scope / 角色，SQL 端点不允许改表结构（CREATE / ALTER / DROP）。
+const DDL_KEYWORDS = new Set(["create", "alter", "drop"]);
+// 取「去掉起始空白、分号与注释后的首个词」。`declare` 也可命中，但 DDL 词首才拦，
+// 注释/分号前缀（`/*…*/ CREATE`、`; DROP`）不会绕过纯词首匹配。
+function firstKeywordOf(sql: string): string {
+  let i = 0;
+  const n = sql.length;
+  for (;;) {
+    while (i < n && /[ \t\r\n;]/.test(sql[i]!)) i += 1;
+    if (sql.startsWith("--", i)) {
+      const nl = sql.indexOf("\n", i);
+      i = nl === -1 ? n : nl + 1;
+    } else if (sql.startsWith("/*", i)) {
+      const close = sql.indexOf("*/", i + 2);
+      i = close === -1 ? n : close + 2;
+    } else {
+      break;
+    }
+  }
+  const m = /[A-Za-z_]+/.exec(sql.slice(i));
+  return m ? m[0].toLowerCase() : "";
+}
 
 // H1：只读语句的词形白名单。\b 防止 SELECTX 这类前缀误判；大小写不敏感。
 const READ_ONLY_SQL_RE = /^\s*(select|with|values)\b/i;
@@ -68,13 +99,18 @@ export function agentRoutes(app: FastifyInstance, opts: AgentRoutesOptions): voi
     const { sql } = sqlBodySchema.parse(req.body ?? {});
     const looksLikeRead = READ_ONLY_SQL_RE.test(sql);
 
+    // DDL 全局禁止（先于授权判定）：无论 scope / 角色，端点都不允许改表结构。
+    if (DDL_KEYWORDS.has(firstKeywordOf(sql))) {
+      throw forbidden("SQL 端点禁止执行 DDL（CREATE / ALTER / DROP）");
+    }
+
     // H1：词形不是 SELECT/WITH/VALUES 的 SQL 先过写门再 prepare——
     // prepare() 会立即执行 PRAGMA，鉴权放后面就拦不住了。
-    if (!looksLikeRead && (req.tokenScope !== "write" || req.user!.systemRole !== "admin")) {
+    if (!looksLikeRead && !canWriteSql(req.tokenScope, req.user!.systemRole)) {
       throw forbidden(
         CONNECTION_STATE_RE.test(sql)
           ? "只读令牌仅允许执行 SELECT / WITH / VALUES 查询"
-          : "仅管理员可执行写 SQL",
+          : "仅管理员与运营可执行写 SQL",
       );
     }
 
@@ -117,9 +153,9 @@ export function agentRoutes(app: FastifyInstance, opts: AgentRoutesOptions): voi
     }
 
     // 词形像查询但 readonly=false（如 WITH...DELETE），落到写分支；
-    // 上面的前置写门只挡了非查询词形，这里仍要完整校验 scope + admin。
-    if (req.tokenScope !== "write" || req.user!.systemRole !== "admin") {
-      throw forbidden("仅管理员可执行写 SQL");
+    // 上面的前置写门只挡了非查询词形，这里仍要完整校验 scope + 角色。
+    if (!canWriteSql(req.tokenScope, req.user!.systemRole)) {
+      throw forbidden("仅管理员与运营可执行写 SQL");
     }
     try {
       const info = sqlite.transaction(() => stmt.run())();
