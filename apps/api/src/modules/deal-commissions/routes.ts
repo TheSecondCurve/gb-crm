@@ -10,7 +10,8 @@ import { z } from "zod";
 import type { Db } from "../../db/client.js";
 import { listMeta } from "../../lib/pagination.js";
 import { requireCan } from "../../plugins/rbac.js";
-import { getDealCommissionResult, listCommissionResult, setDealCommission } from "./service.js";
+import { buildCommissionXlsx } from "./export.js";
+import { exportCommissionResult, getDealCommissionResult, listCommissionResult, setDealCommission } from "./service.js";
 
 export interface DealCommissionsRoutesOptions {
   db: Db;
@@ -34,6 +35,32 @@ export function dealCommissionsRoutes(app: FastifyInstance, opts: DealCommission
       const query = dealCommissionListQuerySchema.parse(req.query ?? {});
       const { data, total } = listCommissionResult(db, query);
       return { data, meta: listMeta(query.page, query.pageSize, total) };
+    },
+  );
+
+  // 导出 Excel：与列表同一 WHERE（日期范围/状态/q），全量不分页；注册在 /:id 之前
+  app.get(
+    "/api/v1/deals/commissions/export.xlsx",
+    { preHandler: requireCan("dealCommissions", "list") },
+    async (req, reply) => {
+      const query = dealCommissionListQuerySchema.parse(req.query ?? {});
+      const buf = await buildCommissionXlsx(exportCommissionResult(db, query), {
+        start: query.startDate ?? null,
+        end: query.endDate ?? null,
+      });
+      const d = new Date(now());
+      const pad = (n: number) => String(n).padStart(2, "0");
+      const filename = `成交分成-${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}.xlsx`;
+      return reply
+        .header(
+          "Content-Type",
+          "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        )
+        .header(
+          "Content-Disposition",
+          `attachment; filename="deals-commissions.xlsx"; filename*=UTF-8''${encodeURIComponent(filename)}`,
+        )
+        .send(buf);
     },
   );
 
