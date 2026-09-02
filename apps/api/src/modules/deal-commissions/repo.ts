@@ -122,6 +122,24 @@ export function listCommissionRows(
   return { rows, total };
 }
 
+/** 导出：同列表 WHERE，不分页取全部匹配行（复用同一 join 与排序） */
+export function listAllCommissionRows(
+  db: Db,
+  query: DealCommissionListQuery,
+): CommissionJoinRow[] {
+  const where = commissionListWhere(query);
+  const dir = query.order === "asc" ? asc : desc;
+  return db
+    .select(JOIN_SELECT)
+    .from(deals)
+    .leftJoin(customers, eq(customers.id, deals.customerId))
+    .leftJoin(users, eq(users.id, deals.ownerId))
+    .leftJoin(dealCommissions, eq(dealCommissions.dealId, deals.id))
+    .where(where)
+    .orderBy(dir(deals.updatedAt), desc(deals.id))
+    .all();
+}
+
 /** 单条成交的 joined 行（含不存在/软删成交 → undefined 由 service 判 404） */
 export function getCommissionJoinRow(db: Db, dealId: number): CommissionJoinRow | undefined {
   return db

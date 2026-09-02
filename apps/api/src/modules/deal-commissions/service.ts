@@ -28,6 +28,7 @@ import {
   getCommissionRowByDealId,
   insertCommissionItem,
   insertCommissionRow,
+  listAllCommissionRows,
   listCommissionRows,
   listItemsByCommissionIds,
   listLiveUserRefs,
@@ -109,6 +110,19 @@ export function listCommissionResult(
   const rules = getCommissionDefault(db);
   const userRefs = collectUserRefs(db, rows, items, rules);
   return { data: assembleCommissionRows(rows, itemsByCommission(items), rules, userRefs), total };
+}
+
+/** 导出：与列表同一 WHERE（含日期范围/状态/q），不分页取全部并展开 */
+export function exportCommissionResult(
+  db: Db,
+  query: DealCommissionListQuery,
+): DealCommissionDto[] {
+  const rows = listAllCommissionRows(db, query);
+  const commissionIds = rows.map((r) => r.commissionId).filter((id): id is number => id !== null);
+  const items = listItemsByCommissionIds(db, commissionIds);
+  const rules = getCommissionDefault(db);
+  const userRefs = collectUserRefs(db, rows, items, rules);
+  return assembleCommissionRows(rows, itemsByCommission(items), rules, userRefs);
 }
 
 export function getDealCommissionResult(db: Db, dealId: number): DealCommissionDto {
