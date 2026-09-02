@@ -1,6 +1,6 @@
 ---
 name: gb-crm
-version: 0.8.1
+version: 0.8.3
 description: >
   女商 私域运营管理端（gb-crm）本机 HTTP 客户端。用 ~/.gb-crm/credentials.json 的 PAT
   通过单一 SQL 端点查询或维护客户、渠道、产品、团队成员、成交记录、交付管理与咨询资料。
@@ -52,7 +52,7 @@ Windows 上若命令 `python3` 不存在，用 `python` 或 `py`（如 `py "$SKI
 脚本把 SQL 拼成 `POST /api/v1/agent/sql` 的 `{ "sql": "..." }`。
 
 - **读**（`SELECT` / `WITH ... SELECT` / `PRAGMA`）：`{ data: { columns, rows, rowCount, truncated } }`。`rows` 是**数组**（顺序对齐 `columns`），不是对象。最多返回 **1000 行**，超出 `truncated: true`——分页用 `LIMIT/OFFSET` 或加 `WHERE` 收敛，别忘了 `ORDER BY`。
-- **写**（`INSERT/UPDATE/DELETE`）：`{ data: { changes, lastInsertRowid } }`。仅限 **admin + write scope** 令牌，否则 403「仅管理员可执行写 SQL」。
+- **写**（`INSERT/UPDATE/DELETE`）：`{ data: { changes, lastInsertRowid } }`。仅限 **admin/operator + write scope** 令牌，否则 403「仅管理员与运营可执行写 SQL」。**DDL（CREATE/ALTER/DROP）对任何令牌一律 403**「SQL 端点禁止执行 DDL（CREATE / ALTER / DROP）」——端点层已强制，想改表结构走管理端/迁移。
 - 一次只能**一条语句**（多语句 → 422）。`INSERT ... RETURNING` 算写。
 - 错误信封 `{ error: { code, message } }`：`SQL_ERROR`（422，message 是 sqlite 原文）、`FORBIDDEN`（403）、`VALIDATION`（422）。脚本 stderr 第一行是 `HTTP <status>`；401 时提示重新签发。
 - cookie 会话（web 管理端）不能调这个端点，仅 Bearer PAT。
@@ -65,7 +65,7 @@ Windows 上若命令 `python3` 不存在，用 `python` 或 `py`（如 `py "$SKI
 curl -fsSL http://<crm-host>/agent/login.sh | sh
 ```
 
-本仓库本地开发默认 `http://127.0.0.1:3001`。范围 `read` / `write`：读 SQL 两者都行；写 SQL 要 `write` 且账号是 admin。
+本仓库本地开发默认 `http://127.0.0.1:3001`。范围 `read` / `write`：读 SQL 两者都行；写 SQL 要 `write` 且账号是 admin 或 operator。
 
 本机 python 缺 CA 证书报 `CERTIFICATE_VERIFY_FAILED` 时，优先修证书（macOS python.org 版跑 `Install Certificates.command`）。本脚本（gb-crm.py）**默认已跳过 TLS 校验**，修好证书后可设 `GB_CRM_INSECURE=0` 恢复校验；`login.sh` 签发脚本默认校验，需要时显式 `GB_CRM_INSECURE=1`。跳过校验时中间人可拿到密码/token，别在不可信网络用。
 
@@ -77,8 +77,8 @@ curl -fsSL http://<crm-host>/agent/login.sh | sh
 4. 写数据只在用户明确要求时做；删除前复述将删的行并得到确认。删除 = **软删**：`UPDATE ... SET deleted_at = <now>`，不要 `DELETE FROM`。
 5. 写时**手动维护** `updated_at = <当前 epoch 毫秒>`、`updated_by = <自己的 user id>`（`me` 拿到）；新建行同理补 `created_at` / `created_by`。
 6. 时间戳一律 **epoch 毫秒**（UTC）。金额 `price_cents` 是**分**，展示元；不要 `yuan * 100` 不 round 就写入。布尔 `is_package` 是 0/1。
-7. 写 SQL 绕过管理端的 PATCH 内核 / OCC / 审计，**只做简单 CRUD**，不要 DDL（CREATE/DROP/ALTER），不要动 `sessions` / `api_tokens`。
-8. 403 不要换字段重试同一越权操作；需要写权限就让用户换 admin 的 write 令牌重新签发。
+7. 写 SQL 绕过管理端的 PATCH 内核 / OCC / 审计，**只做简单 CRUD**，不要动 `sessions` / `api_tokens`。DDL（CREATE/ALTER/DROP）端点已直接 403，无需也不会执行。
+8. 403 不要换字段重试同一越权操作；需要写权限就让用户换 admin/operator 的 write 令牌重新签发。
 
 ## 表结构
 

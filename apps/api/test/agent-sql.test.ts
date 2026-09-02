@@ -1,5 +1,5 @@
 // POST /api/v1/agent/sql：Agent 单一自由 SQL 端点（K35，2026-08-21 产品拍板）。
-// 仅 Bearer PAT 可用；stmt.readonly 判定读写；写 SQL 需 write scope + admin。
+// 仅 Bearer PAT 可用；stmt.readonly 判定读写；写 SQL 需 write scope + admin/operator。
 import type { FastifyInstance } from "fastify";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
@@ -135,7 +135,7 @@ describe("POST /api/v1/agent/sql · 读路径加固", () => {
       bearer(token),
     );
     expect(res.statusCode).toBe(403);
-    expect(res.json().error.message).toBe("仅管理员可执行写 SQL");
+    expect(res.json().error.message).toBe("仅管理员与运营可执行写 SQL");
     expect(
       tmp.sqlite.prepare("SELECT COUNT(*) AS n FROM users WHERE deleted_at IS NULL").get(),
     ).toEqual({ n: 1 });
@@ -179,7 +179,7 @@ describe("POST /api/v1/agent/sql · 读路径加固", () => {
 });
 
 describe("POST /api/v1/agent/sql · 写", () => {
-  it("read 令牌 INSERT → 403 仅管理员可执行写 SQL", async () => {
+  it("read 令牌 INSERT → 403 仅管理员与运营可执行写 SQL", async () => {
     await seedUser(tmp.db);
     const token = await mintToken("alice", "read");
     const res = await runSql(
@@ -187,7 +187,10 @@ describe("POST /api/v1/agent/sql · 写", () => {
       bearer(token),
     );
     expect(res.statusCode).toBe(403);
-    expect(res.json().error).toMatchObject({ code: "FORBIDDEN", message: "仅管理员可执行写 SQL" });
+    expect(res.json().error).toMatchObject({
+      code: "FORBIDDEN",
+      message: "仅管理员与运营可执行写 SQL",
+    });
   });
 
   it("INSERT...RETURNING 判为写：read 令牌 → 403", async () => {
@@ -201,23 +204,57 @@ describe("POST /api/v1/agent/sql · 写", () => {
     expect(res.json().error.code).toBe("FORBIDDEN");
   });
 
-  it("write 令牌但 operator / assistant → UPDATE 403", async () => {
+  it("write 令牌但 assistant → UPDATE 403", async () => {
     await seedUser(tmp.db);
-    await seedUser(tmp.db, { username: "ops", systemRole: "operator", nickname: "运营" });
     await seedUser(tmp.db, { username: "helper", systemRole: "assistant", nickname: "助手" });
-    const opsToken = await mintToken("ops", "write");
     const helperToken = await mintToken("helper", "write");
     const sql = "UPDATE users SET nickname = '改名' WHERE id = 1";
 
-    const ops = await runSql(sql, bearer(opsToken));
-    expect(ops.statusCode).toBe(403);
-    expect(ops.json().error.message).toBe("仅管理员可执行写 SQL");
     const helper = await runSql(sql, bearer(helperToken));
     expect(helper.statusCode).toBe(403);
-    // 都没写成
+    expect(helper.json().error.message).toBe("仅管理员与运营可执行写 SQL");
+    // 未写成
     expect(tmp.sqlite.prepare("SELECT nickname FROM users WHERE id = 1").get()).toEqual({
       nickname: "爱丽丝",
     });
+  });
+
+  it("operator + write 令牌 → UPDATE 成功（写权限放开到运营）", async () => {
+    await seedUser(tmp.db);
+    await seedUser(tmp.db, { username: "ops", systemRole: "operator", nickname: "运营" });
+    const opsToken = await mintToken("ops", "write");
+    const sql = "UPDATE users SET nickname = '运营改名' WHERE id = 1";
+
+    const res = await runSql(sql, bearer(opsToken));
+    expect(res.statusCode).toBe(200);
+    expect(res.json().data).toMatchObject({ changes: 1 });
+    expect(tmp.sqlite.prepare("SELECT nickname FROM users WHERE id = 1").get()).toEqual({
+      nickname: "运营改名",
+    });
+  });
+
+  it("operator + write 令牌 → INSERT 成功（非查询词形走前置写门也放行）", async () => {
+    await seedUser(tmp.db);
+    await seedUser(tmp.db, { username: "ops", systemRole: "operator", nickname: "运营" });
+    const opsToken = await mintToken("ops", "write");
+    const res = await runSql(
+      `INSERT INTO customers (nickname, created_at, updated_at) VALUES ('运营新建', ${clock.t}, ${clock.t})`,
+      bearer(opsToken),
+    );
+    expect(res.statusCode).toBe(200);
+    expect(res.json().data).toEqual({ changes: 1, lastInsertRowid: 1 });
+  });
+
+  it("operator + read 令牌 → 写仍 403（scope 仍必须 write）", async () => {
+    await seedUser(tmp.db);
+    await seedUser(tmp.db, { username: "ops", systemRole: "operator", nickname: "运营" });
+    const opsToken = await mintToken("ops", "read");
+    const res = await runSql(
+      `INSERT INTO customers (nickname, created_at, updated_at) VALUES ('x', ${clock.t}, ${clock.t})`,
+      bearer(opsToken),
+    );
+    expect(res.statusCode).toBe(403);
+    expect(res.json().error.message).toBe("仅管理员与运营可执行写 SQL");
   });
 
   it("admin + write 令牌 INSERT/UPDATE 成功，返回 changes 与 lastInsertRowid", async () => {
@@ -239,15 +276,55 @@ describe("POST /api/v1/agent/sql · 写", () => {
     });
   });
 
-  it("admin + write 执行 DDL（CREATE TABLE）不额外拦", async () => {
+  it("任何令牌执行 DDL（CREATE / ALTER / DROP）→ 403，且未建表", async () => {
     await seedUser(tmp.db);
     const token = await mintToken("alice", "write");
     const res = await runSql("CREATE TABLE scratch (id INTEGER PRIMARY KEY)", bearer(token));
-    expect(res.statusCode).toBe(200);
-    expect(res.json().data.changes).toBe(0);
+    expect(res.statusCode).toBe(403);
+    expect(res.json().error.message).toBe("SQL 端点禁止执行 DDL（CREATE / ALTER / DROP）");
     expect(
       tmp.sqlite.prepare("SELECT name FROM sqlite_master WHERE name = 'scratch'").get(),
-    ).toEqual({ name: "scratch" });
+    ).toBeUndefined();
+  });
+
+  it("operator + write 执行 DDL（DROP）→ 403，表未被删（DDL 对所有人禁止）", async () => {
+    await seedUser(tmp.db);
+    await seedUser(tmp.db, { username: "ops", systemRole: "operator", nickname: "运营" });
+    const opsToken = await mintToken("ops", "write");
+    const res = await runSql("DROP TABLE customers", bearer(opsToken));
+    expect(res.statusCode).toBe(403);
+    expect(res.json().error.code).toBe("FORBIDDEN");
+    expect(tmp.sqlite.prepare("SELECT COUNT(*) AS n FROM customers").get()).toEqual({ n: 0 });
+  });
+
+  it("read 令牌执行 DDL → 403（DDL 全局禁止，先于授权判定）", async () => {
+    await seedUser(tmp.db);
+    const token = await mintToken("alice", "read");
+    const res = await runSql("ALTER TABLE users ADD COLUMN extra TEXT", bearer(token));
+    expect(res.statusCode).toBe(403);
+    expect(res.json().error.message).toBe("SQL 端点禁止执行 DDL（CREATE / ALTER / DROP）");
+  });
+
+  it("注释前缀 / 前导分号不能绕过 DDL 拦截", async () => {
+    await seedUser(tmp.db);
+    const token = await mintToken("alice", "write");
+    for (const sql of [
+      "/* hi */ CREATE TABLE scratch (id INTEGER PRIMARY KEY)",
+      "-- 注释\nDROP TABLE scratch",
+      "; DROP TABLE scratch",
+    ]) {
+      const res = await runSql(sql, bearer(token));
+      expect(res.statusCode, sql).toBe(403);
+      expect(res.json().error.code, sql).toBe("FORBIDDEN");
+    }
+  });
+
+  it("VACUUM 非 DDL：read 令牌走权限门而非 DDL 拦截", async () => {
+    await seedUser(tmp.db);
+    const token = await mintToken("alice", "read");
+    const res = await runSql("VACUUM", bearer(token));
+    expect(res.statusCode).toBe(403);
+    expect(res.json().error.message).toBe("仅管理员与运营可执行写 SQL");
   });
 
   it("写违反约束 → 422 SQL_ERROR，事务回滚不落库", async () => {
