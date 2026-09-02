@@ -14,6 +14,7 @@ const deal: DealDto = {
   stage: "paid",
   orderNo: "ORD-001",
   paymentRemark: null,
+  dealDate: deliveryMs(2026, 8, 22),
   deliveryDate: deliveryMs(2026, 8, 22),
   amountCents: 39800,
   afterTaxRatio: 0.9306,
@@ -135,7 +136,7 @@ describe("成交记录页", () => {
     await waitFor(() => expect(calls.some((c) => c.url.includes("stage=refunded"))).toBe(true));
   });
 
-  it("新增：表单必填客户，交付日期 YYYY-MM-DD → POST 为 epoch ms", async () => {
+  it("新增：表单必填客户，成交日期 YYYY-MM-DD → POST 为 epoch ms", async () => {
     const calls = mockDealsApi(adminMe);
     renderApp("/deals");
     await screen.findByText("张三");
@@ -146,7 +147,7 @@ describe("成交记录页", () => {
 
     fireEvent.click(await within(dialog).findByLabelText("张三")); // relation-one 单选客户
     fireEvent.change(within(dialog).getByLabelText("订单号"), { target: { value: "ORD-NEW" } });
-    fireEvent.change(within(dialog).getByLabelText("交付日期"), {
+    fireEvent.change(within(dialog).getByLabelText("成交日期"), {
       target: { value: "2026-08-22" },
     });
     fireEvent.click(within(dialog).getByRole("button", { name: "创建" }));
@@ -156,7 +157,7 @@ describe("成交记录页", () => {
       expect(JSON.parse(String(post?.body))).toEqual({
         customerId: 101,
         orderNo: "ORD-NEW",
-        deliveryDate: deliveryMs(2026, 8, 22),
+        dealDate: deliveryMs(2026, 8, 22),
       });
     });
   });
@@ -164,7 +165,7 @@ describe("成交记录页", () => {
   it("交付日期编辑：YYYY-MM-DD → PATCH 为 epoch ms", async () => {
     const calls = mockDealsApi(adminMe);
     renderApp("/deals");
-    await screen.findByText("2026-08-22");
+    await screen.findAllByText("2026-08-22"); // 成交日期 + 交付日期两列
 
     fireEvent.doubleClick(cell(1, "deliveryDate"));
     const input = cell(1, "deliveryDate").querySelector("input")!;

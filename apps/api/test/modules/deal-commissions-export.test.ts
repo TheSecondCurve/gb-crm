@@ -64,7 +64,11 @@ async function createDealExtra(
   customerName = "客户甲",
 ): Promise<{ id: number }> {
   const customerId = seedCustomer(tmp.db, customerName);
-  const res = await post("/api/v1/deals", cookie, { customerId, ...extra });
+  const res = await post("/api/v1/deals", cookie, {
+    customerId,
+    dealDate: Date.UTC(2026, 5, 15),
+    ...extra,
+  });
   expect(res.statusCode).toBe(201);
   return res.json().data as { id: number };
 }
@@ -164,8 +168,8 @@ describe("GET /api/v1/deals/commissions/export.xlsx", () => {
     const { cookie } = await loginAsRole("admin");
     const start = Date.UTC(2026, 0, 1);
     const end = Date.UTC(2026, 0, 31);
-    await createDealExtra(cookie, { deliveryDate: Date.UTC(2026, 0, 15) });
-    await createDealExtra(cookie, { deliveryDate: Date.UTC(2026, 5, 15) });
+    await createDealExtra(cookie, { dealDate: Date.UTC(2026, 0, 15) });
+    await createDealExtra(cookie, { dealDate: Date.UTC(2026, 5, 15) });
 
     const res = await get(`${XLSX_URL}?startDate=${start}&endDate=${end}`, cookie);
     expect(res.statusCode).toBe(200);

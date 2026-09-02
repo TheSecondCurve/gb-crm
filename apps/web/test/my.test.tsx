@@ -38,6 +38,7 @@ const deal: DealDto = {
   stage: "gift",
   orderNo: "D-001",
   paymentRemark: null,
+  dealDate: 1000,
   deliveryDate: null,
   amountCents: null,
   afterTaxRatio: null,

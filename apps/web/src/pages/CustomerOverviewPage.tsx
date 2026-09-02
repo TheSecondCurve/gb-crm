@@ -362,6 +362,7 @@ export function CustomerOverviewPage() {
                   <th>阶段</th>
                   <th>金额（元）</th>
                   <th>订单号</th>
+                  <th>成交日期</th>
                   <th>交付日期</th>
                   <th>成交时间</th>
                 </tr>
@@ -373,6 +374,7 @@ export function CustomerOverviewPage() {
                     <td>{badge(d.stage, DEAL_STAGE_TONES[d.stage] ?? "plain")}</td>
                     <td>{centsToYuan(d.amountCents) || "—"}</td>
                     <td>{d.orderNo || "—"}</td>
+                    <td>{epochMsToDate(d.dealDate) || "—"}</td>
                     <td>{epochMsToDate(d.deliveryDate) || "—"}</td>
                     <td>{formatDateTime(d.createdAt)}</td>
                   </tr>

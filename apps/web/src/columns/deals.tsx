@@ -34,7 +34,8 @@ export { epochMsToDate, dateToEpochMs } from "./common";
 
 /**
  * 成交 POST/PATCH body 转换（行内编辑、新增/修改弹窗共用；DealsPage / MyDealsPage 唯一实现）：
- * - deliveryDate：YYYY-MM-DD → 本地时区零点 epoch ms；
+ * - dealDate：YYYY-MM-DD → 本地时区零点 epoch ms（成交日期，非空必填）；
+ * - deliveryDate：YYYY-MM-DD → 本地时区零点 epoch ms（交付日期，可空可清空）；
  * - amountCents：元字符串 → 分整数（round，K13）；
  * - afterTaxRatio：字符串 → number。
  * 三者空值 = null（清空语义，schema nullable）；非空但转不出合法值 → 抛错（DataGrid 队列
@@ -42,6 +43,14 @@ export { epochMsToDate, dateToEpochMs } from "./common";
  */
 export function convertDealBody(body: Record<string, unknown>): Record<string, unknown> {
   let next = body;
+  if ("dealDate" in next) {
+    // dealDate 非空必填：空串/非法 → 抛错（禁止清空或写 null）
+    const ms = dateToEpochMs(next.dealDate);
+    if (ms === null) {
+      throw new Error("成交日期需为 YYYY-MM-DD 格式");
+    }
+    next = { ...next, dealDate: ms };
+  }
   if ("deliveryDate" in next) {
     const ms = dateToEpochMs(next.deliveryDate);
     if (ms === null && String(next.deliveryDate ?? "").trim() !== "") {
@@ -182,6 +191,15 @@ export function dealColumns(role: SystemRole | null): GridColumn<DealDto>[] {
       },
     },
     { key: "orderNo", label: "订单号", editor: "text", editable: canUpdate },
+    {
+      key: "dealDate",
+      label: "成交日期",
+      editor: "text",
+      editable: canUpdate,
+      getValue: (row) => epochMsToDate(row.dealDate),
+      render: (row) => epochMsToDate(row.dealDate),
+      applyOptimistic: (row, v) => ({ ...row, dealDate: dateToEpochMs(v) ?? row.dealDate }),
+    },
     {
       key: "deliveryDate",
       label: "交付日期",

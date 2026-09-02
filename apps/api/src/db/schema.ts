@@ -372,7 +372,7 @@ export const jobSchedules = sqliteTable(
   ],
 );
 
-// K42 成交表：客户必填（创建）；意向产品/负责人单值可空；stage 枚举；delivery_date epoch ms。
+// K42 成交表：客户必填（创建）；意向产品/负责人单值可空；stage 枚举；deal_date 成交日期非空、delivery_date 交付日期可空（epoch ms）。
 export const deals = sqliteTable(
   "deals",
   {
@@ -385,6 +385,8 @@ export const deals = sqliteTable(
     stage: text("stage").notNull().default("gift"),
     orderNo: text("order_no"),
     paymentRemark: text("payment_remark"),
+    // K42：成交日期 deal_date 非空（新建必填），与交付日期 delivery_date 并存、语义不同
+    dealDate: integer("deal_date").notNull(),
     deliveryDate: integer("delivery_date"),
     amountCents: integer("amount_cents"),
     afterTaxRatio: real("after_tax_ratio"),

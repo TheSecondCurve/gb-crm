@@ -68,13 +68,14 @@ function seedProduct(db: Db, name: string, extra: JsonBody = {}): number {
 }
 
 const DELIVERY_DATE = Date.UTC(2026, 7, 22); // 2026-08-22 epoch ms
+const DEAL_DATE = Date.UTC(2026, 3, 15); // 2026-04-15 epoch ms（成交日期，非空必填）
 
-/** 以 admin 建一条成交（customerId 必填），返回响应 data */
+/** 以 admin 建一条成交（customerId/dealDate 必填），返回响应 data */
 let adminSeq = 0;
 async function createDealAsAdmin(extra: JsonBody = {}) {
   const { id: adminId, cookie } = await loginAsRole("admin", `u-admin-${adminSeq++}`);
   const customerId = seedCustomer(tmp.db, "客户甲");
-  const res = await post("/api/v1/deals", cookie, { customerId, ...extra });
+  const res = await post("/api/v1/deals", cookie, { customerId, dealDate: DEAL_DATE, ...extra });
   expect(res.statusCode).toBe(201);
   return { adminId, cookie, data: res.json().data, customerId };
 }
@@ -97,7 +98,7 @@ describe("RBAC 矩阵（deals 资源，K42 assistant 只读）", () => {
   it("operator/admin 全通（create/read/update/delete）", async () => {
     const { cookie: opCookie } = await loginAsRole("operator");
     const customerId = seedCustomer(tmp.db, "运营客户");
-    const created = await post("/api/v1/deals", opCookie, { customerId });
+    const created = await post("/api/v1/deals", opCookie, { customerId, dealDate: DEAL_DATE });
     expect(created.statusCode).toBe(201);
     const d = created.json().data;
 
@@ -113,19 +114,21 @@ describe("RBAC 矩阵（deals 资源，K42 assistant 只读）", () => {
 });
 
 describe("POST /api/v1/deals 创建", () => {
-  it("缺 customerId → 422；customerId 非整数 → 422", async () => {
+  it("缺 customerId / dealDate → 422；customerId 非整数 → 422", async () => {
     const { cookie } = await loginAsRole("admin");
     expect((await post("/api/v1/deals", cookie, {})).statusCode).toBe(422);
+    expect((await post("/api/v1/deals", cookie, { customerId: 1 })).statusCode).toBe(422);
     expect((await post("/api/v1/deals", cookie, { customerId: 1.5 })).statusCode).toBe(422);
   });
 
   it("省略可选字段 → 默认值（stage=gift、product/owner/deliveryDate null）；审计列展开", async () => {
     const { id: adminId, cookie } = await loginAsRole("admin");
     const customerId = seedCustomer(tmp.db, "极简客户");
-    const res = await post("/api/v1/deals", cookie, { customerId });
+    const res = await post("/api/v1/deals", cookie, { customerId, dealDate: DEAL_DATE });
     expect(res.statusCode).toBe(201);
     const data = res.json().data;
     expect(data.stage).toBe("gift");
+    expect(data.dealDate).toBe(DEAL_DATE);
     expect(data.productId).toBeNull();
     expect(data.ownerId).toBeNull();
     expect(data.deliveryDate).toBeNull();
@@ -135,7 +138,7 @@ describe("POST /api/v1/deals 创建", () => {
     expect(data.createdBy).toEqual({ id: adminId, nickname: "昵称-admin" });
   });
 
-  it("全字段写入并读回；deliveryDate 原样存 epoch ms", async () => {
+  it("全字段写入并读回；dealDate 非空、deliveryDate 原样存 epoch ms", async () => {
     const { cookie } = await loginAsRole("admin");
     const customerId = seedCustomer(tmp.db, "全字段客户");
     const productId = seedProduct(tmp.db, "咨询产品");
@@ -148,6 +151,7 @@ describe("POST /api/v1/deals 创建", () => {
       stage: "paid",
       orderNo: "ORD-2026-001",
       paymentRemark: "对公转账",
+      dealDate: DEAL_DATE,
       deliveryDate: DELIVERY_DATE,
       amountCents: 39800,
       afterTaxRatio: 0.9306,
@@ -159,6 +163,7 @@ describe("POST /api/v1/deals 创建", () => {
     expect(data.stage).toBe("paid");
     expect(data.orderNo).toBe("ORD-2026-001");
     expect(data.paymentRemark).toBe("对公转账");
+    expect(data.dealDate).toBe(DEAL_DATE);
     expect(data.deliveryDate).toBe(DELIVERY_DATE);
     expect(data.amountCents).toBe(39800);
     expect(data.afterTaxRatio).toBe(0.9306);
@@ -166,12 +171,13 @@ describe("POST /api/v1/deals 创建", () => {
     // 库中列值核对
     const row = tmp.sqlite
       .prepare(
-        "SELECT customer_id, product_id, owner_id, delivery_date, amount_cents, after_tax_ratio FROM deals WHERE id = ?",
+        "SELECT customer_id, product_id, owner_id, deal_date, delivery_date, amount_cents, after_tax_ratio FROM deals WHERE id = ?",
       )
       .get(data.id) as {
       customer_id: number;
       product_id: number;
       owner_id: number;
+      deal_date: number;
       delivery_date: number;
       amount_cents: number;
       after_tax_ratio: number;
@@ -179,6 +185,7 @@ describe("POST /api/v1/deals 创建", () => {
     expect(row.customer_id).toBe(customerId);
     expect(row.product_id).toBe(productId);
     expect(row.owner_id).toBe(ownerId);
+    expect(row.deal_date).toBe(DEAL_DATE);
     expect(row.delivery_date).toBe(DELIVERY_DATE);
     expect(row.amount_cents).toBe(39800);
     expect(row.after_tax_ratio).toBe(0.9306);
@@ -205,7 +212,7 @@ describe("POST /api/v1/deals 创建", () => {
 describe("GET /api/v1/deals 列表", () => {
   it("分页 meta 正确；list 不含软删行；无 snake_case 泄漏", async () => {
     const { cookie, data: d } = await createDealAsAdmin();
-    await post("/api/v1/deals", cookie, { customerId: seedCustomer(tmp.db, "客户二") });
+    await post("/api/v1/deals", cookie, { customerId: seedCustomer(tmp.db, "客户二"), dealDate: DEAL_DATE });
 
     const res = await get("/api/v1/deals?page=1&pageSize=1", cookie);
     expect(res.json().meta).toEqual({ page: 1, pageSize: 1, total: 2 });
@@ -230,6 +237,7 @@ describe("GET /api/v1/deals 列表", () => {
       customerId: seedCustomer(tmp.db, "另一个客户"),
       stage: "refunded",
       orderNo: "ORD-B",
+      dealDate: DEAL_DATE,
     });
 
     const byStage = await get("/api/v1/deals?stage=paid", cookie);
@@ -243,7 +251,7 @@ describe("GET /api/v1/deals 列表", () => {
     expect(byCustomer.json().meta.total).toBe(1);
 
     const ownerId = await seedUser(tmp.db, { username: "u-owner", systemRole: "operator", nickname: "负责人" });
-    await post("/api/v1/deals", cookie, { customerId: seedCustomer(tmp.db, "带负责人"), ownerId });
+    await post("/api/v1/deals", cookie, { customerId: seedCustomer(tmp.db, "带负责人"), ownerId, dealDate: DEAL_DATE });
     const byOwner = await get(`/api/v1/deals?ownerId=${ownerId}`, cookie);
     expect(byOwner.json().meta.total).toBe(1);
     expect(byOwner.json().data[0].owner).toEqual({ id: ownerId, nickname: "负责人" });
@@ -257,7 +265,7 @@ describe("GET /api/v1/deals 列表", () => {
     const customerId = seedCustomer(tmp.db, "将删客户");
     const productId = seedProduct(tmp.db, "将删产品");
     const ownerId = await seedUser(tmp.db, { username: "u-dying", systemRole: "operator", nickname: "将删人" });
-    const res = await post("/api/v1/deals", cookie, { customerId, productId, ownerId });
+    const res = await post("/api/v1/deals", cookie, { customerId, productId, ownerId, dealDate: DEAL_DATE });
     const d = res.json().data;
 
     // 按 id 精确软删目标后，列表展开应全部为 null（K9：软删不展开）
@@ -382,17 +390,22 @@ describe("PATCH /api/v1/deals/:id 内核（K24）", () => {
     ).toBe(404);
   });
 
-  it("sort=deliveryDate 放行（asc/desc）；只读字段不可写（deletedAt 缺席不产生更新）", async () => {
+  it("sort=dealDate/deliveryDate 放行（asc/desc）；只读字段不可写（deletedAt 缺席不产生更新）", async () => {
     const { cookie } = await loginAsRole("admin");
     const c1 = seedCustomer(tmp.db, "客户1");
     const c2 = seedCustomer(tmp.db, "客户2");
-    const d1 = (await post("/api/v1/deals", cookie, { customerId: c1, deliveryDate: Date.UTC(2026, 1, 1) })).json().data;
-    const d2 = (await post("/api/v1/deals", cookie, { customerId: c2, deliveryDate: Date.UTC(2026, 8, 1) })).json().data;
+    const d1 = (await post("/api/v1/deals", cookie, { customerId: c1, dealDate: Date.UTC(2026, 2, 1), deliveryDate: Date.UTC(2026, 1, 1) })).json().data;
+    const d2 = (await post("/api/v1/deals", cookie, { customerId: c2, dealDate: Date.UTC(2026, 8, 1), deliveryDate: Date.UTC(2026, 9, 1) })).json().data;
 
-    const asc = await get("/api/v1/deals?sort=deliveryDate&order=asc", cookie);
-    expect(asc.json().data.map((x: { id: number }) => x.id)).toEqual([d1.id, d2.id]);
-    const desc = await get("/api/v1/deals?sort=deliveryDate&order=desc", cookie);
-    expect(desc.json().data.map((x: { id: number }) => x.id)).toEqual([d2.id, d1.id]);
+    const ascDeal = await get("/api/v1/deals?sort=dealDate&order=asc", cookie);
+    expect(ascDeal.json().data.map((x: { id: number }) => x.id)).toEqual([d1.id, d2.id]);
+    const descDeal = await get("/api/v1/deals?sort=dealDate&order=desc", cookie);
+    expect(descDeal.json().data.map((x: { id: number }) => x.id)).toEqual([d2.id, d1.id]);
+
+    const ascDelivery = await get("/api/v1/deals?sort=deliveryDate&order=asc", cookie);
+    expect(ascDelivery.json().data.map((x: { id: number }) => x.id)).toEqual([d1.id, d2.id]);
+    const descDelivery = await get("/api/v1/deals?sort=deliveryDate&order=desc", cookie);
+    expect(descDelivery.json().data.map((x: { id: number }) => x.id)).toEqual([d2.id, d1.id]);
   });
 });
 

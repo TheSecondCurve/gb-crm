@@ -28,6 +28,8 @@ export interface DealDto {
   stage: string;
   orderNo: string | null;
   paymentRemark: string | null;
+  /** epoch ms UTC；非空成交日期 */
+  dealDate: number;
   /** epoch ms UTC；null = 未填 */
   deliveryDate: number | null;
   /** 金额，整数分（K13，同 priceCents）；null = 未填 */
@@ -97,6 +99,7 @@ export function assembleDeals(db: Db, rows: readonly DealRow[]): DealDto[] {
     stage: row.stage,
     orderNo: row.orderNo,
     paymentRemark: row.paymentRemark,
+    dealDate: row.dealDate,
     deliveryDate: row.deliveryDate,
     amountCents: row.amountCents,
     afterTaxRatio: row.afterTaxRatio,

@@ -41,7 +41,7 @@ export interface CommissionJoinRow {
   stage: string;
   orderNo: string | null;
   paymentRemark: string | null;
-  deliveryDate: number | null;
+  dealDate: number;
   amountCents: number | null;
   afterTaxRatio: number | null;
   createdAt: number;
@@ -56,8 +56,8 @@ export interface CommissionItemRow {
   percentage: number;
 }
 
-/** 成交日期列：优先交付日期，缺省回落创建时间（便于未填交付日期的成交也能按范围筛） */
-const DEAL_DATE = sql`COALESCE(${deals.deliveryDate}, ${deals.createdAt})`;
+/** 成交日期列：deal_date 非空，直接取成交日期（K24/K56 语义） */
+const DEAL_DATE = deals.dealDate;
 
 function commissionListWhere(query: DealCommissionListQuery): SQL | undefined {
   const conditions: SQL[] = [isNull(deals.deletedAt)];
@@ -91,7 +91,7 @@ const JOIN_SELECT = {
   stage: deals.stage,
   orderNo: deals.orderNo,
   paymentRemark: deals.paymentRemark,
-  deliveryDate: deals.deliveryDate,
+  dealDate: deals.dealDate,
   amountCents: deals.amountCents,
   afterTaxRatio: deals.afterTaxRatio,
   createdAt: deals.createdAt,

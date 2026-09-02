@@ -48,19 +48,27 @@ describe("GET /api/v1/customers/:id/overview", () => {
       customerId: cid,
       stage: "paid",
       amountCents: 10000,
+      dealDate: clock.t - 3000,
       deliveryDate: clock.t - 3000,
     });
-    await post("/api/v1/deals", cookie, { customerId: cid, stage: "paid", amountCents: null });
+    await post("/api/v1/deals", cookie, {
+      customerId: cid,
+      stage: "paid",
+      amountCents: null,
+      dealDate: clock.t,
+    });
     await post("/api/v1/deals", cookie, {
       customerId: cid,
       stage: "gift",
       amountCents: 5000,
+      dealDate: clock.t - 1000,
       deliveryDate: clock.t - 1000,
     });
     await post("/api/v1/deals", cookie, {
       customerId: cid,
       stage: "closed",
       amountCents: 99999,
+      dealDate: clock.t - 5000,
       deliveryDate: clock.t - 5000,
     });
 
@@ -98,15 +106,15 @@ describe("GET /api/v1/customers/:id/overview", () => {
     // customer 全量
     expect(data.customer.nickname).toBe("总览客户");
 
-    // stats：4 笔成交；paid 合计 10000 分；lastDealAt = MAX(COALESCE(delivery_date, created_at))
-    // （无 deliveryDate 的成交 created_at=clock.t，大于 gift 的 deliveryDate=clock.t-1000）
+    // stats：4 笔成交；paid 合计 10000 分；lastDealAt = MAX(deal_date)
+    // （dealDate 非空；最大 = 无 deliveryDate 那笔的 dealDate=clock.t > gift 的 dealDate=clock.t-1000）
     expect(data.stats.dealCount).toBe(4);
     expect(data.stats.paidTotalCents).toBe(10000);
     expect(data.stats.lastDealAt).toBe(clock.t);
 
-    // deals：最新在前（deliveryDate DESC）
+    // deals：最新在前（dealDate DESC）
     expect(data.deals).toHaveLength(4);
-    expect(data.deals[0].deliveryDate).toBe(clock.t - 1000);
+    expect(data.deals[0].dealDate).toBe(clock.t);
 
     // circles：只含未结束的圈子交付
     expect(data.circles).toHaveLength(1);
