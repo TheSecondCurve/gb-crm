@@ -232,6 +232,20 @@ export function DealCommissionsPage() {
     }
   };
 
+  // 导出 Excel：跟随当前日期范围/状态/搜索（与列表同一 WHERE），同源 attachment 下载
+  const exportXlsx = () => {
+    const href = `/api/v1/deals/commissions/export.xlsx${buildQuery({
+      q,
+      status,
+      startDate: startMs,
+      endDate: endMsInclusive,
+    })}`;
+    const a = document.createElement("a");
+    a.href = href;
+    a.download = "";
+    a.click();
+  };
+
   return (
     <>
       <div className="page-head">
@@ -277,6 +291,9 @@ export function DealCommissionsPage() {
             <option value="default">未配置(默认)</option>
             <option value="custom">已配置</option>
           </select>
+          <button type="button" onClick={exportXlsx}>
+            导出 Excel
+          </button>
         </div>
       </div>
 
