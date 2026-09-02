@@ -60,7 +60,7 @@ function seedDeal(db: Db, customerId: number, extra: JsonBody = {}): number {
   return Number(
     db
       .insert(deals)
-      .values({ customerId, orderNo: "ORD-D", createdAt: now, updatedAt: now, ...extra } as never)
+      .values({ customerId, orderNo: "ORD-D", dealDate: now, createdAt: now, updatedAt: now, ...extra } as never)
       .run().lastInsertRowid,
   );
 }

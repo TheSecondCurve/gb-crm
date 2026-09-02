@@ -21,7 +21,7 @@ export interface DealCommissionDto {
   owner: UserRef | null;
   stage: string;
   orderNo: string | null;
-  deliveryDate: number | null;
+  dealDate: number;
   /** 金额，整数分（K13，同 deals）；null = 未填 */
   amountCents: number | null;
   /** 税后金额比例 0~1；null = 未填 */
@@ -105,7 +105,7 @@ export function assembleCommissionRows(
           : (userRefs.get(row.ownerId) ?? { id: row.ownerId, nickname: row.ownerNickname ?? "" }),
       stage: row.stage,
       orderNo: row.orderNo,
-      deliveryDate: row.deliveryDate,
+      dealDate: row.dealDate,
       amountCents: row.amountCents,
       afterTaxRatio: row.afterTaxRatio,
       baseAmountCents: base,

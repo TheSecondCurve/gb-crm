@@ -326,7 +326,7 @@ export function DealCommissionsPage() {
               {rows.map((row) => (
                 <tr key={row.dealId}>
                   <td>{row.customer ? row.customer.nickname : "—"}</td>
-                  <td>{epochMsToDate(row.deliveryDate)}</td>
+                  <td>{epochMsToDate(row.dealDate)}</td>
                   <td>{showAmount(row.baseAmountCents)}</td>
                   <td>
                     {row.items.length === 0 ? (

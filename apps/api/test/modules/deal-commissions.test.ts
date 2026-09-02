@@ -56,7 +56,7 @@ function seedCustomer(db: Db, nickname: string, extra: JsonBody = {}): number {
   );
 }
 
-/** 建一笔成交（API，admin），可选金额/负责人/交付日期 */
+/** 建一笔成交（API，admin），可选金额/负责人/成交日期/交付日期 */
 async function createDealAsAdmin(extra: JsonBody = {}): Promise<{
   cookie: string;
   data: { id: number; customerId: number; amountCents: number | null; afterTaxRatio: number | null; updatedAt: number };
@@ -64,7 +64,7 @@ async function createDealAsAdmin(extra: JsonBody = {}): Promise<{
 }> {
   const { cookie } = await loginAsRole("admin");
   const customerId = seedCustomer(tmp.db, "客户甲");
-  const res = await post("/api/v1/deals", cookie, { customerId, ...extra });
+  const res = await post("/api/v1/deals", cookie, { customerId, dealDate: Date.UTC(2026, 5, 15), ...extra });
   expect(res.statusCode).toBe(201);
   return { cookie, data: res.json().data, customerId };
 }
@@ -120,6 +120,7 @@ describe("默认方案（system_configs commissionDefault）", () => {
       ownerId: dealOwnerId,
       amountCents: 100000,
       afterTaxRatio: 0.9,
+      dealDate: clock.t,
     });
     const d = deal.json().data;
 
@@ -265,13 +266,13 @@ describe("自定义配置 PUT /deals/:id/commissions", () => {
 });
 
 describe("列表：日期范围与搜索", () => {
-  it("按成交日期（deliveryDate，缺省回落 createdAt）范围筛选", async () => {
+  it("按成交日期（dealDate）范围筛选", async () => {
     const { cookie } = await loginAsRole("admin");
     const start = Date.UTC(2026, 0, 1);
     const end = Date.UTC(2026, 0, 31);
-    await createDealAsAdmin({ deliveryDate: Date.UTC(2026, 0, 15) });
-    await createDealAsAdmin({ deliveryDate: Date.UTC(2026, 5, 15) });
-    await createDealAsAdmin({ orderNo: "ORD-SEARCH" }); // 无 deliveryDate，回落 createdAt
+    await createDealAsAdmin({ dealDate: Date.UTC(2026, 0, 15) });
+    await createDealAsAdmin(); // 默认 dealDate=2026-05-15，不在范围内
+    await createDealAsAdmin({ orderNo: "ORD-SEARCH" }); // 默认 dealDate=2026-05-15，不在范围内
 
     const inRange = await get(`/api/v1/deals/commissions?startDate=${start}&endDate=${end}`, cookie);
     expect(inRange.json().meta.total).toBe(1);

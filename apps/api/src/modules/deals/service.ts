@@ -84,6 +84,7 @@ const PATCHABLE_KEYS = new Set([
   "stage",
   "orderNo",
   "paymentRemark",
+  "dealDate",
   "deliveryDate",
   "amountCents",
   "afterTaxRatio",

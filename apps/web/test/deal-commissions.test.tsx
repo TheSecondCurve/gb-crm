@@ -13,7 +13,7 @@ const defaultRow: DealCommissionDto = {
   owner: { id: 1, nickname: "老王" },
   stage: "paid",
   orderNo: "ORD-001",
-  deliveryDate: deliveryMs(2026, 8, 22),
+  dealDate: deliveryMs(2026, 8, 22),
   amountCents: 100000,
   afterTaxRatio: 0.9,
   baseAmountCents: 90000,
