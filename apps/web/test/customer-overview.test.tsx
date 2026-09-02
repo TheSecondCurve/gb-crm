@@ -47,6 +47,7 @@ function makeOverview(over: Partial<CustomerOverviewDto> = {}): CustomerOverview
         stage: "paid",
         orderNo: "A001",
         paymentRemark: null,
+        dealDate: 1500,
         deliveryDate: 1600,
         amountCents: 9900,
         afterTaxRatio: null,

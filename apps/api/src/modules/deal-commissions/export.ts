@@ -46,7 +46,7 @@ const dateCol = (header: string, get: (row: DealCommissionDto) => number | null)
 const DEAL_COLUMNS: ColumnDef[] = [
   { header: "成交ID", width: 8, value: (r) => r.dealId },
   { header: "客户", width: 16, value: (r) => r.customer?.nickname ?? null },
-  dateCol("成交日期", (r) => r.deliveryDate),
+  dateCol("成交日期", (r) => r.dealDate),
   { header: "订单号", width: 16, value: (r) => r.orderNo },
   { header: "成交金额(元)", width: 14, value: (r) => yuan(r.amountCents) },
   { header: "税后比例", width: 10, value: (r) => r.afterTaxRatio },
@@ -109,7 +109,7 @@ export async function buildCommissionXlsx(
       const excelRow = partySheet.addRow([
         row.dealId,
         row.customer?.nickname ?? null,
-        row.deliveryDate === null ? null : new Date(row.deliveryDate),
+        new Date(row.dealDate),
         row.orderNo,
         yuan(row.amountCents),
         row.afterTaxRatio,

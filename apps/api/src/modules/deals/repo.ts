@@ -15,10 +15,11 @@ export type DealRow = typeof deals.$inferSelect;
 /** q 搜索列（§9，SQL 列名）：order_no,payment_remark */
 const SEARCH_COLUMNS = [deals.orderNo, deals.paymentRemark];
 
-// 每资源独立 sort enum（K21）；deals: updatedAt | createdAt | deliveryDate
+// 每资源独立 sort enum（K21）；deals: updatedAt | createdAt | dealDate | deliveryDate
 const SORT_COLUMNS = {
   updatedAt: deals.updatedAt,
   createdAt: deals.createdAt,
+  dealDate: deals.dealDate,
   deliveryDate: deals.deliveryDate,
 } as const;
 
@@ -136,7 +137,7 @@ export function findLiveUserIds(db: Db, ids: readonly number[]): Set<number> {
 
 // ---- K47 客户总览统计 ----
 
-/** 该客户 live 成交，最新在前（deliveryDate DESC null 后置，并列 id DESC），上限 limit */
+/** 该客户 live 成交，最新在前（dealDate DESC，并列 id DESC），上限 limit */
 export function listLiveDealsByCustomer(
   db: Db,
   customerId: number,
@@ -146,7 +147,7 @@ export function listLiveDealsByCustomer(
     .select()
     .from(deals)
     .where(and(eq(deals.customerId, customerId), isNull(deals.deletedAt)))
-    .orderBy(desc(deals.deliveryDate), desc(deals.id))
+    .orderBy(desc(deals.dealDate), desc(deals.id))
     .limit(limit)
     .all();
 }
@@ -171,10 +172,10 @@ export function paidTotalCentsByCustomer(db: Db, customerId: number): number {
   return Number(row?.value ?? 0);
 }
 
-/** 最近成交时间：MAX(COALESCE(delivery_date, created_at))；无成交 null */
+/** 最近成交时间：MAX(deal_date)；无成交 null */
 export function lastDealAtByCustomer(db: Db, customerId: number): number | null {
   const row = db
-    .select({ value: sql<number>`MAX(COALESCE(${deals.deliveryDate}, ${deals.createdAt}))` })
+    .select({ value: sql<number>`MAX(${deals.dealDate})` })
     .from(deals)
     .where(and(eq(deals.customerId, customerId), isNull(deals.deletedAt)))
     .get();

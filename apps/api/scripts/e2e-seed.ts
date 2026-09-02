@@ -75,6 +75,7 @@ db.insert(deals)
     stage: "paid",
     orderNo: E2E_DEAL_ORDER_NO,
     paymentRemark: "e2e 成交备注",
+    dealDate: now,
     createdAt: now,
     updatedAt: now,
   })

@@ -192,7 +192,7 @@ export interface DealCommissionDto {
   owner: UserRefDto | null;
   stage: string;
   orderNo: string | null;
-  deliveryDate: number | null;
+  dealDate: number;
   /** 金额，整数分（K13）；null = 未填 */
   amountCents: number | null;
   /** 税后金额比例 0~1；null = 未填 */
@@ -311,7 +311,9 @@ export interface DealDto {
   stage: string;
   orderNo: string | null;
   paymentRemark: string | null;
-  /** epoch ms UTC；null = 未填。UI 展示/编辑 YYYY-MM-DD */
+  /** 成交日期（epoch ms UTC），UI 展示/编辑 YYYY-MM-DD */
+  dealDate: number;
+  /** 交付日期（epoch ms UTC；null = 未填）。UI 展示/编辑 YYYY-MM-DD */
   deliveryDate: number | null;
   /** 金额，整数分（K13，同 priceCents）；null = 未填。UI 展示/编辑元 */
   amountCents: number | null;
