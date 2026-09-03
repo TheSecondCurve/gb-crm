@@ -1,6 +1,6 @@
 ---
 name: gb-crm
-version: 0.8.3
+version: 0.8.4
 description: >
   女商 私域运营管理端（gb-crm）本机 HTTP 客户端。用 ~/.gb-crm/credentials.json 的 PAT
   通过单一 SQL 端点查询或维护客户、渠道、产品、团队成员、成交记录、交付管理与咨询资料。
@@ -79,6 +79,38 @@ curl -fsSL http://<crm-host>/agent/login.sh | sh
 6. 时间戳一律 **epoch 毫秒**（UTC）。金额 `price_cents` 是**分**，展示元；不要 `yuan * 100` 不 round 就写入。布尔 `is_package` 是 0/1。
 7. 写 SQL 绕过管理端的 PATCH 内核 / OCC / 审计，**只做简单 CRUD**，不要动 `sessions` / `api_tokens`。DDL（CREATE/ALTER/DROP）端点已直接 403，无需也不会执行。
 8. 403 不要换字段重试同一越权操作；需要写权限就让用户换 admin/operator 的 write 令牌重新签发。
+
+## 业务背景：助手号 → 当前管理人 → 归属销售
+
+渠道里有一大批**微信小助手账号**（`platform='wechat'`，`channel_type`/`account_type` 多为 `private_assistant` 或 `fixed_wechat`，名字形如「斯斯小助手-叶子」「闪光小助手-三江」）。客户的定位靠这条链：
+
+- 客户 →（M2M `customer_source_channels(customer_id, channel_id)`）→ **来源渠道**（哪个助手号加进来的）；
+- 渠道 →（M2M `channel_owners(channel_id, user_id)`）→ **当前管理人**（哪个团队成员在运营这个号）；
+- 管理人 = 该客户的**归属销售**，落在 `customers.owner_id`（单值列）。
+
+`channel_owners` 表达的是**当下**的归属：号会换人管，管理人变了只影响之后的客户定位，已入库客户的 `owner_id` 不会自动跟着改。
+
+**触发与指令**：用户说「这个客户是 XX 账号的」「XX 号加的客户」「把这个客户归到 XX 账号」时，不要只按昵称猜人——XX 是**助手号名**，要做两步定位：
+
+```sql
+-- 1) 按助手号名定位渠道（模糊匹配名字后缀，注意同名渠道可能存在多条）
+SELECT c.id, c.name, u.id AS owner_id, u.nickname AS owner
+FROM channels c
+LEFT JOIN channel_owners co ON co.channel_id = c.id
+LEFT JOIN users u ON u.id = co.user_id
+WHERE c.deleted_at IS NULL AND c.platform = 'wechat' AND c.name LIKE '%叶子%';
+```
+
+2) 查到渠道后，对客户**同时做两件事**（写操作需用户明确要求）：
+
+```sql
+-- a. 挂来源渠道（M2M，已存在则忽略）
+INSERT OR IGNORE INTO customer_source_channels (customer_id, channel_id) VALUES (?, ?);
+-- b. 归属销售 = 渠道当前管理人（同守则 5 补 updated_at/updated_by）
+UPDATE customers SET owner_id = ?, updated_at = ?, updated_by = ? WHERE id = ?;
+```
+
+边界情况：渠道查不到（名字记错）→ 报出近似候选让用户选；渠道**没有当前管理人**（`channel_owners` 无行）→ 如实告知「该号当前无人认领」，只挂来源渠道、`owner_id` 不动，让用户定夺；渠道有**多个管理人** → 列出全部让用户指定归属销售。反过来，只改归属人不动来源渠道（「这客户转给小王跟」→ 只 `UPDATE customers.owner_id`）、只补来源渠道不动归属人的场景也存在，按用户说的做，不要互相牵连。
 
 ## 表结构
 
