@@ -14,9 +14,11 @@ import type {
 } from "../api/types";
 import { useAuth } from "../auth/AuthProvider";
 import { badge, centsToYuan, enumBadge, epochMsToDate, formatDateTime, type BadgeTone } from "../columns/common";
+import { customerColumns } from "../columns/customers";
 import { ConfirmDialog } from "../components/ConfirmDialog";
 import { MaintenanceRecordFormModal } from "../components/MaintenanceRecordFormModal";
 import { MaterialViewModal } from "../components/MaterialViewModal";
+import { RecordFormModal } from "../components/RecordFormModal";
 import { useToast } from "../components/Toast";
 
 const TAG_SCOPE_TONES: Record<string, BadgeTone> = {
@@ -45,6 +47,10 @@ export function CustomerOverviewPage() {
   const navigate = useNavigate();
 
   const canUpdate = can(role, "customers", "update");
+  // 复用客户列表页的全字段编辑弹窗（标量 + ownerId + sourceChannelIds + 关联标签由下方 chip 区单独维护）
+  const columns = useMemo(() => customerColumns(role), [role]);
+  const [editing, setEditing] = useState(false);
+  const [editBusy, setEditBusy] = useState(false);
 
   const { data: overview, refetch } = useQuery({
     queryKey: ["customers", customerId, "overview"],
@@ -132,6 +138,23 @@ export function CustomerOverviewPage() {
     void saveTags([...customer.tags.map((t) => t.id), ...picked]);
   };
 
+  // 修改：复用 RecordFormModal，PATCH 只带变更键 + updatedAt（OCC），保存后重拉总览
+  const updateCustomer = async (body: Record<string, unknown>) => {
+    if (!customer) return;
+    setEditBusy(true);
+    try {
+      await api.patch(`/customers/${customerId}`, body);
+      setEditing(false);
+      await refetch();
+      showToast("已保存");
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 409) showToast("该客户已被他人更新，请刷新后重试");
+      else showToast(err instanceof ApiError ? err.message : "保存失败，请稍后重试");
+    } finally {
+      setEditBusy(false);
+    }
+  };
+
   // K55 维护记录
   const canCreateRecord = can(role, "customerRecords", "create");
   const canWriteRecord = can(role, "customerRecords", "update");
@@ -194,6 +217,11 @@ export function CustomerOverviewPage() {
           <button type="button" onClick={() => navigate("/customers")}>
             返回列表
           </button>
+          {canUpdate && (
+            <button type="button" onClick={() => setEditing(true)}>
+              修改
+            </button>
+          )}
           {canUpdate && (
             <button type="button" className="btn-primary" disabled={aiBusy} onClick={() => void generateTags()}>
               {aiBusy ? "AI 生成中…" : "AI 生成标签"}
@@ -445,6 +473,18 @@ export function CustomerOverviewPage() {
           ))}
         </div>
       </div>
+
+      {editing && customer && (
+        <RecordFormModal
+          title={`修改客户：${customer.nickname}`}
+          columns={columns}
+          requiredKeys={["nickname"]}
+          row={customer}
+          busy={editBusy}
+          onClose={() => setEditing(false)}
+          onSubmit={updateCustomer}
+        />
+      )}
 
       {viewingMaterial && (
         <MaterialViewModal
