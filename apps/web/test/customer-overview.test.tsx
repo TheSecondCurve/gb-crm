@@ -93,10 +93,29 @@ function mockOverviewApi(me: typeof adminMe, over: Partial<CustomerOverviewDto> 
     const method = init?.method ?? "GET";
     calls.push({ url, method, body: init?.body });
     if (url === "/api/v1/auth/me") return { status: 200, body: { data: me } };
-    if (url.startsWith("/api/v1/tags")) {
+    if (method === "GET" && url.startsWith("/api/v1/tags")) {
       return {
         status: 200,
         body: { data: tags, meta: { page: 1, pageSize: 100, total: tags.length } },
+      };
+    }
+    if (url === "/api/v1/tags" && method === "POST") {
+      const body = JSON.parse(String(init?.body ?? "")) as Record<string, unknown>;
+      return {
+        status: 201,
+        body: {
+          data: {
+            id: 99,
+            name: body.name,
+            scope: body.scope ?? "other",
+            sort: 0,
+            enabled: true,
+            createdAt: 3000,
+            updatedAt: 3000,
+            createdBy: { id: 1, nickname: "管理员" },
+            updatedBy: null,
+          },
+        },
       };
     }
     // K55：维护记录 create/update/delete
@@ -194,6 +213,42 @@ describe("客户总览页", () => {
       expect(patch).toBeTruthy();
       expect(JSON.parse(String(patch?.body))).toEqual({ tagIds: [], updatedAt: 2000 });
     });
+  });
+
+  it("自定义标签：输入新名 → POST /tags 创建 并 PATCH 挂载", async () => {
+    const calls = mockOverviewApi(adminMe);
+    renderApp("/customers/1");
+    await screen.findByText("张三");
+
+    const input = screen.getByPlaceholderText("输入自定义标签名…") as HTMLInputElement;
+    fireEvent.change(input, { target: { value: "高端客户" } });
+    fireEvent.click(screen.getByRole("button", { name: "添加" }));
+
+    await waitFor(() => {
+      expect(calls.some((c) => c.method === "POST" && c.url === "/api/v1/tags")).toBe(true);
+    });
+    await waitFor(() => {
+      const patch = calls.find((c) => c.method === "PATCH" && c.url === "/api/v1/customers/1");
+      expect(patch).toBeTruthy();
+      expect(JSON.parse(String(patch?.body))).toEqual({ tagIds: [1, 99], updatedAt: 2000 });
+    });
+  });
+
+  it("自定义标签：输入已有词表标签名 → 直接复用 PATCH（不 POST 新建）", async () => {
+    const calls = mockOverviewApi(adminMe);
+    renderApp("/customers/1");
+    await screen.findByText("张三");
+
+    const input = screen.getByPlaceholderText("输入自定义标签名…") as HTMLInputElement;
+    fireEvent.change(input, { target: { value: "已成交" } }); // tags 词表 id=2
+    fireEvent.click(screen.getByRole("button", { name: "添加" }));
+
+    await waitFor(() => {
+      const patch = calls.find((c) => c.method === "PATCH" && c.url === "/api/v1/customers/1");
+      expect(patch).toBeTruthy();
+      expect(JSON.parse(String(patch?.body))).toEqual({ tagIds: [1, 2], updatedAt: 2000 });
+    });
+    expect(calls.some((c) => c.method === "POST" && c.url === "/api/v1/tags")).toBe(false);
   });
 
   it("修改：admin 打开全字段编辑弹窗，保存仅 PATCH 变更键 + updatedAt", async () => {

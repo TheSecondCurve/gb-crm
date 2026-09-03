@@ -47,6 +47,8 @@ export function CustomerOverviewPage() {
   const navigate = useNavigate();
 
   const canUpdate = can(role, "customers", "update");
+  // 自定义标签：词表写 tags.create（admin）；挂载需 customers.update
+  const canCreateTag = canUpdate && can(role, "tags", "create");
   // 复用客户列表页的全字段编辑弹窗（标量 + ownerId + sourceChannelIds + 关联标签由下方 chip 区单独维护）
   const columns = useMemo(() => customerColumns(role), [role]);
   const [editing, setEditing] = useState(false);
@@ -57,7 +59,7 @@ export function CustomerOverviewPage() {
     queryFn: async () =>
       (await api.get<{ data: CustomerOverviewDto }>(`/customers/${customerId}/overview`))?.data,
   });
-  const { data: tagOptions = [] } = useQuery({
+  const { data: tagOptions = [], refetch: refetchTagOptions } = useQuery({
     queryKey: ["tags", "options"],
     queryFn: async () => (await api.get<{ data: TagDto[] }>("/tags?pageSize=100"))?.data ?? [],
   });
@@ -65,6 +67,8 @@ export function CustomerOverviewPage() {
   const [aiBusy, setAiBusy] = useState(false);
   const [saving, setSaving] = useState(false);
   const [picked, setPicked] = useState<number[]>([]);
+  // K45：自定义标签输入（输入名称；词表有同名 live 标签直接复用，否则 admin 自建再挂载）
+  const [customTag, setCustomTag] = useState("");
   // K54：查看资料（先 GET /materials/:id 拉完整 content 再开只读弹窗）
   const [viewingMaterial, setViewingMaterial] = useState<MaterialDetailDto | null>(null);
 
@@ -136,6 +140,62 @@ export function CustomerOverviewPage() {
   const addPicked = () => {
     if (!customer) return;
     void saveTags([...customer.tags.map((t) => t.id), ...picked]);
+  };
+
+  // K45：新增自定义标签。词表有同名 live 标签直接复用；否则创建（需 tags.create）后挂载。
+  const addCustomTag = async () => {
+    if (!customer) return;
+    const name = customTag.trim();
+    if (!name) return;
+    setSaving(true);
+    try {
+      const existing = tagOptions.find((t) => t.name === name);
+      let tagId: number;
+      if (existing) {
+        tagId = existing.id;
+      } else {
+        const created = await api.post<{ data: TagDto }>("/tags", { name, scope: "other", enabled: true });
+        if (!created) {
+          showToast("创建标签失败，请稍后重试");
+          return;
+        }
+        tagId = created.data.id;
+        await refetchTagOptions();
+      }
+      if (currentTagIds.has(tagId)) {
+        setCustomTag("");
+        showToast("该客户已带有此标签");
+        return;
+      }
+      await api.patch(`/customers/${customerId}`, {
+        tagIds: [...customer.tags.map((t) => t.id), tagId],
+        updatedAt: customer.updatedAt,
+      });
+      setCustomTag("");
+      await refetch();
+      showToast("已添加自定义标签");
+    } catch (err) {
+      // 撞名（同名 live 已存在）→ 重拉词表按同名复用
+      if (err instanceof ApiError && err.status === 409) {
+        const res = await refetchTagOptions();
+        const existing = (res.data ?? []).find((t) => t.name === name);
+        if (existing && !currentTagIds.has(existing.id)) {
+          await api.patch(`/customers/${customerId}`, {
+            tagIds: [...customer.tags.map((t) => t.id), existing.id],
+            updatedAt: customer.updatedAt,
+          });
+          setCustomTag("");
+          await refetch();
+          showToast("已复用同名标签");
+        } else {
+          showToast("标签已存在，请直接在下方选择");
+        }
+      } else {
+        toastError(err, "添加自定义标签失败，请稍后重试");
+      }
+    } finally {
+      setSaving(false);
+    }
   };
 
   // 修改：复用 RecordFormModal，PATCH 只带变更键 + updatedAt（OCC），保存后重拉总览
@@ -279,6 +339,34 @@ export function CustomerOverviewPage() {
                 ))}
                 <button type="button" className="btn-primary" disabled={saving || picked.length === 0} onClick={addPicked}>
                   保存
+                </button>
+              </span>
+            </div>
+          )}
+          {canCreateTag && (
+            <div className="detail-row">
+              <span className="detail-label">自定义标签</span>
+              <span className="detail-chips">
+                <input
+                  className="text-input"
+                  placeholder="输入自定义标签名…"
+                  value={customTag}
+                  disabled={saving}
+                  onChange={(e) => setCustomTag(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      e.preventDefault();
+                      void addCustomTag();
+                    }
+                  }}
+                />
+                <button
+                  type="button"
+                  className="btn-primary"
+                  disabled={saving || customTag.trim() === ""}
+                  onClick={() => void addCustomTag()}
+                >
+                  添加
                 </button>
               </span>
             </div>
