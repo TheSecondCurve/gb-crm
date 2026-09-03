@@ -100,6 +100,12 @@ function mockOverviewApi(me: typeof adminMe, over: Partial<CustomerOverviewDto> 
       };
     }
     // K55：维护记录 create/update/delete
+    if (url.startsWith("/api/v1/users") && method === "GET") {
+      return { status: 200, body: { data: [{ id: 1, nickname: "老王" }], meta: { page: 1, pageSize: 100, total: 1 } } };
+    }
+    if (url.startsWith("/api/v1/channels") && method === "GET") {
+      return { status: 200, body: { data: [], meta: { page: 1, pageSize: 100, total: 0 } } };
+    }
     if (url.includes("/customers/1/records/") && method === "PATCH") {
       return {
         status: 200,
@@ -187,6 +193,26 @@ describe("客户总览页", () => {
       const patch = calls.find((c) => c.method === "PATCH" && c.url === "/api/v1/customers/1");
       expect(patch).toBeTruthy();
       expect(JSON.parse(String(patch?.body))).toEqual({ tagIds: [], updatedAt: 2000 });
+    });
+  });
+
+  it("修改：admin 打开全字段编辑弹窗，保存仅 PATCH 变更键 + updatedAt", async () => {
+    const calls = mockOverviewApi(adminMe);
+    renderApp("/customers/1");
+    await screen.findByText("张三");
+
+    fireEvent.click(screen.getByRole("button", { name: "修改" }));
+    const dialog = await screen.findByRole("dialog", { name: "修改客户：张三" });
+
+    const phoneInput = within(dialog).getByLabelText(/手机号/) as HTMLInputElement;
+    expect(phoneInput.value).toBe("13800000000");
+    fireEvent.change(phoneInput, { target: { value: "13900000000" } });
+    fireEvent.click(within(dialog).getByRole("button", { name: "保存" }));
+
+    await waitFor(() => {
+      const patch = calls.find((c) => c.method === "PATCH" && c.url === "/api/v1/customers/1");
+      expect(patch).toBeTruthy();
+      expect(JSON.parse(String(patch?.body))).toEqual({ phone: "13900000000", updatedAt: 2000 });
     });
   });
 
