@@ -1,6 +1,7 @@
 // 资料专区（K54）：列表渲染 / q+kind+orphan 请求参数 / 按关联交付类型分组 tab（deliveryKind）/
 // 新增（kind 切换显隐）/ 修改 OCC / assistant 只读 / 查看全文。
 // K58：标签列 / 标签筛选下拉（tagId）/ 表单词表选词 + newTagNames 新词 / 编辑清空标签。
+// 文件专区 tab：kind=file album 格子 / 图片缩略图 / 非图片占位 + 文件名 + 下载链接 / 专辑内搜索。
 import { describe, expect, it } from "vitest";
 import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 
@@ -61,6 +62,54 @@ const m2: MaterialDto = {
 };
 
 const detail1: MaterialDetailDto = { ...m1, content: "各位好，欢迎来到开营仪式……（完整全文）" };
+
+// 文件专区（kind=file）：f1 图片（渲染缩略图）、f2 PDF（图标占位）
+const f1: MaterialDto = {
+  id: 3,
+  kind: "file",
+  title: "现场合影",
+  url: null,
+  contentLength: 0,
+  excerpt: null,
+  originalFilename: "合影.png",
+  contentType: "image/png",
+  fileSize: 2048,
+  isImage: true,
+  deliveryId: null,
+  delivery: null,
+  customers: [],
+  tags: [{ id: 1, name: "复盘" }],
+  createdAt: 1000,
+  updatedAt: 4000,
+  createdBy: null,
+  updatedBy: null,
+};
+
+const f2: MaterialDto = {
+  id: 4,
+  kind: "file",
+  title: "复盘手册",
+  url: null,
+  contentLength: 0,
+  excerpt: null,
+  originalFilename: "手册.pdf",
+  contentType: "application/pdf",
+  fileSize: 3 * 1024 * 1024,
+  isImage: false,
+  deliveryId: 11,
+  delivery: {
+    id: 11,
+    deliveryType: { id: 5, name: "私董圈子", kind: "circle" },
+    startsAt: 1700000000000,
+    endsAt: null,
+  },
+  customers: [],
+  tags: [],
+  createdAt: 1000,
+  updatedAt: 5000,
+  createdBy: null,
+  updatedBy: null,
+};
 
 interface Call {
   url: string;
@@ -465,5 +514,64 @@ describe("资料专区", () => {
     expect(screen.queryByRole("button", { name: "修改" })).toBeNull();
     expect(screen.queryByRole("button", { name: "删除" })).toBeNull();
     expect(screen.getAllByRole("button", { name: "查看" }).length).toBe(2);
+  });
+});
+
+describe("资料专区 · 文件专区 tab", () => {
+  it("切到文件专区：请求带 kind=file；图片卡片渲染缩略图，非图片给图标占位 + 文件名·大小 + 下载链接", async () => {
+    const calls = mockMaterialsApi(adminMe, [f1, f2]);
+    renderApp("/materials");
+
+    fireEvent.click(await screen.findByRole("tab", { name: "文件专区" }));
+    await waitFor(() => {
+      const hit = calls.find(
+        (c) => c.method === "GET" && c.url.startsWith("/api/v1/materials?") && c.url.includes("kind=file"),
+      );
+      expect(hit).toBeTruthy();
+    });
+
+    // 图片卡片：缩略图直出 /materials/:id/file
+    const img = await screen.findByAltText("合影.png");
+    expect(img.getAttribute("src")).toBe("/api/v1/materials/3/file");
+    // 非图片卡片：扩展名占位 + 文件名·大小
+    expect(screen.getByText("pdf")).toBeTruthy();
+    expect(screen.getByText(/手册\.pdf · 3\.0 MB/)).toBeTruthy();
+    // 两张卡片都有下载链接（download=1）
+    const downloads = screen.getAllByRole("link", { name: "下载" });
+    expect(downloads.map((a) => a.getAttribute("href"))).toEqual([
+      "/api/v1/materials/3/file?download=1",
+      "/api/v1/materials/4/file?download=1",
+    ]);
+    // 标签徽章 + 标题
+    expect(screen.getByText("复盘")).toBeTruthy();
+    expect(screen.getByText("复盘手册")).toBeTruthy();
+  });
+
+  it("文件专区搜索：q 与 kind=file 一起发出", async () => {
+    const calls = mockMaterialsApi(adminMe, [f1]);
+    renderApp("/materials");
+    fireEvent.click(await screen.findByRole("tab", { name: "文件专区" }));
+    await screen.findByAltText("合影.png");
+
+    fireEvent.change(screen.getByLabelText("搜索"), { target: { value: "合影" } });
+    await waitFor(
+      () => {
+        const hit = calls.find((c) => c.url.includes("kind=file") && c.url.includes("q=%E5%90%88%E5%BD%B1"));
+        expect(hit).toBeTruthy();
+      },
+      { timeout: 2000 },
+    );
+  });
+
+  it("assistant 文件专区：仅查看/下载，无修改/删除", async () => {
+    mockMaterialsApi(assistantMe, [f1, f2]);
+    renderApp("/materials");
+    fireEvent.click(await screen.findByRole("tab", { name: "文件专区" }));
+    await screen.findByAltText("合影.png");
+
+    expect(screen.getAllByRole("button", { name: "查看" }).length).toBe(2);
+    expect(screen.getAllByRole("link", { name: "下载" }).length).toBe(2);
+    expect(screen.queryByRole("button", { name: "修改" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "删除" })).toBeNull();
   });
 });
