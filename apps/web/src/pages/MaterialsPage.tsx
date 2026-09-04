@@ -1,5 +1,6 @@
-// 资料专区（K54）：交付资料列表。普通 table（长文本不做行内编辑），行操作走 modal。
-// 筛选：按关联交付类型分组 tab（useResourceList secondaryFilterKey="deliveryKind"）+ q +
+// 资料专区（K54）：两个视图 tab——「浏览」= 普通 table（长文本不做行内编辑，行操作走 modal），
+// 「文件专区」= kind=file 的 album 格子（MaterialFileAlbum）。
+// 浏览筛选：按关联交付类型分组 tab（useResourceList secondaryFilterKey="deliveryKind"）+ q +
 // kind 下拉（filterKey="kind"）+ 「仅看未关联」checkbox + K58 标签下拉（受控 state 拼进 fixedQuery，不改 hook）。
 import { Fragment, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
@@ -19,6 +20,7 @@ import { useAuth } from "../auth/AuthProvider";
 import { badge, epochMsToDate, formatDateTime, optionsOf, type BadgeTone } from "../columns/common";
 import { Pagination } from "../components/DataGrid/DataGrid";
 import { ConfirmDialog } from "../components/ConfirmDialog";
+import { MaterialFileAlbum } from "../components/MaterialFileAlbum";
 import { MaterialFormModal } from "../components/MaterialFormModal";
 import { MaterialViewModal } from "../components/MaterialViewModal";
 import { SearchBar } from "../components/SearchBar";
@@ -64,6 +66,8 @@ export function MaterialsPage() {
   const [viewing, setViewing] = useState<MaterialDetailDto | null>(null);
   const [deleting, setDeleting] = useState<MaterialDto | null>(null);
   const [busy, setBusy] = useState(false);
+  /** 页面视图：browse = 表格浏览（默认），files = 文件专区 album */
+  const [view, setView] = useState<"browse" | "files">("browse");
 
   const canCreate = can(role, "materials", "create");
   const canUpdate = can(role, "materials", "update");
@@ -129,31 +133,35 @@ export function MaterialsPage() {
       <div className="page-head">
         <h1>资料专区</h1>
         <div className="search-bar">
-          <SearchBar onSearch={list.changeSearch} placeholder="搜索资料…" />
-          <select aria-label="类型筛选" value={list.filter} onChange={(e) => list.changeFilter(e.target.value)}>
-            <option value="">全部类型</option>
-            {optionsOf(materialKindLabels).map((o) => (
-              <option key={o.value} value={o.value}>
-                {o.label}
-              </option>
-            ))}
-          </select>
-          <select aria-label="标签筛选" value={tagId} onChange={(e) => setTagId(e.target.value)}>
-            <option value="">全部标签</option>
-            {tagOptions.map((t) => (
-              <option key={t.id} value={t.id}>
-                {t.name}
-              </option>
-            ))}
-          </select>
-          <label className="inline-field">
-            <input
-              type="checkbox"
-              checked={orphanOnly}
-              onChange={(e) => setOrphanOnly(e.target.checked)}
-            />
-            仅看未关联
-          </label>
+          {view === "browse" && (
+            <>
+              <SearchBar onSearch={list.changeSearch} placeholder="搜索资料…" />
+              <select aria-label="类型筛选" value={list.filter} onChange={(e) => list.changeFilter(e.target.value)}>
+                <option value="">全部类型</option>
+                {optionsOf(materialKindLabels).map((o) => (
+                  <option key={o.value} value={o.value}>
+                    {o.label}
+                  </option>
+                ))}
+              </select>
+              <select aria-label="标签筛选" value={tagId} onChange={(e) => setTagId(e.target.value)}>
+                <option value="">全部标签</option>
+                {tagOptions.map((t) => (
+                  <option key={t.id} value={t.id}>
+                    {t.name}
+                  </option>
+                ))}
+              </select>
+              <label className="inline-field">
+                <input
+                  type="checkbox"
+                  checked={orphanOnly}
+                  onChange={(e) => setOrphanOnly(e.target.checked)}
+                />
+                仅看未关联
+              </label>
+            </>
+          )}
           {canCreate && (
             <button type="button" className="btn-primary" onClick={() => setCreating(true)}>
               新增资料
@@ -161,6 +169,23 @@ export function MaterialsPage() {
           )}
         </div>
       </div>
+      <div className="tabs" role="tablist" aria-label="资料专区视图">
+        <button type="button" role="tab" aria-selected={view === "browse"} onClick={() => setView("browse")}>
+          浏览
+        </button>
+        <button type="button" role="tab" aria-selected={view === "files"} onClick={() => setView("files")}>
+          文件专区
+        </button>
+      </div>
+      {view === "files" ? (
+        <MaterialFileAlbum
+          canUpdate={canUpdate}
+          canDelete={canDelete}
+          onView={(id) => void openDetail(id, setViewing)}
+          onEdit={(id) => void openDetail(id, setEditing)}
+          onDelete={setDeleting}
+        />
+      ) : (
       <div className="card">
         <div className="tabs" role="tablist" aria-label="按关联交付类型筛选">
           <button
@@ -277,6 +302,7 @@ export function MaterialsPage() {
           <Pagination page={list.page} pageSize={list.pageSize} total={list.total} onChange={list.changePage} />
         </div>
       </div>
+      )}
       {creating && (
         <MaterialFormModal
           title="新增资料"
