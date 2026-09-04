@@ -1,6 +1,6 @@
 ---
 name: gb-crm
-version: 0.8.6
+version: 0.9.0
 description: >
   女商 私域运营管理端（gb-crm）本机 HTTP 客户端。用 ~/.gb-crm/credentials.json 的 PAT
   通过单一 SQL 端点查询或维护客户、渠道、产品、团队成员、成交记录、交付管理与咨询资料。
@@ -73,7 +73,7 @@ curl -fsSL http://<crm-host>/agent/login.sh | sh
 
 1. 先 `me`，记下自己的 `id` 与 `systemRole`。
 2. **「我的」= 等值过滤，不是权限收紧**（助理/运营本身就能读全量，这一步只是按当前账号收敛查询范围）：用户说「我的客户 / 我的成交 / 我负责的 / 我名下的」→ 必须在 SQL 里写 `WHERE owner_id = <自己的 user id>`——这个 id 就是规则 1 里 `me` 拿到的 `id`（`customers.owner_id`、`deals.owner_id` 同理）。用户说「所有客户 / 全部客户 / 客户名单 / 全量」→ **不要**加 owner 过滤，默认只 `WHERE deleted_at IS NULL`。用户说「某人的客户」（如「小王的」）→ 先按昵称查到那个人的 `id`，再用其 `owner_id` 过滤——「我的」永远只等于当前令牌账号自己。拿不准（如「闪光那边的客户」）→ 先复述「只看我名下，还是全部？」确认再查。
-3. 查数据前先看下面的表结构；**默认过滤软删**：`WHERE deleted_at IS NULL`（sessions / api_tokens / delivery_tasks / delivery_customers / delivery_material_customers / channel_owners / customer_source_channels / customer_social_accounts / customer_tags 无此列）。
+3. 查数据前先看下面的表结构；**默认过滤软删**：`WHERE deleted_at IS NULL`（sessions / api_tokens / delivery_tasks / delivery_customers / delivery_material_customers / delivery_material_tags / channel_owners / customer_source_channels / customer_social_accounts / customer_tags 无此列）。
 4. 写数据只在用户明确要求时做；删除前复述将删的行并得到确认。删除 = **软删**：`UPDATE ... SET deleted_at = <now>`，不要 `DELETE FROM`。
 5. 写时**手动维护** `updated_at = <当前 epoch 毫秒>`、`updated_by = <自己的 user id>`（`me` 拿到）；新建行同理补 `created_at` / `created_by`。
 6. 时间戳一律 **epoch 毫秒**（UTC）。金额 `price_cents` 是**分**，展示元；不要 `yuan * 100` 不 round 就写入。布尔 `is_package` 是 0/1。
@@ -114,7 +114,7 @@ UPDATE customers SET owner_id = ?, updated_at = ?, updated_by = ? WHERE id = ?;
 
 ## 表结构
 
-真相源：`apps/api/drizzle/` 迁移最终态（`0000_init.sql` 为历史；`0002`–`0006` 删除飞书字段/客户旧字段/客户标签；`0007` 社交账号表 K41；`0008` 成交表 K42；`0010` 交付重构 K44，`0009` 旧交付模型 DROP 重建；`0012`–`0014` 交付起止日期/类型 kind+status/交付项排期；`0020` 咨询资料 + FTS5，K54）。列全部 snake_case（SQL 层没有 camelCase）。
+真相源：`apps/api/drizzle/` 迁移最终态（`0000_init.sql` 为历史；`0002`–`0006` 删除飞书字段/客户旧字段/客户标签；`0007` 社交账号表 K41；`0008` 成交表 K42；`0010` 交付重构 K44，`0009` 旧交付模型 DROP 重建；`0012`–`0014` 交付起止日期/类型 kind+status/交付项排期；`0020` 咨询资料 + FTS5（K54）；`0026` 资料标签（K58））。列全部 snake_case（SQL 层没有 camelCase）。
 
 ### users（团队成员）
 
@@ -238,16 +238,35 @@ WHERE m.deleted_at IS NULL
 
 ### 客户标签（K45）
 
-- `tags`（词表，软删）：`name`（必填）/ `scope`（`identity` 身份 / `stage` 阶段 / `interest` 兴趣 / `other` 其它）/ `enabled` 0/1 / `sort`；审计四列 + `deleted_at`。
+- `tags`（词表，软删）：`name`（必填）/ `domain`（`customer` 客户 / `material` 资料，缺省 customer；live 唯一按 `(domain, name)`，同名跨域允许）/ `scope`（`identity` 身份 / `stage` 阶段 / `interest` 兴趣 / `other` 其它）/ `enabled` 0/1 / `sort`；审计四列 + `deleted_at`。
 - `customer_tags`（客户 × 标签 M2M）：`(customer_id, tag_id)` 复合 PK + `created_at`/`created_by`；**硬删**，无 `deleted_at`。
+- `delivery_material_tags`（资料 × 标签 M2M，K58）：`(material_id, tag_id)` 复合 PK + `created_at`/`created_by`；**硬删**，无 `deleted_at`（同 customer_tags 形态）。
 
-**加标签**：先按名字解析词表 `SELECT id FROM tags WHERE name=? AND deleted_at IS NULL`，同名 live 词直接复用；词表没有先跟用户确认再建行（补 `scope`/`enabled=1`/审计列）。然后：
+**加标签**：先按名字解析词表 `SELECT id FROM tags WHERE name=? AND domain='customer' AND deleted_at IS NULL`，同名 live 词直接复用；词表没有先跟用户确认再建行（补 `scope`/`enabled=1`/审计列，domain 缺省即 customer）。然后：
 
 ```sql
 INSERT OR IGNORE INTO customer_tags (customer_id, tag_id, created_at, created_by) VALUES (?, ?, <now>, <me>);
 ```
 
 **删标签**：join 表唯一允许的硬删——`DELETE FROM customer_tags WHERE customer_id=? AND tag_id=?`（先按名字解析出 `tag_id`，删前向用户复述）。
+
+### 资料标签（K58）
+
+资料词与客户词同在 `tags` 表，按 `domain` 分域（`customer` / `material`），live 唯一按 `(domain, name)`——同名词在两域可以并存，解析时**必须带域**。关联表 `delivery_material_tags`（结构见上）。
+
+**资料加标签**：按名字解析时带 `AND domain='material'`：
+
+```sql
+SELECT id FROM tags WHERE name=? AND domain='material' AND deleted_at IS NULL;
+```
+
+同名 live 资料词直接复用；词表没有时**直接建** material 域行（`scope='other'`、`enabled=1`、补 `created_at`/`created_by` 审计列）——与客户词表「先跟用户确认再建行」不同，资料词**免审批**（与管理端资料表单 `newTagNames` 行为一致）。然后：
+
+```sql
+INSERT OR IGNORE INTO delivery_material_tags (material_id, tag_id, created_at, created_by) VALUES (?, ?, <now>, <me>);
+```
+
+**资料删标签**：`DELETE FROM delivery_material_tags WHERE material_id=? AND tag_id=?`（先按名字解析出 `tag_id`，删前向用户复述）。
 
 ### 系统表（别动）
 

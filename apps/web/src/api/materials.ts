@@ -30,6 +30,13 @@ export async function submitMaterial(
       if (Array.isArray(body.customerIds)) {
         form.append("customerIds", JSON.stringify(body.customerIds));
       }
+      // K58：标签关系数组 / 随手建词，multipart 里以 JSON 数组字符串携带
+      if (Array.isArray(body.tagIds)) {
+        form.append("tagIds", JSON.stringify(body.tagIds));
+      }
+      if (Array.isArray(body.newTagNames)) {
+        form.append("newTagNames", JSON.stringify(body.newTagNames));
+      }
       form.append("file", file);
       const res = await api.postForm<{ data: MaterialDetailDto }>("/materials/upload", form);
       return res?.data ?? null;
@@ -52,6 +59,9 @@ export async function submitMaterial(
       deliveryId: body.deliveryId,
       customerIds: body.customerIds,
     };
+    // K58：标签键缺席不动（调用方没动标签区就不透传）
+    if (body.tagIds !== undefined) patch.tagIds = body.tagIds;
+    if (body.newTagNames !== undefined) patch.newTagNames = body.newTagNames;
     const saved = await api.patch<{ data: MaterialDetailDto }>(`/materials/${current.id}`, patch);
     return saved?.data ?? current;
   }

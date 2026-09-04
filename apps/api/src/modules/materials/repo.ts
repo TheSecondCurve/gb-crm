@@ -14,7 +14,9 @@ import {
   deliveries,
   deliveryMaterialCustomers,
   deliveryMaterials,
+  deliveryMaterialTags,
   deliveryTypes,
+  tags,
 } from "../../db/schema.js";
 import { escapeLike, fuzzyTokens } from "../../lib/fuzzy.js";
 import { toOffset } from "../../lib/pagination.js";
@@ -47,14 +49,28 @@ function searchWhere(db: Db, q: string): SQL | undefined {
   if (tokens.length === 0) return undefined;
   const perToken: SQL[] = tokens.map((token) => {
     const safe = token.replace(/"/g, "");
+    const pattern = `%${escapeLike(token)}%`;
+    const tagHit = exists(
+      db
+        .select({ x: sql`1` })
+        .from(deliveryMaterialTags)
+        .innerJoin(tags, and(eq(deliveryMaterialTags.tagId, tags.id), isNull(tags.deletedAt)))
+        .where(
+          and(
+            eq(deliveryMaterialTags.materialId, deliveryMaterials.id),
+            sql`${tags.name} LIKE ${pattern} ESCAPE '\\'`,
+          ),
+        ),
+    );
     if (safe.length >= FTS_MIN_TOKEN) {
       const ids = ftsMatchIds(db, safe);
-      return ids.length === 0 ? sql`0` : inArray(deliveryMaterials.id, ids);
+      const ftsHit = ids.length === 0 ? sql`0` : inArray(deliveryMaterials.id, ids);
+      return or(ftsHit, tagHit)!;
     }
-    const pattern = `%${escapeLike(token)}%`;
     return or(
       sql`${deliveryMaterials.title} LIKE ${pattern} ESCAPE '\\'`,
       sql`${deliveryMaterials.content} LIKE ${pattern} ESCAPE '\\'`,
+      tagHit,
     )!;
   });
   return and(...perToken);
@@ -91,6 +107,21 @@ function listWhere(db: Db, query: MaterialListQuery): SQL | undefined {
     if (search) conditions.push(search);
   }
   if (query.kind !== undefined) conditions.push(eq(deliveryMaterials.kind, query.kind));
+  if (query.tagId !== undefined) {
+    conditions.push(
+      exists(
+        db
+          .select({ x: sql`1` })
+          .from(deliveryMaterialTags)
+          .where(
+            and(
+              eq(deliveryMaterialTags.materialId, deliveryMaterials.id),
+              eq(deliveryMaterialTags.tagId, query.tagId),
+            ),
+          ),
+      ),
+    );
+  }
   // other 兜底：未关联或类型为 other（即命中非 consulting/activity/circle 的任何情况）
   if (query.deliveryKind !== undefined) {
     if (query.deliveryKind === "other") {
@@ -201,6 +232,42 @@ export function listMaterialCustomerRows(db: Db, materialIds: readonly number[])
     .from(deliveryMaterialCustomers)
     .where(inArray(deliveryMaterialCustomers.materialId, [...materialIds]))
     .all();
+}
+
+/** 资料标签 join 行（K58：只 join live 标签，软删标签不展开；按 name 稳定排序） */
+export function listMaterialTagRows(
+  db: Db,
+  materialIds: readonly number[],
+): { materialId: number; tagId: number; name: string }[] {
+  if (materialIds.length === 0) return [];
+  return db
+    .select({
+      materialId: deliveryMaterialTags.materialId,
+      tagId: deliveryMaterialTags.tagId,
+      name: tags.name,
+    })
+    .from(deliveryMaterialTags)
+    .innerJoin(tags, eq(deliveryMaterialTags.tagId, tags.id))
+    .where(and(inArray(deliveryMaterialTags.materialId, [...materialIds]), isNull(tags.deletedAt)))
+    .orderBy(asc(tags.name))
+    .all();
+}
+
+/** 整表替换资料标签（K58；live/domain 校验在 service） */
+export function replaceMaterialTags(
+  db: Db,
+  materialId: number,
+  tagIds: readonly number[],
+  audit: { createdAt: number; createdBy: number | null },
+): void {
+  db.delete(deliveryMaterialTags)
+    .where(eq(deliveryMaterialTags.materialId, materialId))
+    .run();
+  const unique = [...new Set(tagIds)];
+  if (unique.length === 0) return;
+  db.insert(deliveryMaterialTags)
+    .values(unique.map((tagId) => ({ materialId, tagId, ...audit })))
+    .run();
 }
 
 /** 整表替换资料客户关联（K24 关系数组：缺席不动、[] 清空；live 校验在 service） */

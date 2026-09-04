@@ -277,13 +277,15 @@ export const tags = sqliteTable(
     createdBy: integer("created_by").references(() => users.id, { onDelete: "set null" }),
     updatedBy: integer("updated_by").references(() => users.id, { onDelete: "set null" }),
     deletedAt: integer("deleted_at"),
+    /** K58：customer 客户画像 / material 资料检索；live unique 按域隔离 */
+    domain: text("domain").notNull().default("customer"),
   },
   (t) => [
     check("tags_scope_check", sql`"scope" IN ('identity','stage','interest','other')`),
     check("tags_enabled_check", sql`"enabled" IN (0, 1)`),
-    // name：live unique，软删后释放可复用
-    uniqueIndex("tags_name_live_uq")
-      .on(t.name)
+    check("tags_domain_check", sql`"domain" IN ('customer','material')`),
+    uniqueIndex("tags_domain_name_live_uq")
+      .on(t.domain, t.name)
       .where(sql`"deleted_at" IS NULL`),
   ],
 );
@@ -597,6 +599,25 @@ export const deliveryMaterialCustomers = sqliteTable(
   (t) => [
     primaryKey({ columns: [t.materialId, t.customerId] }),
     index("delivery_material_customers_customer_idx").on(t.customerId),
+  ],
+);
+
+// K58 资料 ↔ 标签 M2M（K24 关系数组语义；软删标签后 join 行保留、不展开）
+export const deliveryMaterialTags = sqliteTable(
+  "delivery_material_tags",
+  {
+    materialId: integer("material_id")
+      .notNull()
+      .references(() => deliveryMaterials.id, { onDelete: "cascade" }),
+    tagId: integer("tag_id")
+      .notNull()
+      .references(() => tags.id, { onDelete: "cascade" }),
+    createdAt: integer("created_at").notNull(),
+    createdBy: integer("created_by").references(() => users.id, { onDelete: "set null" }),
+  },
+  (t) => [
+    primaryKey({ columns: [t.materialId, t.tagId] }),
+    index("delivery_material_tags_tag_id_idx").on(t.tagId),
   ],
 );
 

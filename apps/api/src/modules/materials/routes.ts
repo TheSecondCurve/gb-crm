@@ -57,7 +57,7 @@ function parseOptionalInt(raw: string | undefined): number | null | undefined {
   return n;
 }
 
-function parseCustomerIds(raw: string | undefined): number[] | undefined {
+function parseIdArray(raw: string | undefined, fieldName: string): number[] | undefined {
   if (raw === undefined) return undefined;
   const t = raw.trim();
   if (t === "") return [];
@@ -65,14 +65,36 @@ function parseCustomerIds(raw: string | undefined): number[] | undefined {
   try {
     parsed = JSON.parse(t);
   } catch {
-    throw unprocessable("customerIds 必须是 JSON 数组", [
-      { path: "customerIds", message: "必须是 JSON 数组" },
+    throw unprocessable(`${fieldName} 必须是 JSON 数组`, [
+      { path: fieldName, message: "必须是 JSON 数组" },
     ]);
   }
   const result = z.array(z.number().int().positive()).safeParse(parsed);
   if (!result.success) {
-    throw unprocessable("customerIds 必须是正整数数组", [
-      { path: "customerIds", message: "必须是正整数数组" },
+    throw unprocessable(`${fieldName} 必须是正整数数组`, [
+      { path: fieldName, message: "必须是正整数数组" },
+    ]);
+  }
+  return result.data;
+}
+
+/** K58 newTagNames：JSON 字符串数组（非数组的合法 JSON → 422） */
+function parseNewTagNames(raw: string | undefined): string[] | undefined {
+  if (raw === undefined) return undefined;
+  const t = raw.trim();
+  if (t === "") return [];
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(t);
+  } catch {
+    throw unprocessable("newTagNames 必须是 JSON 数组", [
+      { path: "newTagNames", message: "必须是 JSON 数组" },
+    ]);
+  }
+  const result = z.array(z.string()).safeParse(parsed);
+  if (!result.success) {
+    throw unprocessable("newTagNames 必须是字符串数组", [
+      { path: "newTagNames", message: "必须是字符串数组" },
     ]);
   }
   return result.data;
@@ -137,7 +159,9 @@ export function materialsRoutes(app: FastifyInstance, opts: MaterialsRoutesOptio
       const meta = materialUploadMetaSchema.parse({
         title: fields.title,
         deliveryId: parseOptionalInt(fields.deliveryId),
-        customerIds: parseCustomerIds(fields.customerIds),
+        customerIds: parseIdArray(fields.customerIds, "customerIds"),
+        tagIds: parseIdArray(fields.tagIds, "tagIds"),
+        newTagNames: parseNewTagNames(fields.newTagNames),
       });
       const data = await uploadMaterialFile(db, meta, file, auditCtx(req), { fetchFn: s3Fetch });
       return reply.code(201).send({ data });

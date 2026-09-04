@@ -30,15 +30,19 @@ export function getTagResult(db: Db, id: number): TagDto {
   return assembleTag(db, row);
 }
 
-function assertNameFree(db: Db, name: string, excludeId?: number): void {
-  if (getLiveTagByName(db, name, excludeId)) {
+function assertNameFree(
+  db: Db,
+  name: string,
+  opts: { domain?: "customer" | "material"; excludeId?: number } = {},
+): void {
+  if (getLiveTagByName(db, name, opts)) {
     throw conflict(`标签「${name}」已存在`);
   }
 }
 
 export function createTag(db: Db, body: TagWrite, ctx: AuditContext): TagDto {
   const { enabled, ...fields } = body;
-  assertNameFree(db, fields.name);
+  assertNameFree(db, fields.name, { domain: fields.domain });
   const id = insertTag(db, {
     ...fields,
     enabled: enabled ? 1 : 0,
@@ -51,7 +55,13 @@ export function createTag(db: Db, body: TagWrite, ctx: AuditContext): TagDto {
 const PATCHABLE_KEYS = new Set(["name", "scope", "sort", "enabled"]);
 
 export function patchTag(db: Db, id: number, patch: TagPatch, ctx: AuditContext): TagDto {
-  if (patch.name !== undefined) assertNameFree(db, patch.name, id);
+  const existing = getTagByIdAny(db, id);
+  if (patch.name !== undefined) {
+    assertNameFree(db, patch.name, {
+      domain: (existing?.domain as "customer" | "material") ?? "customer",
+      excludeId: id,
+    });
+  }
 
   const set: Record<string, unknown> = { ...updateAudit(ctx) };
   for (const [key, value] of Object.entries(patch)) {

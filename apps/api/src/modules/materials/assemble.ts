@@ -11,7 +11,7 @@ import { customers, deliveries, deliveryTypes, users } from "../../db/schema.js"
 import type { CustomerRef } from "../deliveries/assemble.js";
 import type { UserRef } from "../users/assemble.js";
 import { isPreviewableImage } from "./file-meta.js";
-import { listMaterialCustomerRows, type MaterialRow } from "./repo.js";
+import { listMaterialCustomerRows, listMaterialTagRows, type MaterialRow } from "./repo.js";
 
 export interface MaterialDeliveryRef {
   id: number;
@@ -39,6 +39,8 @@ export interface MaterialDto {
   deliveryId: number | null;
   delivery: MaterialDeliveryRef | null;
   customers: CustomerRef[];
+  /** K58 资料标签（live only） */
+  tags: { id: number; name: string }[];
   createdAt: number;
   updatedAt: number;
   createdBy: UserRef | null;
@@ -98,6 +100,14 @@ function assembleInternal(db: Db, rows: readonly MaterialRow[]): MaterialDto[] {
       .all();
     for (const c of found) customerRefs.set(c.id, c);
   }
+  const tagRows = listMaterialTagRows(db, materialIds);
+  const tagsByMaterial = new Map<number, { id: number; name: string }[]>();
+  for (const r of tagRows) {
+    const list = tagsByMaterial.get(r.materialId) ?? [];
+    list.push({ id: r.tagId, name: r.name });
+    tagsByMaterial.set(r.materialId, list);
+  }
+
   const customersByMaterial = new Map<number, CustomerRef[]>();
   for (const r of customerRows) {
     const ref = customerRefs.get(r.customerId);
@@ -139,6 +149,7 @@ function assembleInternal(db: Db, rows: readonly MaterialRow[]): MaterialDto[] {
     deliveryId: row.deliveryId,
     delivery: row.deliveryId === null ? null : (deliveryRefs.get(row.deliveryId) ?? null),
     customers: customersByMaterial.get(row.id) ?? [],
+    tags: tagsByMaterial.get(row.id) ?? [],
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
     createdBy: userRef(row.createdBy),

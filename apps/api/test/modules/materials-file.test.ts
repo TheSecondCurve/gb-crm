@@ -225,6 +225,70 @@ describe("GET /api/v1/materials/:id/file", () => {
   });
 });
 
+describe("POST /api/v1/materials/upload 资料标签（K58）", () => {
+  it("带 tagIds/newTagNames 字段 → 201 且挂上；tagIds/newTagNames 非法 → 422", async () => {
+    const { cookie } = await loginAsRole("admin");
+    await enableStorage(cookie);
+    const tag = await app.inject({
+      method: "POST",
+      url: "/api/v1/tags",
+      headers: { cookie },
+      payload: { name: "合同模板", domain: "material" },
+    });
+    expect(tag.statusCode).toBe(201);
+
+    const mp = multipart(
+      {
+        title: "带标签文件",
+        tagIds: JSON.stringify([tag.json().data.id]),
+        newTagNames: JSON.stringify(["签字版"]),
+      },
+      { name: "a.png", type: "image/png", body: PNG_1x1 },
+    );
+    const res = await app.inject({
+      method: "POST",
+      url: "/api/v1/materials/upload",
+      headers: { cookie, ...mp.headers },
+      payload: mp.payload,
+    });
+    expect(res.statusCode).toBe(201);
+    const names = (res.json().data.tags as { name: string }[]).map((t) => t.name).sort();
+    expect(names).toEqual(["合同模板", "签字版"].sort());
+
+    // tagIds 非法 JSON → 422
+    const badJson = multipart(
+      { title: "坏标签", tagIds: "[not-json" },
+      { name: "b.png", type: "image/png", body: PNG_1x1 },
+    );
+    expect(
+      (
+        await app.inject({
+          method: "POST",
+          url: "/api/v1/materials/upload",
+          headers: { cookie, ...badJson.headers },
+          payload: badJson.payload,
+        })
+      ).statusCode,
+    ).toBe(422);
+
+    // newTagNames 非数组的合法 JSON → 422
+    const badNames = multipart(
+      { title: "坏新词", newTagNames: "123" },
+      { name: "c.png", type: "image/png", body: PNG_1x1 },
+    );
+    expect(
+      (
+        await app.inject({
+          method: "POST",
+          url: "/api/v1/materials/upload",
+          headers: { cookie, ...badNames.headers },
+          payload: badNames.payload,
+        })
+      ).statusCode,
+    ).toBe(422);
+  });
+});
+
 describe("替换与删除", () => {
   it("替换文件 OCC；删除软删并尽力 DELETE 远端对象", async () => {
     const { cookie } = await loginAsRole("admin");

@@ -20,6 +20,7 @@ const textDetail: MaterialDetailDto = {
   deliveryId: null,
   delivery: null,
   customers: [],
+  tags: [],
   createdAt: 1000,
   updatedAt: 2000,
   createdBy: null,

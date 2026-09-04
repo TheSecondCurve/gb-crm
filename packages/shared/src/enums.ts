@@ -114,6 +114,10 @@ export type DeliveryTypeStatus = z.infer<typeof deliveryTypeStatusSchema>;
 export const tagScopeSchema = z.enum(["identity", "stage", "interest", "other"]);
 export type TagScope = z.infer<typeof tagScopeSchema>;
 
+/** 标签词表域（K58：客户画像 vs 资料检索，live unique 按域隔离） */
+export const tagDomainSchema = z.enum(["customer", "material"]);
+export type TagDomain = z.infer<typeof tagDomainSchema>;
+
 /** 资料类型（K54：录音文字稿 / 文本资料全文入库；音视频/链接只存 url + 说明；K57：file 对象存储） */
 export const materialKindSchema = z.enum(["transcript", "text", "audio", "video", "link", "file"]);
 export type MaterialKind = z.infer<typeof materialKindSchema>;

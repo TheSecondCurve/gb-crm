@@ -25,6 +25,7 @@ import {
   replaceMaterialCustomers,
   type MaterialRow,
 } from "./repo.js";
+import { applyMaterialTags } from "./tag-attach.js";
 
 export const MATERIAL_FILE_BODY_LIMIT = MATERIAL_FILE_MAX_BYTES + 1024 * 1024;
 
@@ -138,7 +139,13 @@ function assertFileSize(file: UploadedFile): void {
 
 export async function uploadMaterialFile(
   db: Db,
-  meta: { title: string; deliveryId?: number | null; customerIds?: number[] },
+  meta: {
+    title: string;
+    deliveryId?: number | null;
+    customerIds?: number[];
+    tagIds?: number[];
+    newTagNames?: string[];
+  },
   file: UploadedFile,
   ctx: AuditContext,
   opts: { fetchFn?: typeof fetch } = {},
@@ -167,6 +174,8 @@ export async function uploadMaterialFile(
         ...createAudit(ctx),
       });
       if (meta.customerIds !== undefined) replaceMaterialCustomers(tx, id, meta.customerIds);
+      // K58 资料标签：tagIds/newTagNames 合并去重（与建单同事务；失败回滚并尽力删远端对象）
+      applyMaterialTags(tx, id, meta, ctx);
       return assembleMaterialDetail(tx, getMaterialByIdAny(tx, id)!);
     });
   } catch (err) {

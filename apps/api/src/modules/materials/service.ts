@@ -34,6 +34,7 @@ import {
   replaceMaterialCustomers,
   softDeleteMaterial,
 } from "./repo.js";
+import { applyMaterialTags, existingMaterialTagIds } from "./tag-attach.js";
 
 // better-sqlite3 事务是同步的；tx 与 Db 的查询接口同构，收窄类型以复用 repo 函数
 function inTx<T>(db: Db, fn: (tx: Db) => T): T {
@@ -100,7 +101,7 @@ export function createMaterial(
   ctx: AuditContext,
 ): MaterialDetailDto {
   return inTx(db, (tx) => {
-    const { customerIds, ...fields } = body;
+    const { customerIds, tagIds, newTagNames, ...fields } = body;
     // Zod 已挡组合违规，此处与 PATCH 共用同一规则兜底
     assertKindCombo(fields.kind, fields.url ?? null);
     assertLiveDelivery(tx, fields.deliveryId);
@@ -108,6 +109,8 @@ export function createMaterial(
 
     const id = insertMaterial(tx, { ...fields, ...createAudit(ctx) });
     if (customerIds !== undefined) replaceMaterialCustomers(tx, id, customerIds);
+    // K58 资料标签：tagIds/newTagNames 合并去重（id 必须 material 域 live 词）
+    applyMaterialTags(tx, id, { tagIds, newTagNames }, ctx);
     return assembleMaterialDetail(tx, getMaterialByIdAny(tx, id)!);
   });
 }
@@ -153,6 +156,14 @@ export function patchMaterial(
 
     // 关系键：缺席=不动；[]=清空；[ids]=整表替换（与标量同一事务，updated_at 已 bump）
     if (patch.customerIds !== undefined) replaceMaterialCustomers(tx, id, patch.customerIds);
+    // K58 资料标签：tagIds 缺席时以现有标签为 base 合并 newTagNames；都缺席则不动
+    applyMaterialTags(
+      tx,
+      id,
+      { tagIds: patch.tagIds, newTagNames: patch.newTagNames },
+      ctx,
+      existingMaterialTagIds(tx, id),
+    );
     return assembleMaterialDetail(tx, getMaterialByIdAny(tx, id)!);
   });
 }
