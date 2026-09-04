@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from "react";
+import { Fragment, useCallback, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { can, deliverableDimensionLabels, MATERIAL_FILE_KIND, materialKindLabels } from "@gb-crm/shared";
 import { useNavigate, useParams } from "react-router-dom";
@@ -318,6 +318,9 @@ export function DeliveryDetailPage() {
                   {m.title}
                   <span className="badge-wrap">
                     {badge(materialKindLabels[m.kind as keyof typeof materialKindLabels] ?? m.kind)}
+                    {m.tags.map((t) => (
+                      <Fragment key={t.id}>{badge(t.name, "muted")}</Fragment>
+                    ))}
                   </span>
                 </div>
                 <div className="item-meta">

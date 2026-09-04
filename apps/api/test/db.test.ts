@@ -42,6 +42,7 @@ describe("migration", () => {
       "deliveries",
       "delivery_customers",
       "delivery_material_customers",
+      "delivery_material_tags",
       "delivery_materials",
       "delivery_materials_fts",
       "delivery_materials_fts_config",

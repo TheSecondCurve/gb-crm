@@ -219,3 +219,69 @@ describe("DELETE /api/v1/tags/:id 软删", () => {
     expect(reuse.json().data.id).not.toBe(tag.id);
   });
 });
+
+describe("K58 domain 域隔离", () => {
+  it("list 缺省只回 customer 域；?domain=material 回资料域", async () => {
+    const { cookie } = await loginAsRole("admin");
+    await post("/api/v1/tags", cookie, { name: "资料词A", domain: "material" });
+    await post("/api/v1/tags", cookie, { name: "客户词A" });
+
+    const def = await get("/api/v1/tags?pageSize=100", cookie);
+    expect(def.json().meta.total).toBe(14); // 13 种子（customer）+ 客户词A
+    const names = (def.json().data as { name: string; domain: string }[]).map((t) => t.name);
+    expect(names).toContain("客户词A");
+    expect(names).not.toContain("资料词A");
+    for (const t of def.json().data) expect(t.domain).toBe("customer");
+
+    const mat = await get("/api/v1/tags?domain=material&pageSize=100", cookie);
+    expect(mat.json().meta.total).toBe(1);
+    expect(mat.json().data[0].name).toBe("资料词A");
+    expect(mat.json().data[0].domain).toBe("material");
+  });
+
+  it("创建 domain=material 成功；缺省 domain=customer；两域可同名；同域同名 → 409", async () => {
+    const { cookie } = await loginAsRole("admin");
+    const m1 = await post("/api/v1/tags", cookie, { name: "双域词", domain: "material" });
+    expect(m1.statusCode).toBe(201);
+    expect(m1.json().data.domain).toBe("material");
+
+    const c1 = await post("/api/v1/tags", cookie, { name: "双域词" });
+    expect(c1.statusCode).toBe(201); // 异域同名不冲突
+    expect(c1.json().data.domain).toBe("customer");
+
+    expect((await post("/api/v1/tags", cookie, { name: "双域词" })).statusCode).toBe(409);
+    expect(
+      (await post("/api/v1/tags", cookie, { name: "双域词", domain: "material" })).statusCode,
+    ).toBe(409);
+  });
+
+  it("PATCH 改名：同域冲突 → 409；异域同名 → 200；PATCH 带 domain 键被 zod strip 不改域", async () => {
+    const { cookie } = await loginAsRole("admin");
+    await post("/api/v1/tags", cookie, { name: "资料甲", domain: "material" });
+    const matB = (await post("/api/v1/tags", cookie, { name: "资料乙", domain: "material" })).json()
+      .data;
+    await post("/api/v1/tags", cookie, { name: "客户丙" }); // customer 域
+
+    // 同域冲突 → 409
+    clock.t += 1000;
+    expect(
+      (
+        await patch(`/api/v1/tags/${matB.id}`, cookie, {
+          name: "资料甲",
+          updatedAt: matB.updatedAt,
+        })
+      ).statusCode,
+    ).toBe(409);
+
+    // 改成与客户域同名 → 200；携带的 domain 键被 strip，域不变
+    clock.t += 1000;
+    const ok = await patch(`/api/v1/tags/${matB.id}`, cookie, {
+      name: "客户丙",
+      domain: "customer",
+      updatedAt: matB.updatedAt, // 409 未写入，updatedAt 未变
+    });
+    expect(ok.statusCode).toBe(200);
+    expect(ok.json().data.name).toBe("客户丙");
+    expect(ok.json().data.domain).toBe("material");
+  });
+});

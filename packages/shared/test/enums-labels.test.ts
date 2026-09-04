@@ -34,6 +34,8 @@ import {
   socialPlatformSchema,
   systemRoleLabels,
   systemRoleSchema,
+  tagDomainLabels,
+  tagDomainSchema,
   tagScopeLabels,
   tagScopeSchema,
 } from "../src/index";
@@ -55,13 +57,14 @@ const ALL: [name: string, schema: z.ZodEnum<[string, ...string[]]>, labels: Reco
     ["dealStage", dealStageSchema, dealStageLabels],
     ["deliverableDimension", deliverableDimensionSchema, deliverableDimensionLabels],
     ["tagScope", tagScopeSchema, tagScopeLabels],
+    ["tagDomain", tagDomainSchema, tagDomainLabels],
     ["materialKind", materialKindSchema, materialKindLabels],
     ["maintenanceKind", maintenanceKindSchema, maintenanceKindLabels],
   ];
 
 describe("枚举与 labels 完整性（Appendix A.5 全量）", () => {
-  it("17 个枚举都在", () => {
-    expect(ALL).toHaveLength(17);
+  it("18 个枚举都在", () => {
+    expect(ALL).toHaveLength(18);
   });
 
   for (const [name, schema, labels] of ALL) {

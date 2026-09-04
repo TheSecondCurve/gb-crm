@@ -597,3 +597,195 @@ describe("DELETE /api/v1/materials/:id 软删", () => {
     expect((list.json().data as Material[]).map((x) => x.id)).not.toContain(m.id);
   });
 });
+
+// ---- K58 资料标签 ----
+
+async function createMaterialTag(
+  cookie: string,
+  name: string,
+): Promise<{ id: number; name: string }> {
+  const res = await post("/api/v1/tags", cookie, { name, domain: "material" });
+  expect(res.statusCode).toBe(201);
+  return res.json().data;
+}
+
+describe("资料标签（K58）：创建", () => {
+  it("tagIds 挂 material 域 live 词 → DTO.tags 展开；customer 域词 id → 422", async () => {
+    const { cookie } = await loginAsRole("admin");
+    const tag = await createMaterialTag(cookie, "逐字稿");
+    const customerTag = await post("/api/v1/tags", cookie, { name: "客户域词" });
+    expect(customerTag.statusCode).toBe(201);
+
+    const res = await post("/api/v1/materials", cookie, { ...TEXT, tagIds: [tag.id] });
+    expect(res.statusCode).toBe(201);
+    expect(res.json().data.tags).toEqual([{ id: tag.id, name: "逐字稿" }]);
+
+    const bad = await post("/api/v1/materials", cookie, {
+      ...TEXT,
+      tagIds: [customerTag.json().data.id],
+    });
+    expect(bad.statusCode).toBe(422);
+    expect(bad.json().error.code).toBe("VALIDATION");
+  });
+
+  it("newTagNames 自动建 material 域词（scope=other/enabled）并挂上；同名 live 资料词复用；与客户域同名互不影响", async () => {
+    const { cookie } = await loginAsRole("admin");
+    // 客户域已有「VIP」（domain 缺省 customer）
+    const vip = await post("/api/v1/tags", cookie, { name: "VIP" });
+    expect(vip.statusCode).toBe(201);
+    // 资料域已有 live 词「复盘」
+    const existing = await createMaterialTag(cookie, "复盘");
+
+    const res = await post("/api/v1/materials", cookie, {
+      ...TEXT,
+      newTagNames: ["金句", "复盘", "VIP"],
+    });
+    expect(res.statusCode).toBe(201);
+    const tags = res.json().data.tags as { id: number; name: string }[];
+    expect(tags.map((t) => t.name).sort()).toEqual(["VIP", "复盘", "金句"].sort());
+    // 「复盘」复用已有 live 词，不产生重复行
+    expect(tags.find((t) => t.name === "复盘")!.id).toBe(existing.id);
+    // 「VIP」新建的是 material 域行（与客户域「VIP」不同 id，互不影响）
+    expect(tags.find((t) => t.name === "VIP")!.id).not.toBe(vip.json().data.id);
+
+    // 词表核对：自建词 domain=material / scope=other / enabled=1
+    const row = tmp.sqlite
+      .prepare("SELECT domain, scope, enabled FROM tags WHERE id = ?")
+      .get(tags.find((t) => t.name === "金句")!.id) as {
+      domain: string;
+      scope: string;
+      enabled: number;
+    };
+    expect(row).toEqual({ domain: "material", scope: "other", enabled: 1 });
+    // 两域同名共存
+    const cnt = tmp.sqlite
+      .prepare("SELECT COUNT(*) AS c FROM tags WHERE name = 'VIP' AND deleted_at IS NULL")
+      .get() as { c: number };
+    expect(cnt.c).toBe(2);
+  });
+});
+
+describe("资料标签（K58）：PATCH 内核", () => {
+  it("tagIds 缺席不动；[] 清空；[ids] 整表替换；customer 域 id → 422；newTagNames 单独出现在现有基础上追加", async () => {
+    const { cookie } = await loginAsRole("admin");
+    const t1 = await createMaterialTag(cookie, "标签甲");
+    const t2 = await createMaterialTag(cookie, "标签乙");
+    const customerTag = (await post("/api/v1/tags", cookie, { name: "客户词" })).json().data;
+    const m = await createMaterial(cookie, { ...TEXT, tagIds: [t1.id] });
+
+    // tagIds 缺席 → 不动
+    clock.t += 1000;
+    const r1 = await patch(`/api/v1/materials/${m.id}`, cookie, {
+      title: "只改标题",
+      updatedAt: m.updatedAt,
+    });
+    expect(r1.statusCode).toBe(200);
+    expect(r1.json().data.tags).toEqual([{ id: t1.id, name: "标签甲" }]);
+
+    // newTagNames 单独出现 → 在现有标签基础上追加
+    clock.t += 1000;
+    const r2 = await patch(`/api/v1/materials/${m.id}`, cookie, {
+      newTagNames: ["标签丙"],
+      updatedAt: r1.json().data.updatedAt,
+    });
+    expect(r2.statusCode).toBe(200);
+    expect((r2.json().data.tags as { name: string }[]).map((t) => t.name).sort()).toEqual(
+      ["标签丙", "标签甲"].sort(),
+    );
+
+    // [ids] → 整表替换
+    clock.t += 1000;
+    const r3 = await patch(`/api/v1/materials/${m.id}`, cookie, {
+      tagIds: [t2.id],
+      updatedAt: r2.json().data.updatedAt,
+    });
+    expect(r3.statusCode).toBe(200);
+    expect(r3.json().data.tags).toEqual([{ id: t2.id, name: "标签乙" }]);
+
+    // customer 域 id → 422
+    const bad = await patch(`/api/v1/materials/${m.id}`, cookie, {
+      tagIds: [customerTag.id],
+      updatedAt: r3.json().data.updatedAt,
+    });
+    expect(bad.statusCode).toBe(422);
+
+    // [] → 清空
+    clock.t += 1000;
+    const r4 = await patch(`/api/v1/materials/${m.id}`, cookie, {
+      tagIds: [],
+      updatedAt: r3.json().data.updatedAt,
+    });
+    expect(r4.statusCode).toBe(200);
+    expect(r4.json().data.tags).toEqual([]);
+  });
+
+  it("OCC：旧 updatedAt → 409 且 data 带当前标签；已删 → 404", async () => {
+    const { cookie } = await loginAsRole("admin");
+    const t1 = await createMaterialTag(cookie, "占用");
+    const t2 = await createMaterialTag(cookie, "改后");
+    const m = await createMaterial(cookie, { ...TEXT, tagIds: [t1.id] });
+
+    clock.t += 1000;
+    const r1 = await patch(`/api/v1/materials/${m.id}`, cookie, {
+      tagIds: [t2.id],
+      updatedAt: m.updatedAt,
+    });
+    expect(r1.statusCode).toBe(200);
+    expect(r1.json().data.tags).toEqual([{ id: t2.id, name: "改后" }]);
+
+    clock.t += 1000;
+    const r2 = await patch(`/api/v1/materials/${m.id}`, cookie, {
+      tagIds: [],
+      updatedAt: m.updatedAt, // 过期
+    });
+    expect(r2.statusCode).toBe(409);
+    expect(r2.json().error.code).toBe("CONFLICT");
+    expect(r2.json().data.tags).toEqual([{ id: t2.id, name: "改后" }]);
+
+    expect((await del(`/api/v1/materials/${m.id}`, cookie)).statusCode).toBe(204);
+    expect(
+      (
+        await patch(`/api/v1/materials/${m.id}`, cookie, {
+          tagIds: [t1.id],
+          updatedAt: r1.json().data.updatedAt,
+        })
+      ).statusCode,
+    ).toBe(404);
+  });
+});
+
+describe("资料标签（K58）：tagId 过滤与 q 命中标签名", () => {
+  it("tagId 等值过滤；q ≥3 字符走 FTS 分支 OR、<3 字符走 LIKE 分支 OR；标签软删后不展开也不命中", async () => {
+    const { cookie } = await loginAsRole("admin");
+    const longTag = await createMaterialTag(cookie, "案例复盘"); // 4 字符 → FTS 分支
+    const shortTag = await createMaterialTag(cookie, "金句"); // 2 字符 → LIKE 分支
+    const m1 = await createMaterial(cookie, { ...TEXT, title: "无关标题甲", tagIds: [longTag.id] });
+    const m2 = await createMaterial(cookie, { ...TEXT, title: "无关标题乙", tagIds: [shortTag.id] });
+    await createMaterial(cookie, { ...TEXT, title: "无标签资料" });
+
+    // tagId 等值过滤
+    const byTag = await get(`/api/v1/materials?tagId=${longTag.id}`, cookie);
+    expect(byTag.json().meta.total).toBe(1);
+    expect(byTag.json().data[0].id).toBe(m1.id);
+
+    // q ≥3 字符：标题/正文不含该词，仅标签名命中（FTS 分支 OR 标签命中）
+    const qLong = await get(`/api/v1/materials?q=${encodeURIComponent("案例复盘")}`, cookie);
+    expect(qLong.json().meta.total).toBe(1);
+    expect(qLong.json().data[0].id).toBe(m1.id);
+
+    // q <3 字符：LIKE 分支 OR 标签命中
+    const qShort = await get(`/api/v1/materials?q=${encodeURIComponent("金句")}`, cookie);
+    expect(qShort.json().meta.total).toBe(1);
+    expect(qShort.json().data[0].id).toBe(m2.id);
+
+    // 标签软删：不再展开，q 不再命中；tagId 过滤仍命中（软删不剥 join 行，同 customer_tags 语义 K9）
+    expect((await del(`/api/v1/tags/${longTag.id}`, cookie)).statusCode).toBe(204);
+    const detail = await get(`/api/v1/materials/${m1.id}`, cookie);
+    expect(detail.json().data.tags).toEqual([]);
+    expect(
+      (await get(`/api/v1/materials?q=${encodeURIComponent("案例复盘")}`, cookie)).json().meta
+        .total,
+    ).toBe(0);
+    expect((await get(`/api/v1/materials?tagId=${longTag.id}`, cookie)).json().meta.total).toBe(1);
+  });
+});

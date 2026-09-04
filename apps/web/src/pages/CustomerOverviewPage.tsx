@@ -1,5 +1,5 @@
 // 客户总览页（K45–K48）：基本信息 + AI 打标 + 客户统计 + 消费记录 + 当前有效交付圈子。
-import { useMemo, useState } from "react";
+import { Fragment, useMemo, useState } from "react";
 import { Check, Plus, X } from "@phosphor-icons/react";
 import { useQuery } from "@tanstack/react-query";
 import { can, customerTypeLabels, MATERIAL_FILE_KIND, maintenanceKindLabels, materialKindLabels } from "@gb-crm/shared";
@@ -448,6 +448,9 @@ export function CustomerOverviewPage() {
                   {m.title}
                   <span className="badge-wrap">
                     {badge(materialKindLabels[m.kind as keyof typeof materialKindLabels] ?? m.kind)}
+                    {m.tags.map((t) => (
+                      <Fragment key={t.id}>{badge(t.name, "muted")}</Fragment>
+                    ))}
                   </span>
                 </div>
                 <div className="item-meta">

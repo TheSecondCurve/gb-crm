@@ -1,5 +1,6 @@
 // 交付资料只读查看弹窗（K54 改造）：标题 + kind 徽章 + 关联交付/客户 + 可点链接 + Markdown 渲染的完整 content。
 // 调用方先 GET /materials/:id 拿 DetailDto 再打开；canUpdate + 文本类时底部给「编辑全文」入口。
+import { Fragment } from "react";
 import { useNavigate } from "react-router-dom";
 import { MATERIAL_FILE_KIND, MATERIAL_TEXT_KINDS, materialKindLabels } from "@gb-crm/shared";
 
@@ -45,6 +46,15 @@ export function MaterialViewModal({ material, canUpdate = false, onClose }: Mate
             <span className="chip" key={c.id}>
               {c.nickname}
             </span>
+          ))}
+        </span>
+      </div>
+      <div className="detail-row">
+        <span className="detail-label">标签</span>
+        <span className="detail-chips">
+          {material.tags.length === 0 && <span className="muted-text">—</span>}
+          {material.tags.map((t) => (
+            <Fragment key={t.id}>{badge(t.name, "muted")}</Fragment>
           ))}
         </span>
       </div>

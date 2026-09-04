@@ -413,12 +413,13 @@ function ensureAiTag(
   ctx: AuditContext,
   budget: NewTagBudget,
 ): number | undefined {
-  const existing = getLiveTagByName(db, name);
+  const existing = getLiveTagByName(db, name, { domain: "customer" });
   if (existing) return existing.id;
   if (budget.used >= budget.max) return undefined;
   const audit = createAudit(ctx);
   const id = insertTag(db, {
     name,
+    domain: "customer",
     scope,
     sort: maxTagSort(db) + 1,
     enabled: 1,

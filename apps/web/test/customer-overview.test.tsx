@@ -301,6 +301,7 @@ describe("客户总览页", () => {
       deliveryId: 21,
       delivery: { id: 21, deliveryType: { id: 5, name: "私董圈子", kind: "circle" }, startsAt: 1700, endsAt: null },
       customers: [{ id: 1, nickname: "张三" }],
+      tags: [],
       createdAt: 1600,
       updatedAt: 1700,
       createdBy: null,

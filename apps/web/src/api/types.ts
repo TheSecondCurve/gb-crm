@@ -45,8 +45,9 @@ export interface TagRefDto {
   scope: string;
 }
 
-/** K45 标签词表项（设置页 CRUD） */
+/** K45 标签词表项（设置页 CRUD）；K58：`domain` 分域（customer/material） */
 export interface TagDto extends TagRefDto {
+  domain: string;
   sort: number;
   enabled: boolean;
   createdAt: number;
@@ -256,6 +257,8 @@ export interface MaterialDto {
   deliveryId: number | null;
   delivery: MaterialDeliveryRefDto | null;
   customers: { id: number; nickname: string }[];
+  /** K58：资料标签（仅 live，按 sort,name 排序） */
+  tags: { id: number; name: string }[];
   createdAt: number;
   updatedAt: number;
   createdBy: UserRefDto | null;
