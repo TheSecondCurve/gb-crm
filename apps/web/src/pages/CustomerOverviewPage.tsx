@@ -2,10 +2,11 @@
 import { useMemo, useState } from "react";
 import { Check, Plus, X } from "@phosphor-icons/react";
 import { useQuery } from "@tanstack/react-query";
-import { can, customerTypeLabels, maintenanceKindLabels, materialKindLabels } from "@gb-crm/shared";
+import { can, customerTypeLabels, MATERIAL_FILE_KIND, maintenanceKindLabels, materialKindLabels } from "@gb-crm/shared";
 import { useNavigate, useParams } from "react-router-dom";
 
 import { api, ApiError } from "../api/client";
+import { materialFileUrl } from "../api/materials";
 import type {
   CustomerMaintenanceRecordDto,
   CustomerOverviewDto,
@@ -458,6 +459,9 @@ export function CustomerOverviewPage() {
                 <button type="button" onClick={() => void openMaterial(m.id)}>
                   查看
                 </button>
+                {m.kind === MATERIAL_FILE_KIND && (
+                  <a href={materialFileUrl(m.id, true)}>下载</a>
+                )}
               </div>
             </div>
           ))}

@@ -1,6 +1,6 @@
 ---
 name: gb-crm
-version: 0.8.5
+version: 0.8.6
 description: >
   女商 私域运营管理端（gb-crm）本机 HTTP 客户端。用 ~/.gb-crm/credentials.json 的 PAT
   通过单一 SQL 端点查询或维护客户、渠道、产品、团队成员、成交记录、交付管理与咨询资料。
@@ -205,7 +205,7 @@ UPDATE customers SET owner_id = ?, updated_at = ?, updated_by = ? WHERE id = ?;
 
 领域模型：**每一场咨询服务 = 一条 `deliveries`**（无父子记录）。三类服务对应三条交付类型数据：微博365连麦、线下1v1咨询（kind=`consulting`），商业下午茶（kind=`activity`，一场 5-6 人，客户走 `delivery_customers`）。资料是场次的产出物，可挂交付单也可不挂（**孤儿资料允许**——整理旧资料时先导入、后补关联）。
 
-- `delivery_materials`（资料）：`delivery_id`（**可空** FK → deliveries.id，NULL = 未关联场次的孤儿）/ `kind`（`transcript` 录音文字稿 / `text` 文本资料 / `audio` 音频 / `video` 视频 / `link` 其他链接）/ `title`（必填，标题+说明）/ `url`（媒体类必填）/ `content`（**文本类全文**，可上万字）；审计四列 + `deleted_at` 软删。组合约束（管理端 Zod 强制，写 SQL 时自觉遵守）：`transcript`/`text` 必须有 `content`，`audio`/`video`/`link` 必须有 `url`。
+- `delivery_materials`（资料）：`delivery_id`（**可空** FK → deliveries.id，NULL = 未关联场次的孤儿）/ `kind`（`transcript` 录音文字稿 / `text` 文本资料 / `audio` 音频 / `video` 视频 / `link` 其他链接 / `file` 对象存储）/ `title`（必填，标题+说明）/ `url`（媒体类必填）/ `content`（**文本类全文**，可上万字）/ `object_key` / `content_type` / `file_size` / `original_filename`（仅 `kind=file`）；审计四列 + `deleted_at` 软删。组合约束（管理端 Zod 强制，写 SQL 时自觉遵守）：`transcript`/`text` 必须有 `content`，`audio`/`video`/`link` 必须有 `url`，`file` 必须有 `object_key`（文件走管理端上传，不要手写 SQL 塞二进制）。
 - `delivery_material_customers`（资料 × 客户 M2M）：`(material_id, customer_id)` 复合 PK，0..N——**一份资料可属多个人**（如下午茶整场录音稿挂全部参会者），0 行 = 未关联客户；**硬删**，无审计列。
 
 全文搜索（FTS5，`trigram` 分词，中文子串友好）：
@@ -270,7 +270,7 @@ INSERT OR IGNORE INTO customer_tags (customer_id, tag_id, created_at, created_by
 - deal stage：`gift` 赠送 / `paid` 已付款 / `refunded` 退款 / `closed` 已关闭
 - deliverable dimension：`project` 项目 / `customer` 客户
 - delivery_type kind：`consulting` 咨询类 / `activity` 活动类 / `circle` 圈子类 / `other` 其他类；status：`active` 有效 / `inactive` 失效
-- material kind（K54）：`transcript` 录音文字稿 / `text` 文本资料 / `audio` 音频 / `video` 视频 / `link` 其他链接
+- material kind（K54/K57）：`transcript` 录音文字稿 / `text` 文本资料 / `audio` 音频 / `video` 视频 / `link` 其他链接 / `file` 对象存储
 - maintenance kind（K55）：`follow_up` 跟进 / `status_change` 状态变化 / `lead` 线索 / `note` 备注 / `other` 其他
 
 对用户列出结果时用昵称/名称与中文 label，不要甩一堆 id 和 code；需要跟进时再附 id。

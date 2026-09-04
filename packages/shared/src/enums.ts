@@ -114,9 +114,19 @@ export type DeliveryTypeStatus = z.infer<typeof deliveryTypeStatusSchema>;
 export const tagScopeSchema = z.enum(["identity", "stage", "interest", "other"]);
 export type TagScope = z.infer<typeof tagScopeSchema>;
 
-/** 资料类型（K54：录音文字稿 / 文本资料全文入库；音视频/链接只存 url + 说明） */
-export const materialKindSchema = z.enum(["transcript", "text", "audio", "video", "link"]);
+/** 资料类型（K54：录音文字稿 / 文本资料全文入库；音视频/链接只存 url + 说明；K57：file 对象存储） */
+export const materialKindSchema = z.enum(["transcript", "text", "audio", "video", "link", "file"]);
 export type MaterialKind = z.infer<typeof materialKindSchema>;
+
+/** 文本类：content 入库，可空后补 */
+export const MATERIAL_TEXT_KINDS: readonly MaterialKind[] = ["transcript", "text"];
+/** 媒体类：url 必填 */
+export const MATERIAL_MEDIA_KINDS: readonly MaterialKind[] = ["audio", "video", "link"];
+/** 对象存储类：multipart 上传到 materialsS3，不走 JSON POST */
+export const MATERIAL_FILE_KIND: MaterialKind = "file";
+
+/** 对象存储资料文件大小上限（32MB） */
+export const MATERIAL_FILE_MAX_BYTES = 32 * 1024 * 1024;
 
 /** 客户维护记录类型（K55：跟进联系 / 状态变化 / 线索意向 / 一般备注 / 其他） */
 export const maintenanceKindSchema = z.enum([

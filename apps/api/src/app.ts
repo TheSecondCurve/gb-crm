@@ -3,8 +3,11 @@
 // PR 14：NODE_ENV=production 时注册 static-spa（托管 apps/web/dist + SPA fallback，K20）。
 // env 与 db 由调用方注入（生产 index.ts 用真实 env+db，测试注入临时库与假时钟）。
 import helmet from "@fastify/helmet";
+import multipart from "@fastify/multipart";
 import rateLimit from "@fastify/rate-limit";
 import fastify, { type FastifyInstance, type FastifyServerOptions } from "fastify";
+
+import { MATERIAL_FILE_MAX_BYTES } from "@gb-crm/shared";
 
 import type { Db } from "./db/client.js";
 import type { AppEnv } from "./env.js";
@@ -65,6 +68,9 @@ export function buildApp(options: BuildAppOptions): FastifyInstance {
   const production = env.NODE_ENV === "production";
   registerErrorHandler(app, production ? { notFound: spaNotFoundHandler } : {});
   void app.register(helmet);
+  void app.register(multipart, {
+    limits: { fileSize: MATERIAL_FILE_MAX_BYTES, files: 1, fields: 16 },
+  });
   registerCookie(app, env.SESSION_SECRET);
   // 限流仅挂 login 路由（global: false + 路由 config.rateLimit）；键为 request.ip（尊重 trustProxy）
   void app.register(rateLimit, { global: false });
@@ -87,7 +93,7 @@ export function buildApp(options: BuildAppOptions): FastifyInstance {
     dealsRoutes(instance, { db, now: clock });
     deliveriesRoutes(instance, { db, now: clock });
     tagsRoutes(instance, { db, now: clock });
-    materialsRoutes(instance, { db, now: clock });
+    materialsRoutes(instance, { db, now: clock, s3Fetch });
     systemRoutes(instance, { db, now: clock, s3Fetch });
     jobsRoutes(instance, { db, now: clock });
     jobSchedulesRoutes(instance, { db, now: clock });

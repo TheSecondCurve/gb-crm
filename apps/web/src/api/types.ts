@@ -77,6 +77,18 @@ export interface S3ConfigDto {
   keep: number;
 }
 
+/** K57 资料存储（无 keep） */
+export interface MaterialsS3ConfigDto {
+  enabled: boolean;
+  endpoint: string | null;
+  region: string | null;
+  bucket: string | null;
+  prefix: string | null;
+  accessKeyId: string | null;
+  secretKeySet: boolean;
+  secretKeyMasked: string | null;
+}
+
 /** K50 批量生成标签结果（逐客户串行，LLM 失败跳过计数） */
 export interface BulkTagGenerateResultDto {
   total: number;
@@ -236,6 +248,11 @@ export interface MaterialDto {
   contentLength: number;
   /** 内容前 100 字符；无内容 → null */
   excerpt: string | null;
+  /** K57 对象存储元数据（非 file → null / false） */
+  originalFilename: string | null;
+  contentType: string | null;
+  fileSize: number | null;
+  isImage: boolean;
   deliveryId: number | null;
   delivery: MaterialDeliveryRefDto | null;
   customers: { id: number; nickname: string }[];

@@ -111,6 +111,21 @@ describe("CHECK constraints", () => {
     ).toThrowError(/CHECK/i);
   });
 
+  it("accepts delivery_materials.kind=file and rejects unknown kind", () => {
+    tmp.sqlite
+      .prepare(
+        "INSERT INTO delivery_materials (kind, title, created_at, updated_at) VALUES ('file', 'x', 1, 1)",
+      )
+      .run();
+    expect(() =>
+      tmp.sqlite
+        .prepare(
+          "INSERT INTO delivery_materials (kind, title, created_at, updated_at) VALUES ('blob', 'x', 1, 1)",
+        )
+        .run(),
+    ).toThrowError(/CHECK/i);
+  });
+
   it("rejects an invalid customer_social_accounts.platform", () => {
     tmp.sqlite
       .prepare("INSERT INTO customers (nickname, created_at, updated_at) VALUES (?, 1, 1)")

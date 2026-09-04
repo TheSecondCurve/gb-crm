@@ -162,6 +162,9 @@ describe("material schemas（K54）", () => {
     ).toBe(true);
     expect(materialWriteSchema.safeParse({ ...base, kind: "audio" }).success).toBe(false);
     expect(materialWriteSchema.safeParse({ ...base, kind: "link" }).success).toBe(false);
+    // K57：file 走上传接口，JSON POST 拒绝
+    expect(materialWriteSchema.safeParse({ ...base, kind: "file" }).success).toBe(false);
+    expect(materialWriteSchema.safeParse({ ...base, kind: "file", title: "图" }).success).toBe(false);
   });
 
   it("关联可空（孤儿允许）：deliveryId nullish、customerIds 可缺席", () => {

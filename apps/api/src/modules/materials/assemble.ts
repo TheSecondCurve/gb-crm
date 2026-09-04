@@ -10,6 +10,7 @@ import type { Db } from "../../db/client.js";
 import { customers, deliveries, deliveryTypes, users } from "../../db/schema.js";
 import type { CustomerRef } from "../deliveries/assemble.js";
 import type { UserRef } from "../users/assemble.js";
+import { isPreviewableImage } from "./file-meta.js";
 import { listMaterialCustomerRows, type MaterialRow } from "./repo.js";
 
 export interface MaterialDeliveryRef {
@@ -29,6 +30,12 @@ export interface MaterialDto {
   contentLength: number;
   /** content 前 100 字符（content 为 null → null） */
   excerpt: string | null;
+  /** K57 对象存储：原始文件名（非 file → null） */
+  originalFilename: string | null;
+  contentType: string | null;
+  fileSize: number | null;
+  /** 可在线预览的图片（jpeg/png/gif/webp/bmp） */
+  isImage: boolean;
   deliveryId: number | null;
   delivery: MaterialDeliveryRef | null;
   customers: CustomerRef[];
@@ -125,6 +132,10 @@ function assembleInternal(db: Db, rows: readonly MaterialRow[]): MaterialDto[] {
     url: row.url,
     contentLength: row.content?.length ?? 0,
     excerpt: row.content === null ? null : row.content.slice(0, EXCERPT_LEN),
+    originalFilename: row.originalFilename,
+    contentType: row.contentType,
+    fileSize: row.fileSize,
+    isImage: row.kind === "file" && isPreviewableImage(row.contentType, row.originalFilename),
     deliveryId: row.deliveryId,
     delivery: row.deliveryId === null ? null : (deliveryRefs.get(row.deliveryId) ?? null),
     customers: customersByMaterial.get(row.id) ?? [],

@@ -1,9 +1,10 @@
 import { useCallback, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { can, deliverableDimensionLabels, materialKindLabels } from "@gb-crm/shared";
+import { can, deliverableDimensionLabels, MATERIAL_FILE_KIND, materialKindLabels } from "@gb-crm/shared";
 import { useNavigate, useParams } from "react-router-dom";
 
 import { api, ApiError, buildQuery } from "../api/client";
+import { materialFileUrl, shouldOpenEditor, submitMaterial } from "../api/materials";
 import type { DeliverableDto, DeliveryDto, MaterialDetailDto, MaterialDto } from "../api/types";
 import { useAuth } from "../auth/AuthProvider";
 import { badge, optionsOf, type BadgeTone } from "../columns/common";
@@ -137,29 +138,28 @@ export function DeliveryDetailPage() {
     }
   };
 
-  const saveMaterial = async (body: Record<string, unknown>, existing: MaterialDetailDto | null) => {
+  const saveMaterial = async (
+    body: Record<string, unknown>,
+    existing: MaterialDetailDto | null,
+    file?: File,
+  ) => {
     setBusy(true);
     try {
+      const saved = await submitMaterial(body, file, existing);
+      setCreatingMaterial(false);
+      setEditingMaterial(null);
+      await refetchMaterials();
       if (existing) {
-        await api.patch(`/materials/${existing.id}`, body);
-        setCreatingMaterial(false);
-        setEditingMaterial(null);
-        await refetchMaterials();
         showToast("已保存");
       } else {
-        const res = await api.post<{ data: MaterialDetailDto }>("/materials", body);
-        setCreatingMaterial(false);
-        setEditingMaterial(null);
-        await refetchMaterials();
         showToast("已创建资料");
-        // 新建成功后直接进全文编辑页补录正文
-        if (res?.data) navigate(`/materials/${res.data.id}/edit`);
+        if (saved && shouldOpenEditor(saved.kind)) navigate(`/materials/${saved.id}/edit`);
       }
     } catch (err) {
       showToast(
         err instanceof ApiError && err.status === 409
           ? "该行已被他人更新，请刷新后重试"
-          : err instanceof ApiError
+          : err instanceof Error
             ? err.message
             : "保存失败，请稍后重试",
       );
@@ -328,6 +328,9 @@ export function DeliveryDetailPage() {
                 <button type="button" onClick={() => void openMaterial(m.id, setViewingMaterial)}>
                   查看
                 </button>
+                {m.kind === MATERIAL_FILE_KIND && (
+                  <a href={materialFileUrl(m.id, true)}>下载</a>
+                )}
                 {canUpdateMaterial && (m.kind === "transcript" || m.kind === "text") && (
                   <button type="button" onClick={() => navigate(`/materials/${m.id}/edit`)}>
                     编辑内容
@@ -390,7 +393,7 @@ export function DeliveryDetailPage() {
           fixedDeliveryId={deliveryId}
           busy={busy}
           onClose={() => setCreatingMaterial(false)}
-          onSubmit={(body) => saveMaterial(body, null)}
+          onSubmit={(body, file) => saveMaterial(body, null, file)}
         />
       )}
       {editingMaterial && (
@@ -400,7 +403,7 @@ export function DeliveryDetailPage() {
           fixedDeliveryId={deliveryId}
           busy={busy}
           onClose={() => setEditingMaterial(null)}
-          onSubmit={(body) => saveMaterial(body, editingMaterial)}
+          onSubmit={(body, file) => saveMaterial(body, editingMaterial, file)}
         />
       )}
       {viewingMaterial && (

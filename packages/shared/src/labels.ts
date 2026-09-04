@@ -157,6 +157,7 @@ export const materialKindLabels: Record<MaterialKind, string> = {
   audio: "音频",
   video: "视频",
   link: "其他链接",
+  file: "对象存储",
 };
 
 export const maintenanceKindLabels: Record<MaintenanceKind, string> = {
