@@ -13,6 +13,10 @@ const m1: MaterialDto = {
   url: null,
   contentLength: 5000,
   excerpt: "各位好，欢迎来到开营仪式……",
+  originalFilename: null,
+  contentType: null,
+  fileSize: null,
+  isImage: false,
   deliveryId: 11,
   delivery: {
     id: 11,
@@ -35,6 +39,10 @@ const m2: MaterialDto = {
   url: "https://example.com/a.mp3",
   contentLength: 0,
   excerpt: null,
+  originalFilename: null,
+  contentType: null,
+  fileSize: null,
+  isImage: false,
   deliveryId: null,
   delivery: null,
   customers: [],
@@ -97,6 +105,26 @@ function mockMaterialsApi(me: Me, rows: MaterialDto[] = [m1, m2]) {
         return { status: 200, body: { data: rows, meta: { page: 1, pageSize: 25, total: rows.length } } };
       }
       if (method === "POST") {
+        if (url === "/api/v1/materials/upload") {
+          const form = typeof FormData !== "undefined" && init?.body && typeof init.body === "object" && "get" in init.body
+            ? (init.body as FormData)
+            : null;
+          return {
+            status: 201,
+            body: {
+              data: {
+                ...m2,
+                id: 99,
+                kind: "file",
+                title: form?.get("title") ?? "对象",
+                originalFilename: "a.png",
+                contentType: "image/png",
+                fileSize: 12,
+                isImage: true,
+              },
+            },
+          };
+        }
         const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
         return { status: 201, body: { data: { ...m2, id: 99, ...body } } };
       }
@@ -318,6 +346,27 @@ describe("资料专区", () => {
       const gets = calls.filter((c) => c.method === "GET" && c.url.startsWith("/api/v1/materials?"));
       expect(gets.length).toBeGreaterThanOrEqual(2);
     });
+  });
+
+  it("新增对象存储资料：切到对象存储 → 文件输入出现；FormData 上传不跳编辑页", async () => {
+    const calls = mockMaterialsApi(adminMe);
+    renderApp("/materials");
+    await screen.findByText("开营录音文字稿");
+
+    fireEvent.click(screen.getByRole("button", { name: "新增资料" }));
+    const dialog = screen.getByRole("dialog", { name: "新增资料" });
+    fireEvent.change(within(dialog).getByLabelText(/资料类型/), { target: { value: "file" } });
+    expect(within(dialog).queryByLabelText(/链接/)).toBeNull();
+    expect(within(dialog).getByLabelText(/文件/)).toBeTruthy();
+    fireEvent.change(within(dialog).getByLabelText(/标题/), { target: { value: "现场照片" } });
+    const file = new File([new Uint8Array([1, 2, 3])], "a.png", { type: "image/png" });
+    fireEvent.change(within(dialog).getByLabelText(/文件/), { target: { files: [file] } });
+    fireEvent.click(within(dialog).getByRole("button", { name: "创建" }));
+    await waitFor(() => {
+      const post = calls.find((c) => c.method === "POST" && c.url === "/api/v1/materials/upload");
+      expect(post).toBeTruthy();
+    });
+    expect(screen.queryByLabelText("正文内容")).toBeNull();
   });
 
   it("assistant 只读：无新增/修改/删除，仅查看", async () => {

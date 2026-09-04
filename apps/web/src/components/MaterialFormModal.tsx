@@ -4,7 +4,7 @@
 // 修改模式提交带 updatedAt（行级 OCC）；校验失败/409 由调用方 toast。
 import { useState, type FormEvent } from "react";
 import { useNavigate } from "react-router-dom";
-import { materialKindLabels } from "@gb-crm/shared";
+import { MATERIAL_FILE_KIND, MATERIAL_TEXT_KINDS, materialKindLabels } from "@gb-crm/shared";
 
 import type { MaterialDetailDto } from "../api/types";
 import { optionsOf } from "../columns/common";
@@ -12,8 +12,6 @@ import { customerLabelCache, customerOptionsLoader, deliveryLabelCache, delivery
 import { EntityPicker } from "./EntityPicker";
 import { Modal } from "./Modal";
 import { useToast } from "./Toast";
-
-const TEXT_KINDS: readonly string[] = ["transcript", "text"];
 
 interface MaterialFormModalProps {
   title: string;
@@ -23,7 +21,7 @@ interface MaterialFormModalProps {
   fixedDeliveryId?: number;
   busy: boolean;
   onClose: () => void;
-  onSubmit: (body: Record<string, unknown>) => Promise<void>;
+  onSubmit: (body: Record<string, unknown>, file?: File) => Promise<void>;
 }
 
 export function MaterialFormModal({ title, material, fixedDeliveryId, busy, onClose, onSubmit }: MaterialFormModalProps) {
@@ -44,16 +42,36 @@ export function MaterialFormModal({ title, material, fixedDeliveryId, busy, onCl
   const [materialTitle, setMaterialTitle] = useState(material?.title ?? "");
   const [content, setContent] = useState(material?.content ?? "");
   const [url, setUrl] = useState(material?.url ?? "");
+  const [file, setFile] = useState<File | null>(null);
   const [deliveryId, setDeliveryId] = useState<number | null>(material?.deliveryId ?? null);
   const [selected, setSelected] = useState<number[]>(material ? material.customers.map((c) => c.id) : []);
 
-  const textKind = TEXT_KINDS.includes(kind);
+  const textKind = (MATERIAL_TEXT_KINDS as readonly string[]).includes(kind);
+  const fileKind = kind === MATERIAL_FILE_KIND;
   const lockDelivery = fixedDeliveryId !== undefined;
+  const lockKind = editing && material.kind === MATERIAL_FILE_KIND;
 
   const handleSubmit = (e: FormEvent) => {
     e.preventDefault();
     if (!materialTitle.trim()) {
       showToast("请填写资料标题");
+      return;
+    }
+    if (fileKind) {
+      if (!editing && !file) {
+        showToast("请选择要上传的文件");
+        return;
+      }
+      void onSubmit(
+        {
+          ...(material ? { updatedAt: material.updatedAt } : {}),
+          kind,
+          title: materialTitle.trim(),
+          deliveryId: lockDelivery ? fixedDeliveryId : deliveryId,
+          customerIds: selected,
+        },
+        file ?? undefined,
+      );
       return;
     }
     if (!textKind && !url.trim()) {
@@ -78,7 +96,7 @@ export function MaterialFormModal({ title, material, fixedDeliveryId, busy, onCl
       <form className="form-grid" onSubmit={handleSubmit}>
         <label className="field">
           资料类型<span className="req-star">*</span>
-          <select value={kind} onChange={(e) => setKind(e.target.value)}>
+          <select value={kind} onChange={(e) => setKind(e.target.value)} disabled={lockKind}>
             {optionsOf(materialKindLabels).map((o) => (
               <option key={o.value} value={o.value}>
                 {o.label}
@@ -95,6 +113,19 @@ export function MaterialFormModal({ title, material, fixedDeliveryId, busy, onCl
             内容（初稿，可选）
             <textarea rows={4} value={content} onChange={(e) => setContent(e.target.value)} />
             <span className="muted-text">可在创建后进入全文编辑器完善</span>
+          </label>
+        ) : fileKind ? (
+          <label className="field field-span">
+            文件{editing ? "" : <span className="req-star">*</span>}
+            <input
+              type="file"
+              onChange={(e) => setFile(e.target.files?.[0] ?? null)}
+            />
+            <span className="muted-text">
+              {editing
+                ? `当前：${material.originalFilename ?? "已上传"}；重新选择则替换（≤32MB）`
+                : "上传到资料存储（≤32MB）。图片可在线预览，其他文件可下载。"}
+            </span>
           </label>
         ) : (
           <label className="field field-span">

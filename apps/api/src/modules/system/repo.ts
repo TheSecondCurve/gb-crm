@@ -1,6 +1,7 @@
 // system_configs 通用配置表访问（K50）。跨模块复用：system 路由 + customers AI 打标端点。
 // 存储形态：code 主键 + value JSON 字符串；LLM 配置 code='llm'（provider/baseUrl/apiKey/model），
-// S3 远程备份配置 code='s3'（K53：enabled/endpoint/region/bucket/prefix/accessKeyId/secretAccessKey）。
+// S3 远程备份配置 code='s3'（K53：enabled/endpoint/region/bucket/prefix/accessKeyId/secretAccessKey），
+// 资料存储配置 code='materialsS3'（K57：同凭证字段，无 keep）。
 import { eq } from "drizzle-orm";
 
 import type { CommissionDefaultRule, PageAccessConfig, PageKey } from "@gb-crm/shared";
@@ -14,6 +15,8 @@ export const LLM_CONFIG_CODE = "llm";
 export const PAGE_ACCESS_CONFIG_CODE = "pageAccess";
 /** S3 兼容对象存储远程备份（K53） */
 export const S3_CONFIG_CODE = "s3";
+/** S3 兼容对象存储资料文件（K57） */
+export const MATERIALS_S3_CONFIG_CODE = "materialsS3";
 /** K56 成交分成的全局默认方案 */
 export const COMMISSION_DEFAULT_CODE = "commissionDefault";
 
@@ -152,7 +155,8 @@ export const DEFAULT_S3_KEEP = 7;
 export const MIN_S3_KEEP = 1;
 export const MAX_S3_KEEP = 30;
 
-export interface S3ConfigValue {
+/** S3 兼容凭证（备份 / 资料存储共用四要素 + enabled/region/prefix） */
+export interface S3CredentialsValue {
   enabled: boolean;
   endpoint: string | null;
   region: string | null;
@@ -161,11 +165,14 @@ export interface S3ConfigValue {
   prefix: string | null;
   accessKeyId: string | null;
   secretAccessKey: string | null;
+}
+
+export interface S3ConfigValue extends S3CredentialsValue {
   /** 远端滚动保留份数（1~30，默认 7） */
   keep: number;
 }
 
-function parseS3Value(json: string): S3ConfigValue | undefined {
+function parseS3Credentials(json: string): S3CredentialsValue | undefined {
   let parsed: unknown;
   try {
     parsed = JSON.parse(json);
@@ -174,11 +181,6 @@ function parseS3Value(json: string): S3ConfigValue | undefined {
   }
   if (typeof parsed !== "object" || parsed === null) return undefined;
   const obj = parsed as Record<string, unknown>;
-  const rawKeep = obj.keep;
-  let keep = DEFAULT_S3_KEEP;
-  if (typeof rawKeep === "number" && Number.isInteger(rawKeep) && rawKeep >= MIN_S3_KEEP && rawKeep <= MAX_S3_KEEP) {
-    keep = rawKeep;
-  }
   return {
     enabled: obj.enabled === true,
     endpoint: strOrNull(obj.endpoint),
@@ -187,8 +189,25 @@ function parseS3Value(json: string): S3ConfigValue | undefined {
     prefix: strOrNull(obj.prefix),
     accessKeyId: strOrNull(obj.accessKeyId),
     secretAccessKey: strOrNull(obj.secretAccessKey),
-    keep,
   };
+}
+
+function parseS3Value(json: string): S3ConfigValue | undefined {
+  const creds = parseS3Credentials(json);
+  if (!creds) return undefined;
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(json);
+  } catch {
+    return undefined;
+  }
+  const obj = parsed as Record<string, unknown>;
+  const rawKeep = obj.keep;
+  let keep = DEFAULT_S3_KEEP;
+  if (typeof rawKeep === "number" && Number.isInteger(rawKeep) && rawKeep >= MIN_S3_KEEP && rawKeep <= MAX_S3_KEEP) {
+    keep = rawKeep;
+  }
+  return { ...creds, keep };
 }
 
 export function getS3Config(db: Db): S3ConfigValue | undefined {
@@ -220,9 +239,36 @@ export function upsertS3Config(
 }
 
 /** 启用远程上传所需的四要素是否齐备（region/prefix 可缺省） */
-export function isS3RemoteReady(cfg: S3ConfigValue): boolean {
+export function isS3RemoteReady(cfg: S3CredentialsValue): boolean {
   return (
     cfg.endpoint !== null && cfg.bucket !== null && cfg.accessKeyId !== null && cfg.secretAccessKey !== null
+  );
+}
+
+export function getMaterialsS3Config(db: Db): S3CredentialsValue | undefined {
+  const row = getConfigRow(db, MATERIALS_S3_CONFIG_CODE);
+  if (!row) return undefined;
+  return parseS3Credentials(row.value);
+}
+
+export function upsertMaterialsS3Config(
+  db: Db,
+  values: S3CredentialsValue & { updatedAt: number; updatedBy: number | null },
+): void {
+  upsertConfigRow(
+    db,
+    MATERIALS_S3_CONFIG_CODE,
+    JSON.stringify({
+      enabled: values.enabled,
+      endpoint: values.endpoint,
+      region: values.region,
+      bucket: values.bucket,
+      prefix: values.prefix,
+      accessKeyId: values.accessKeyId,
+      secretAccessKey: values.secretAccessKey,
+    }),
+    values.updatedAt,
+    values.updatedBy,
   );
 }
 

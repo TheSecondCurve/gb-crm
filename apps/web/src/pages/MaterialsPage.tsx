@@ -3,9 +3,16 @@
 // kind 下拉（filterKey="kind"）+ 「仅看未关联」checkbox（受控 state 拼进 fixedQuery，不改 hook）。
 import { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { can, deliveryTypeKindLabels, materialKindLabels } from "@gb-crm/shared";
+import {
+  can,
+  deliveryTypeKindLabels,
+  MATERIAL_FILE_KIND,
+  MATERIAL_TEXT_KINDS,
+  materialKindLabels,
+} from "@gb-crm/shared";
 
 import { api, ApiError } from "../api/client";
+import { formatFileSize, materialFileUrl, shouldOpenEditor, submitMaterial } from "../api/materials";
 import type { MaterialDetailDto, MaterialDto } from "../api/types";
 import { useAuth } from "../auth/AuthProvider";
 import { badge, epochMsToDate, formatDateTime, optionsOf, type BadgeTone } from "../columns/common";
@@ -17,9 +24,7 @@ import { SearchBar } from "../components/SearchBar";
 import { useToast } from "../components/Toast";
 import { useResourceList } from "./useResourceList";
 
-const KIND_TONES: Record<string, BadgeTone> = { transcript: "accent" };
-
-const TEXT_KINDS: readonly string[] = ["transcript", "text"];
+const KIND_TONES: Record<string, BadgeTone> = { transcript: "accent", file: "accent" };
 
 /** 资料专区 tab：按关联交付类型分组。consulting/activity/circle 对应类型；other 兜底（未关联 + 类型为 other）。 */
 const DELIVERY_KIND_TABS: { value: string; label: string }[] = [
@@ -60,29 +65,28 @@ export function MaterialsPage() {
     }
   };
 
-  const saveMaterial = async (body: Record<string, unknown>, existing: MaterialDetailDto | null) => {
+  const saveMaterial = async (
+    body: Record<string, unknown>,
+    existing: MaterialDetailDto | null,
+    file?: File,
+  ) => {
     setBusy(true);
     try {
+      const saved = await submitMaterial(body, file, existing);
+      setCreating(false);
+      setEditing(null);
+      await list.invalidate();
       if (existing) {
-        await api.patch<{ data: MaterialDetailDto }>(`/materials/${existing.id}`, body);
-        setCreating(false);
-        setEditing(null);
-        await list.invalidate();
         showToast("已保存");
       } else {
-        const res = await api.post<{ data: MaterialDetailDto }>("/materials", body);
-        setCreating(false);
-        setEditing(null);
-        await list.invalidate();
         showToast("已创建资料");
-        // 新建成功后直接进全文编辑页补录正文（文本类 content 可空）
-        if (res?.data) navigate(`/materials/${res.data.id}/edit`);
+        if (saved && shouldOpenEditor(saved.kind)) navigate(`/materials/${saved.id}/edit`);
       }
     } catch (err) {
       showToast(
         err instanceof ApiError && err.status === 409
           ? "该行已被他人更新，请刷新后重试"
-          : err instanceof ApiError
+          : err instanceof Error
             ? err.message
             : "保存失败，请稍后重试",
       );
@@ -197,14 +201,25 @@ export function MaterialsPage() {
                         </span>
                       ))}
                     </td>
-                    <td>{row.excerpt ? row.excerpt : row.contentLength > 0 ? `${row.contentLength} 字符` : "—"}</td>
+                    <td>
+                      {row.kind === MATERIAL_FILE_KIND
+                        ? `${row.originalFilename ?? "文件"}${row.fileSize != null ? `（${formatFileSize(row.fileSize)}）` : ""}`
+                        : row.excerpt
+                          ? row.excerpt
+                          : row.contentLength > 0
+                            ? `${row.contentLength} 字符`
+                            : "—"}
+                    </td>
                     <td>{formatDateTime(row.updatedAt)}</td>
                     <td>
                       <span className="row-actions">
                         <button type="button" onClick={() => void openDetail(row.id, setViewing)}>
                           查看
                         </button>
-                        {canUpdate && TEXT_KINDS.includes(row.kind) && (
+                        {row.kind === MATERIAL_FILE_KIND && (
+                          <a href={materialFileUrl(row.id, true)}>下载</a>
+                        )}
+                        {canUpdate && (MATERIAL_TEXT_KINDS as readonly string[]).includes(row.kind) && (
                           <button type="button" onClick={() => navigate(`/materials/${row.id}/edit`)}>
                             编辑内容
                           </button>
@@ -236,7 +251,7 @@ export function MaterialsPage() {
           title="新增资料"
           busy={busy}
           onClose={() => setCreating(false)}
-          onSubmit={(body) => saveMaterial(body, null)}
+          onSubmit={(body, file) => saveMaterial(body, null, file)}
         />
       )}
       {editing && (
@@ -245,7 +260,7 @@ export function MaterialsPage() {
           material={editing}
           busy={busy}
           onClose={() => setEditing(null)}
-          onSubmit={(body) => saveMaterial(body, editing)}
+          onSubmit={(body, file) => saveMaterial(body, editing, file)}
         />
       )}
       {viewing && <MaterialViewModal material={viewing} canUpdate={canUpdate} onClose={() => setViewing(null)} />}

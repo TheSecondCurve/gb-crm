@@ -60,6 +60,7 @@ const STATUS_MAP: Record<number, { code: ErrorCode; message: string }> = {
   403: { code: "FORBIDDEN", message: "没有权限执行此操作" },
   404: { code: "NOT_FOUND", message: "资源不存在" },
   409: { code: "CONFLICT", message: "数据已被他人修改，请刷新后重试" },
+  413: { code: "VALIDATION", message: "文件过大" },
   422: { code: "VALIDATION", message: "请求参数不合法" },
   429: { code: "RATE_LIMITED", message: "请求过于频繁，请稍后重试" },
 };

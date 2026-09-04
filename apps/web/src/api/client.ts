@@ -53,12 +53,36 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
   return json as T;
 }
 
+async function requestForm<T>(path: string, form: FormData): Promise<T | null> {
+  const res = await fetch(`${API_BASE}${path}`, {
+    method: "POST",
+    credentials: "same-origin",
+    body: form,
+  });
+  if (res.status === 204) return null;
+  const json: unknown = await res.json().catch(() => null);
+  if (!res.ok) {
+    if (res.status === 401 && unauthorizedHandler) unauthorizedHandler();
+    const err = (json as { error?: { code?: string; message?: string }; data?: unknown } | null)
+      ?.error;
+    throw new ApiError(
+      res.status,
+      err?.code ?? "UNKNOWN",
+      err?.message ?? "请求失败，请稍后重试",
+      (json as { data?: unknown } | null)?.data,
+    );
+  }
+  return json as T;
+}
+
 export const api = {
   get: <T>(path: string) => request<T>("GET", path),
   post: <T>(path: string, body?: unknown) => request<T>("POST", path, body),
   patch: <T>(path: string, body: unknown) => request<T>("PATCH", path, body),
   put: <T>(path: string, body: unknown) => request<T>("PUT", path, body),
   delete: <T>(path: string) => request<T>("DELETE", path),
+  /** multipart 上传（不要手动设 Content-Type，由浏览器带 boundary） */
+  postForm: <T>(path: string, form: FormData) => requestForm<T>(path, form),
 };
 
 /** camelCase query 构造（K21）。null / undefined / 空串跳过。 */

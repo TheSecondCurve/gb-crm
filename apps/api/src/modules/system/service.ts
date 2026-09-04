@@ -8,6 +8,8 @@ import type {
   CommissionDefaultGet,
   CommissionDefaultPatch,
   CommissionDefaultRule,
+  MaterialsS3ConfigGet,
+  MaterialsS3ConfigPatch,
   S3ConfigGet,
   S3ConfigPatch,
   S3TestResult,
@@ -29,13 +31,16 @@ import { findLiveUserIds } from "../deal-commissions/repo.js";
 import {
   getAiConfig,
   getCommissionDefault,
+  getMaterialsS3Config,
   getPageAccessConfig,
   getS3Config,
   isS3RemoteReady,
   upsertAiConfig,
   upsertCommissionDefault,
+  upsertMaterialsS3Config,
   upsertPageAccessConfig,
   upsertS3Config,
+  type S3CredentialsValue,
 } from "./repo.js";
 
 const CONFIGURABLE_ROLES = ["operator", "assistant"] as const;
@@ -137,7 +142,7 @@ export function normalizeS3Prefix(prefix: string | null): string | null {
   return trimmed === "" ? "" : `${trimmed}/`;
 }
 
-function s3ConfigToClientConfig(cfg: NonNullable<ReturnType<typeof getS3Config>>): S3ClientConfig {
+function s3ConfigToClientConfig(cfg: S3CredentialsValue): S3ClientConfig {
   // 调用方先用 isS3RemoteReady 断言过四要素
   return {
     endpoint: cfg.endpoint!,
@@ -148,8 +153,7 @@ function s3ConfigToClientConfig(cfg: NonNullable<ReturnType<typeof getS3Config>>
   };
 }
 
-export function getS3ConfigResult(db: Db): S3ConfigGet {
-  const cfg = getS3Config(db);
+function credentialsToGet(cfg: S3CredentialsValue | undefined): MaterialsS3ConfigGet {
   const secret = cfg?.secretAccessKey ?? null;
   return {
     enabled: cfg?.enabled ?? false,
@@ -160,8 +164,16 @@ export function getS3ConfigResult(db: Db): S3ConfigGet {
     accessKeyId: cfg?.accessKeyId ?? null,
     secretKeySet: secret !== null,
     secretKeyMasked: maskSecret(secret),
-    keep: cfg?.keep ?? 7,
   };
+}
+
+export function getS3ConfigResult(db: Db): S3ConfigGet {
+  const cfg = getS3Config(db);
+  return { ...credentialsToGet(cfg), keep: cfg?.keep ?? 7 };
+}
+
+export function getMaterialsS3ConfigResult(db: Db): MaterialsS3ConfigGet {
+  return credentialsToGet(getMaterialsS3Config(db));
 }
 
 export function patchS3Config(
@@ -197,12 +209,41 @@ export function patchS3Config(
   return getS3ConfigResult(db);
 }
 
-/** 连通性测试：写探针对象再删除；配置未保存/不完整 → 422，上游失败 → 502 S3_ERROR */
-export async function testS3Connection(
+export function patchMaterialsS3Config(
   db: Db,
-  opts: { fetchFn?: typeof fetch } = {},
+  patch: MaterialsS3ConfigPatch,
+  ctx: { now: number; userId: number },
+): MaterialsS3ConfigGet {
+  const current = getMaterialsS3Config(db);
+  const next: S3CredentialsValue & { updatedAt: number; updatedBy: number } = {
+    enabled: patch.enabled !== undefined ? patch.enabled : (current?.enabled ?? false),
+    endpoint: patch.endpoint !== undefined ? patch.endpoint : (current?.endpoint ?? null),
+    region: patch.region !== undefined ? patch.region : (current?.region ?? null),
+    bucket: patch.bucket !== undefined ? patch.bucket : (current?.bucket ?? null),
+    prefix:
+      patch.prefix !== undefined
+        ? normalizeS3Prefix(patch.prefix)
+        : normalizeS3Prefix(current?.prefix ?? null),
+    accessKeyId:
+      patch.accessKeyId !== undefined ? patch.accessKeyId : (current?.accessKeyId ?? null),
+    secretAccessKey:
+      patch.secretAccessKey !== undefined
+        ? patch.secretAccessKey
+        : (current?.secretAccessKey ?? null),
+    updatedAt: ctx.now,
+    updatedBy: ctx.userId,
+  };
+  if (next.enabled && !isS3RemoteReady(next)) {
+    throw unprocessable("启用资料存储需先完整填写 Endpoint / Bucket / AccessKeyId / SecretAccessKey");
+  }
+  upsertMaterialsS3Config(db, next);
+  return getMaterialsS3ConfigResult(db);
+}
+
+async function probeS3Config(
+  cfg: S3CredentialsValue | undefined,
+  opts: { fetchFn?: typeof fetch },
 ): Promise<S3TestResult> {
-  const cfg = getS3Config(db);
   if (!cfg || !isS3RemoteReady(cfg)) {
     throw unprocessable("请先保存完整的对象存储配置");
   }
@@ -215,6 +256,21 @@ export async function testS3Connection(
     if (err instanceof S3Error) throw s3Error(err.message);
     throw err;
   }
+}
+
+/** 连通性测试：写探针对象再删除；配置未保存/不完整 → 422，上游失败 → 502 S3_ERROR */
+export async function testS3Connection(
+  db: Db,
+  opts: { fetchFn?: typeof fetch } = {},
+): Promise<S3TestResult> {
+  return probeS3Config(getS3Config(db), opts);
+}
+
+export async function testMaterialsS3Connection(
+  db: Db,
+  opts: { fetchFn?: typeof fetch } = {},
+): Promise<S3TestResult> {
+  return probeS3Config(getMaterialsS3Config(db), opts);
 }
 
 /** 供 /auth/me 计算当前角色实际可见的菜单页（含安全边界交集） */

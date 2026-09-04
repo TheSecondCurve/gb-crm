@@ -1,7 +1,7 @@
 // S3 兼容对象存储最小客户端（K53，零新增依赖：node:crypto + 原生 fetch）。
 // SigV4 签名（AWS Signature Version 4）+ path-style 寻址（endpoint[/base]/bucket/key），
 // 兼容 AWS S3 / MinIO / 阿里云 OSS / 腾讯云 COS / Cloudflare R2 等。
-// 只实现备份所需的最小面：PutObject / DeleteObject / ListObjectsV2 / 连通性探针。
+// 最小面：PutObject / GetObject / DeleteObject / ListObjectsV2 / 连通性探针。
 import { createHash, createHmac } from "node:crypto";
 
 export interface S3ClientConfig {
@@ -184,6 +184,22 @@ export async function s3PutObject(
   opts: S3PutOptions = {},
 ): Promise<void> {
   await s3Request(cfg, "PUT", key, body, opts);
+}
+
+export interface S3GetObjectResult {
+  body: Buffer;
+  contentType: string | null;
+}
+
+/** GetObject：返回完整 buffer（资料文件体量有上限，不做流式）。 */
+export async function s3GetObject(
+  cfg: S3ClientConfig,
+  key: string,
+  opts: S3RequestOptions = {},
+): Promise<S3GetObjectResult> {
+  const res = await s3Request(cfg, "GET", key, undefined, opts);
+  const body = Buffer.from(await res.arrayBuffer());
+  return { body, contentType: res.headers.get("content-type") };
 }
 
 export async function s3DeleteObject(

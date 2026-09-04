@@ -552,6 +552,7 @@ export const deliveryTasks = sqliteTable(
 );
 
 // K54 交付资料：delivery_id 可空（孤儿资料）；文本类全文入 content，媒体类只存 url；
+// K57：kind=file 对象存储，object_key/content_type/file_size/original_filename。
 // content/url 声明在末尾（overflow 页惰性读）。FTS5 虚表 delivery_materials_fts 由触发器同步，
 // 不入 Drizzle schema（repo 用 db.$client 原生查询，同 agent 模块先例）。
 export const deliveryMaterials = sqliteTable(
@@ -566,13 +567,17 @@ export const deliveryMaterials = sqliteTable(
     createdBy: integer("created_by").references(() => users.id, { onDelete: "set null" }),
     updatedBy: integer("updated_by").references(() => users.id, { onDelete: "set null" }),
     deletedAt: integer("deleted_at"),
+    objectKey: text("object_key"),
+    contentType: text("content_type"),
+    fileSize: integer("file_size"),
+    originalFilename: text("original_filename"),
     url: text("url"),
     content: text("content"),
   },
   (t) => [
     check(
       "delivery_materials_kind_check",
-      sql`"kind" IN ('transcript','text','audio','video','link')`,
+      sql`"kind" IN ('transcript','text','audio','video','link','file')`,
     ),
     index("delivery_materials_delivery_idx").on(t.deliveryId),
   ],
