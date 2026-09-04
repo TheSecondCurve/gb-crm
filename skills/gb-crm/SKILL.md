@@ -1,6 +1,6 @@
 ---
 name: gb-crm
-version: 0.10.0
+version: 0.11.0
 description: >
   女商 私域运营管理端（gb-crm）本机 HTTP 客户端。用 ~/.gb-crm/credentials.json 的 PAT
   通过单一 SQL 端点查询或维护客户、渠道、产品、团队成员、成交记录、交付管理与资料。
@@ -46,6 +46,14 @@ powershell -ExecutionPolicy Bypass -Command "irm http://<crm-host>/agent/skill/g
 python3 "$SKILL_DIR/scripts/gb-crm.py" sql "SELECT id, nickname FROM customers WHERE deleted_at IS NULL LIMIT 20"
 python3 "$SKILL_DIR/scripts/gb-crm.py" me    # 我是谁：id / username / nickname / systemRole
 ```
+
+**上传文件资料**（`kind=file`，POST /api/v1/materials/upload，multipart；一次请求同时建行 + 挂交付 + 挂客户 + 挂标签）：
+
+```bash
+python3 "$SKILL_DIR/scripts/gb-crm.py" upload ./录音稿.pdf title="3月下午茶整场" deliveryId=12 customerIds='[3,5]' newTagNames='["下午茶"]'
+```
+
+文件**必须小于 32MB**（超限请先压缩/拆分）；`title` 必填，`deliveryId` 是数字、`customerIds`/`tagIds`/`newTagNames` 是 JSON 数组字符串；同样需要 admin/operator + write scope。上传前先按「资料」一节的规则匹配/新建交付单拿到 `deliveryId`。
 
 Windows 上若命令 `python3` 不存在，用 `python` 或 `py`（如 `py "$SKILL_DIR/scripts/gb-crm.py" me`）。脚本本身无第三方依赖，跨平台。
 
@@ -205,7 +213,7 @@ UPDATE customers SET owner_id = ?, updated_at = ?, updated_by = ? WHERE id = ?;
 
 领域模型：资料是**交付的产出物**，挂在交付单上；交付不只有咨询——`delivery_types.kind` 分 `consulting` 咨询 / `activity` 活动 / `circle` 圈子 / `other` 其他（如微博365连麦、线下1v1咨询是 consulting，商业下午茶是 activity：一场 5-6 人，客户走 `delivery_customers`）。匹配关系与库结构一致：`delivery_materials.delivery_id` 是**可空** FK → deliveries.id，NULL = 未关联交付的孤儿（只应作为历史遗留/过渡状态存在）。
 
-- `delivery_materials`（资料）：`delivery_id`（可空 FK，见上）/ `kind`（`transcript` 录音文字稿 / `text` 文本资料 / `audio` 音频 / `video` 视频 / `link` 其他链接 / `file` 对象存储）/ `title`（必填，标题+说明）/ `url`（媒体类必填）/ `content`（**文本类全文**，可上万字）/ `object_key` / `content_type` / `file_size` / `original_filename`（仅 `kind=file`）；审计四列 + `deleted_at` 软删。组合约束（管理端 Zod 强制，写 SQL 时自觉遵守）：`transcript`/`text` 必须有 `content`，`audio`/`video`/`link` 必须有 `url`，`file` 必须有 `object_key`（文件走管理端上传，不要手写 SQL 塞二进制）。
+- `delivery_materials`（资料）：`delivery_id`（可空 FK，见上）/ `kind`（`transcript` 录音文字稿 / `text` 文本资料 / `audio` 音频 / `video` 视频 / `link` 其他链接 / `file` 对象存储）/ `title`（必填，标题+说明）/ `url`（媒体类必填）/ `content`（**文本类全文**，可上万字）/ `object_key` / `content_type` / `file_size` / `original_filename`（仅 `kind=file`）；审计四列 + `deleted_at` 软删。组合约束（管理端 Zod 强制，写 SQL 时自觉遵守）：`transcript`/`text` 必须有 `content`，`audio`/`video`/`link` 必须有 `url`，`file` 必须有 `object_key`（**kind=file 走脚本的 `upload` 子命令**（见「用法」），不要手写 SQL 塞二进制——手写 INSERT 没有真实对象存储文件，管理端下载会坏）。
 - `delivery_material_customers`（资料 × 客户 M2M）：`(material_id, customer_id)` 复合 PK，0..N——**一份资料可属多个人**（如下午茶整场录音稿挂全部参会者），0 行 = 未关联客户；**硬删**，无审计列。
 
 **新增资料先落交付单**（按语义匹配，不限咨询类）：
