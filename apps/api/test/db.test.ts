@@ -42,6 +42,7 @@ describe("migration", () => {
       "deliveries",
       "delivery_customers",
       "delivery_material_customers",
+      "delivery_material_tags",
       "delivery_materials",
       "delivery_materials_fts",
       "delivery_materials_fts_config",
@@ -106,6 +107,21 @@ describe("CHECK constraints", () => {
       tmp.sqlite
         .prepare(
           "INSERT INTO api_tokens (user_id, token_hash, token_prefix, scope, created_at, expires_at) VALUES (1, 'h', 'gbcrm_ro_abcd1234', 'admin', 1, 2)",
+        )
+        .run(),
+    ).toThrowError(/CHECK/i);
+  });
+
+  it("accepts delivery_materials.kind=file and rejects unknown kind", () => {
+    tmp.sqlite
+      .prepare(
+        "INSERT INTO delivery_materials (kind, title, created_at, updated_at) VALUES ('file', 'x', 1, 1)",
+      )
+      .run();
+    expect(() =>
+      tmp.sqlite
+        .prepare(
+          "INSERT INTO delivery_materials (kind, title, created_at, updated_at) VALUES ('blob', 'x', 1, 1)",
         )
         .run(),
     ).toThrowError(/CHECK/i);

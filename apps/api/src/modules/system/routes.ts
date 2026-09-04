@@ -3,6 +3,7 @@
 import {
   aiConfigPatchSchema,
   commissionDefaultPatchSchema,
+  materialsS3ConfigPatchSchema,
   pageAccessPatchSchema,
   s3ConfigPatchSchema,
 } from "@gb-crm/shared";
@@ -13,12 +14,15 @@ import { requireCan } from "../../plugins/rbac.js";
 import {
   getAiConfigResult,
   getCommissionDefaultResult,
+  getMaterialsS3ConfigResult,
   getPageAccessMatrix,
   getS3ConfigResult,
   patchAiConfig,
   patchCommissionDefault,
+  patchMaterialsS3Config,
   patchPageAccess,
   patchS3Config,
+  testMaterialsS3Connection,
   testS3Connection,
 } from "./service.js";
 
@@ -104,5 +108,27 @@ export function systemRoutes(app: FastifyInstance, opts: SystemRoutesOptions): v
     "/api/v1/system/s3-config/test",
     { preHandler: requireCan("system", "update") },
     async () => ({ data: await testS3Connection(db, { fetchFn: s3Fetch }) }),
+  );
+
+  // 资料存储（K57；仅 admin）。与远程备份同一套 S3 兼容凭证，独立 code 行。
+  app.get(
+    "/api/v1/system/materials-s3-config",
+    { preHandler: requireCan("system", "read") },
+    async () => ({ data: getMaterialsS3ConfigResult(db) }),
+  );
+
+  app.patch(
+    "/api/v1/system/materials-s3-config",
+    { preHandler: requireCan("system", "update") },
+    async (req) => {
+      const patch = materialsS3ConfigPatchSchema.parse(req.body ?? {});
+      return { data: patchMaterialsS3Config(db, patch, auditCtx(req)) };
+    },
+  );
+
+  app.post(
+    "/api/v1/system/materials-s3-config/test",
+    { preHandler: requireCan("system", "update") },
+    async () => ({ data: await testMaterialsS3Connection(db, { fetchFn: s3Fetch }) }),
   );
 }

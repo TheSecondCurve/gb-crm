@@ -277,13 +277,15 @@ export const tags = sqliteTable(
     createdBy: integer("created_by").references(() => users.id, { onDelete: "set null" }),
     updatedBy: integer("updated_by").references(() => users.id, { onDelete: "set null" }),
     deletedAt: integer("deleted_at"),
+    /** K58：customer 客户画像 / material 资料检索；live unique 按域隔离 */
+    domain: text("domain").notNull().default("customer"),
   },
   (t) => [
     check("tags_scope_check", sql`"scope" IN ('identity','stage','interest','other')`),
     check("tags_enabled_check", sql`"enabled" IN (0, 1)`),
-    // name：live unique，软删后释放可复用
-    uniqueIndex("tags_name_live_uq")
-      .on(t.name)
+    check("tags_domain_check", sql`"domain" IN ('customer','material')`),
+    uniqueIndex("tags_domain_name_live_uq")
+      .on(t.domain, t.name)
       .where(sql`"deleted_at" IS NULL`),
   ],
 );
@@ -552,6 +554,7 @@ export const deliveryTasks = sqliteTable(
 );
 
 // K54 交付资料：delivery_id 可空（孤儿资料）；文本类全文入 content，媒体类只存 url；
+// K57：kind=file 对象存储，object_key/content_type/file_size/original_filename。
 // content/url 声明在末尾（overflow 页惰性读）。FTS5 虚表 delivery_materials_fts 由触发器同步，
 // 不入 Drizzle schema（repo 用 db.$client 原生查询，同 agent 模块先例）。
 export const deliveryMaterials = sqliteTable(
@@ -566,13 +569,17 @@ export const deliveryMaterials = sqliteTable(
     createdBy: integer("created_by").references(() => users.id, { onDelete: "set null" }),
     updatedBy: integer("updated_by").references(() => users.id, { onDelete: "set null" }),
     deletedAt: integer("deleted_at"),
+    objectKey: text("object_key"),
+    contentType: text("content_type"),
+    fileSize: integer("file_size"),
+    originalFilename: text("original_filename"),
     url: text("url"),
     content: text("content"),
   },
   (t) => [
     check(
       "delivery_materials_kind_check",
-      sql`"kind" IN ('transcript','text','audio','video','link')`,
+      sql`"kind" IN ('transcript','text','audio','video','link','file')`,
     ),
     index("delivery_materials_delivery_idx").on(t.deliveryId),
   ],
@@ -592,6 +599,25 @@ export const deliveryMaterialCustomers = sqliteTable(
   (t) => [
     primaryKey({ columns: [t.materialId, t.customerId] }),
     index("delivery_material_customers_customer_idx").on(t.customerId),
+  ],
+);
+
+// K58 资料 ↔ 标签 M2M（K24 关系数组语义；软删标签后 join 行保留、不展开）
+export const deliveryMaterialTags = sqliteTable(
+  "delivery_material_tags",
+  {
+    materialId: integer("material_id")
+      .notNull()
+      .references(() => deliveryMaterials.id, { onDelete: "cascade" }),
+    tagId: integer("tag_id")
+      .notNull()
+      .references(() => tags.id, { onDelete: "cascade" }),
+    createdAt: integer("created_at").notNull(),
+    createdBy: integer("created_by").references(() => users.id, { onDelete: "set null" }),
+  },
+  (t) => [
+    primaryKey({ columns: [t.materialId, t.tagId] }),
+    index("delivery_material_tags_tag_id_idx").on(t.tagId),
   ],
 );
 

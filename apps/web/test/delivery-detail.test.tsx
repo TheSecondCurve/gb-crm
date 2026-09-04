@@ -55,6 +55,10 @@ function mockDetailApi(me: Me, items: DeliverableDto[] = [item], materials: Mate
     const method = init?.method ?? "GET";
     calls.push({ url, method, body: init?.body });
     if (url === "/api/v1/auth/me") return { status: 200, body: { data: me } };
+    // K58：资料表单词表（MaterialFormModal 打开时加载）
+    if (url.startsWith("/api/v1/tags")) {
+      return { status: 200, body: { data: [], meta: { page: 1, pageSize: 100, total: 0 } } };
+    }
     // K54：交付单关联资料（含新增 POST / 详情 GET）
     if (url.startsWith("/api/v1/materials")) {
       if (method === "GET" && /\/materials\/\d+$/.test(url)) {
@@ -66,6 +70,7 @@ function mockDetailApi(me: Me, items: DeliverableDto[] = [item], materials: Mate
           body: {
             data: {
               id: 99, kind: "text", title: "新资料", url: null, contentLength: 0, excerpt: null,
+              originalFilename: null, contentType: null, fileSize: null, isImage: false,
               deliveryId: 1, delivery: null, customers: [],
               createdAt: 1000, updatedAt: 2000, createdBy: null, updatedBy: null, content: "",
             },
@@ -241,9 +246,14 @@ describe("交付单详情页", () => {
       url: null,
       contentLength: 120,
       excerpt: "SOP 摘要……",
+      originalFilename: null,
+      contentType: null,
+      fileSize: null,
+      isImage: false,
       deliveryId: 1,
       delivery: { id: 1, deliveryType: { id: 11, name: "圈子全年交付", kind: "circle" }, startsAt: null, endsAt: null },
       customers: [{ id: 101, nickname: "张三" }],
+      tags: [],
       createdAt: 1000,
       updatedAt: 2000,
       createdBy: null,

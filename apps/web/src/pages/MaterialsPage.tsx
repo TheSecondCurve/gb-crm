@@ -1,12 +1,20 @@
 // 资料专区（K54）：交付资料列表。普通 table（长文本不做行内编辑），行操作走 modal。
 // 筛选：按关联交付类型分组 tab（useResourceList secondaryFilterKey="deliveryKind"）+ q +
-// kind 下拉（filterKey="kind"）+ 「仅看未关联」checkbox（受控 state 拼进 fixedQuery，不改 hook）。
-import { useMemo, useState } from "react";
+// kind 下拉（filterKey="kind"）+ 「仅看未关联」checkbox + K58 标签下拉（受控 state 拼进 fixedQuery，不改 hook）。
+import { Fragment, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { can, deliveryTypeKindLabels, materialKindLabels } from "@gb-crm/shared";
+import { useQuery } from "@tanstack/react-query";
+import {
+  can,
+  deliveryTypeKindLabels,
+  MATERIAL_FILE_KIND,
+  MATERIAL_TEXT_KINDS,
+  materialKindLabels,
+} from "@gb-crm/shared";
 
 import { api, ApiError } from "../api/client";
-import type { MaterialDetailDto, MaterialDto } from "../api/types";
+import { formatFileSize, materialFileUrl, shouldOpenEditor, submitMaterial } from "../api/materials";
+import type { MaterialDetailDto, MaterialDto, TagDto } from "../api/types";
 import { useAuth } from "../auth/AuthProvider";
 import { badge, epochMsToDate, formatDateTime, optionsOf, type BadgeTone } from "../columns/common";
 import { Pagination } from "../components/DataGrid/DataGrid";
@@ -17,9 +25,7 @@ import { SearchBar } from "../components/SearchBar";
 import { useToast } from "../components/Toast";
 import { useResourceList } from "./useResourceList";
 
-const KIND_TONES: Record<string, BadgeTone> = { transcript: "accent" };
-
-const TEXT_KINDS: readonly string[] = ["transcript", "text"];
+const KIND_TONES: Record<string, BadgeTone> = { transcript: "accent", file: "accent" };
 
 /** 资料专区 tab：按关联交付类型分组。consulting/activity/circle 对应类型；other 兜底（未关联 + 类型为 other）。 */
 const DELIVERY_KIND_TABS: { value: string; label: string }[] = [
@@ -35,10 +41,23 @@ export function MaterialsPage() {
   const role = me?.systemRole ?? null;
   const showToast = useToast();
   const navigate = useNavigate();
-  // orphan=1 不在 hook 的 filterKey 体系内：受控 state → fixedQuery（并入 query 与 queryKey）
+  // orphan=1 / tagId 不在 hook 的 filterKey 体系内：受控 state → fixedQuery（并入 query 与 queryKey）
   const [orphanOnly, setOrphanOnly] = useState(false);
-  const fixedQuery = useMemo(() => (orphanOnly ? { orphan: 1 } : undefined), [orphanOnly]);
+  const [tagId, setTagId] = useState("");
+  const fixedQuery = useMemo(() => {
+    const fq: Record<string, number> = {};
+    if (orphanOnly) fq.orphan = 1;
+    if (tagId) fq.tagId = Number(tagId);
+    return Object.keys(fq).length > 0 ? fq : undefined;
+  }, [orphanOnly, tagId]);
   const list = useResourceList<MaterialDto>("materials", "kind", fixedQuery, "deliveryKind");
+
+  // K58：标签筛选下拉选项（资料域词表；加载失败静默降级为只有「全部标签」）
+  const { data: tagOptions = [] } = useQuery({
+    queryKey: ["tags", "material"],
+    queryFn: async () =>
+      (await api.get<{ data: TagDto[] }>("/tags?domain=material&pageSize=100"))?.data ?? [],
+  });
 
   const [creating, setCreating] = useState(false);
   const [editing, setEditing] = useState<MaterialDetailDto | null>(null);
@@ -60,29 +79,28 @@ export function MaterialsPage() {
     }
   };
 
-  const saveMaterial = async (body: Record<string, unknown>, existing: MaterialDetailDto | null) => {
+  const saveMaterial = async (
+    body: Record<string, unknown>,
+    existing: MaterialDetailDto | null,
+    file?: File,
+  ) => {
     setBusy(true);
     try {
+      const saved = await submitMaterial(body, file, existing);
+      setCreating(false);
+      setEditing(null);
+      await list.invalidate();
       if (existing) {
-        await api.patch<{ data: MaterialDetailDto }>(`/materials/${existing.id}`, body);
-        setCreating(false);
-        setEditing(null);
-        await list.invalidate();
         showToast("已保存");
       } else {
-        const res = await api.post<{ data: MaterialDetailDto }>("/materials", body);
-        setCreating(false);
-        setEditing(null);
-        await list.invalidate();
         showToast("已创建资料");
-        // 新建成功后直接进全文编辑页补录正文（文本类 content 可空）
-        if (res?.data) navigate(`/materials/${res.data.id}/edit`);
+        if (saved && shouldOpenEditor(saved.kind)) navigate(`/materials/${saved.id}/edit`);
       }
     } catch (err) {
       showToast(
         err instanceof ApiError && err.status === 409
           ? "该行已被他人更新，请刷新后重试"
-          : err instanceof ApiError
+          : err instanceof Error
             ? err.message
             : "保存失败，请稍后重试",
       );
@@ -117,6 +135,14 @@ export function MaterialsPage() {
             {optionsOf(materialKindLabels).map((o) => (
               <option key={o.value} value={o.value}>
                 {o.label}
+              </option>
+            ))}
+          </select>
+          <select aria-label="标签筛选" value={tagId} onChange={(e) => setTagId(e.target.value)}>
+            <option value="">全部标签</option>
+            {tagOptions.map((t) => (
+              <option key={t.id} value={t.id}>
+                {t.name}
               </option>
             ))}
           </select>
@@ -166,6 +192,7 @@ export function MaterialsPage() {
                   <th>标题</th>
                   <th>关联交付</th>
                   <th>关联客户</th>
+                  <th>标签</th>
                   <th>内容</th>
                   <th>更新时间</th>
                   <th>操作</th>
@@ -197,14 +224,33 @@ export function MaterialsPage() {
                         </span>
                       ))}
                     </td>
-                    <td>{row.excerpt ? row.excerpt : row.contentLength > 0 ? `${row.contentLength} 字符` : "—"}</td>
+                    <td>
+                      {row.tags.length === 0 && "—"}
+                      <span className="tag-list">
+                        {row.tags.map((t) => (
+                          <Fragment key={t.id}>{badge(t.name, "muted")}</Fragment>
+                        ))}
+                      </span>
+                    </td>
+                    <td>
+                      {row.kind === MATERIAL_FILE_KIND
+                        ? `${row.originalFilename ?? "文件"}${row.fileSize != null ? `（${formatFileSize(row.fileSize)}）` : ""}`
+                        : row.excerpt
+                          ? row.excerpt
+                          : row.contentLength > 0
+                            ? `${row.contentLength} 字符`
+                            : "—"}
+                    </td>
                     <td>{formatDateTime(row.updatedAt)}</td>
                     <td>
                       <span className="row-actions">
                         <button type="button" onClick={() => void openDetail(row.id, setViewing)}>
                           查看
                         </button>
-                        {canUpdate && TEXT_KINDS.includes(row.kind) && (
+                        {row.kind === MATERIAL_FILE_KIND && (
+                          <a href={materialFileUrl(row.id, true)}>下载</a>
+                        )}
+                        {canUpdate && (MATERIAL_TEXT_KINDS as readonly string[]).includes(row.kind) && (
                           <button type="button" onClick={() => navigate(`/materials/${row.id}/edit`)}>
                             编辑内容
                           </button>
@@ -236,7 +282,7 @@ export function MaterialsPage() {
           title="新增资料"
           busy={busy}
           onClose={() => setCreating(false)}
-          onSubmit={(body) => saveMaterial(body, null)}
+          onSubmit={(body, file) => saveMaterial(body, null, file)}
         />
       )}
       {editing && (
@@ -245,7 +291,7 @@ export function MaterialsPage() {
           material={editing}
           busy={busy}
           onClose={() => setEditing(null)}
-          onSubmit={(body) => saveMaterial(body, editing)}
+          onSubmit={(body, file) => saveMaterial(body, editing, file)}
         />
       )}
       {viewing && <MaterialViewModal material={viewing} canUpdate={canUpdate} onClose={() => setViewing(null)} />}

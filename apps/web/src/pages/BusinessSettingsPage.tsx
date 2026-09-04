@@ -1,4 +1,5 @@
-// 业务设置页（K45/K50）：客户标签词表（admin 写、其余只读）。后台任务已移至系统设置页（K51）。
+// 业务设置页（K45/K50/K58）：客户/资料标签词表分域两卡片（admin 写、其余只读；资料词 scope 恒 other 不显示分类列）。
+// 后台任务已移至系统设置页（K51）。
 import { useState, type FormEvent } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { can, tagScopeLabels } from "@gb-crm/shared";
@@ -18,6 +19,9 @@ const TAG_SCOPE_TONES: Record<string, BadgeTone> = {
   other: "muted",
 };
 
+/** K58：词表域（customer/material）；决定卡片、表单显隐与 POST body 的 domain 键 */
+type TagDomain = "customer" | "material";
+
 export function BusinessSettingsPage() {
   const { me } = useAuth();
   const role = me?.systemRole ?? null;
@@ -27,15 +31,25 @@ export function BusinessSettingsPage() {
   const [editingTag, setEditingTag] = useState<TagDto | null>(null);
   const [creatingTag, setCreatingTag] = useState(false);
   const [deletingTag, setDeletingTag] = useState<TagDto | null>(null);
+  // 当前弹窗属于哪个域的卡片（创建/修改时由入口按钮/行决定）
+  const [modalDomain, setModalDomain] = useState<TagDomain>("customer");
 
   const canRead = can(role, "tags", "read");
   const canManage = can(role, "tags", "create") && can(role, "tags", "update");
   const canDelete = can(role, "tags", "delete");
 
-  const { data: tags = [], refetch: refetchTags } = useQuery({
+  const { data: tags = [] } = useQuery({
     queryKey: ["tags", "manage"],
     queryFn: async () =>
       (await api.get<{ data: TagDto[] }>("/tags?pageSize=100"))?.data ?? [],
+    enabled: canRead,
+  });
+
+  // K58：资料域词表
+  const { data: materialTags = [] } = useQuery({
+    queryKey: ["tags", "material"],
+    queryFn: async () =>
+      (await api.get<{ data: TagDto[] }>("/tags?domain=material&pageSize=100"))?.data ?? [],
     enabled: canRead,
   });
 
@@ -43,6 +57,18 @@ export function BusinessSettingsPage() {
 
   const toastError = (err: unknown, fallback: string) =>
     showToast(err instanceof ApiError ? err.message : fallback);
+
+  // 增删改后统一失效所有 tags 查询（manage / material / options 及资料表单里的词表）
+  const invalidateTags = () => queryClient.invalidateQueries({ queryKey: ["tags"] });
+
+  const openCreate = (domain: TagDomain) => {
+    setModalDomain(domain);
+    setCreatingTag(true);
+  };
+  const openEdit = (tag: TagDto) => {
+    setModalDomain(tag.domain === "material" ? "material" : "customer");
+    setEditingTag(tag);
+  };
 
   const submitTag = async (body: Record<string, unknown>, tag: TagDto | null) => {
     setBusy(true);
@@ -54,8 +80,7 @@ export function BusinessSettingsPage() {
       }
       setCreatingTag(false);
       setEditingTag(null);
-      await refetchTags();
-      await queryClient.invalidateQueries({ queryKey: ["tags", "options"] });
+      await invalidateTags();
       showToast("已保存标签");
     } catch (err) {
       toastError(err, "保存标签失败");
@@ -70,8 +95,7 @@ export function BusinessSettingsPage() {
     try {
       await api.delete(`/tags/${deletingTag.id}`);
       setDeletingTag(null);
-      await refetchTags();
-      await queryClient.invalidateQueries({ queryKey: ["tags", "options"] });
+      await invalidateTags();
       showToast("已删除标签");
     } catch (err) {
       toastError(err, "删除失败");
@@ -100,7 +124,7 @@ export function BusinessSettingsPage() {
             <div className="card-head">
               <h2>客户标签词表</h2>
               {canManage && (
-                <button type="button" className="btn-primary" onClick={() => setCreatingTag(true)}>
+                <button type="button" className="btn-primary" onClick={() => openCreate("customer")}>
                   新增标签
                 </button>
               )}
@@ -126,7 +150,53 @@ export function BusinessSettingsPage() {
                       <td className="row-actions">
                         {canManage && (
                           <>
-                            <button type="button" onClick={() => setEditingTag(t)}>
+                            <button type="button" onClick={() => openEdit(t)}>
+                              修改
+                            </button>
+                            {canDelete && (
+                              <button type="button" className="btn-danger" onClick={() => setDeletingTag(t)}>
+                                删除
+                              </button>
+                            )}
+                          </>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <div className="card">
+            <div className="card-head">
+              <h2>资料标签词表</h2>
+              {canManage && (
+                <button type="button" className="btn-primary" onClick={() => openCreate("material")}>
+                  新增资料标签
+                </button>
+              )}
+            </div>
+            <div className="card-body-flush">
+              <table className="data-table">
+                <thead>
+                  <tr>
+                    <th>标签名</th>
+                    <th>排序</th>
+                    <th>状态</th>
+                    <th>操作</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {materialTags.map((t) => (
+                    <tr key={t.id}>
+                      <td>{badge(t.name, "muted")}</td>
+                      <td>{t.sort}</td>
+                      <td>{t.enabled ? "启用" : "停用"}</td>
+                      <td className="row-actions">
+                        {canManage && (
+                          <>
+                            <button type="button" onClick={() => openEdit(t)}>
                               修改
                             </button>
                             {canDelete && (
@@ -147,8 +217,9 @@ export function BusinessSettingsPage() {
 
       {(creatingTag || editingTag) && (
         <TagFormModal
-          title={creatingTag ? "新增标签" : `修改标签：${editingTag?.name}`}
+          title={creatingTag ? (modalDomain === "material" ? "新增资料标签" : "新增标签") : `修改标签：${editingTag?.name}`}
           tag={editingTag}
+          domain={modalDomain}
           scopeOptions={scopeOptions}
           busy={busy}
           onClose={() => {
@@ -161,7 +232,7 @@ export function BusinessSettingsPage() {
       {deletingTag && (
         <ConfirmDialog
           title="删除标签"
-          message={`确定删除标签「${deletingTag.name}」吗？已打标的客户将不再显示该标签。`}
+          message={`确定删除标签「${deletingTag.name}」吗？已打标的${deletingTag.domain === "material" ? "资料" : "客户"}将不再显示该标签。`}
           confirmText="删除"
           loading={busy}
           onConfirm={() => void confirmDeleteTag()}
@@ -175,6 +246,8 @@ export function BusinessSettingsPage() {
 interface TagFormModalProps {
   title: string;
   tag: TagDto | null;
+  /** K58：material 模式隐藏「分类」（资料词 scope 恒 other），创建 body 带 domain: "material" */
+  domain: TagDomain;
   scopeOptions: { value: string; label: string }[];
   busy: boolean;
   onClose: () => void;
@@ -182,7 +255,7 @@ interface TagFormModalProps {
 }
 
 /** 标签小表单（name/scope/sort/enabled；不套 RecordFormModal——sort 是数字） */
-function TagFormModal({ title, tag, scopeOptions, busy, onClose, onSubmit }: TagFormModalProps) {
+function TagFormModal({ title, tag, domain, scopeOptions, busy, onClose, onSubmit }: TagFormModalProps) {
   const [name, setName] = useState(tag?.name ?? "");
   const [scope, setScope] = useState(tag?.scope ?? "other");
   const [sort, setSort] = useState(String(tag?.sort ?? 0));
@@ -192,7 +265,9 @@ function TagFormModal({ title, tag, scopeOptions, busy, onClose, onSubmit }: Tag
     e.preventDefault();
     const body: Record<string, unknown> = {};
     if (tag === null || tag.name !== name.trim()) body.name = name.trim();
-    if (tag === null || tag.scope !== scope) body.scope = scope;
+    // domain 只在创建时携带（PATCH 不可改域）；material 域不下发 scope
+    if (tag === null && domain === "material") body.domain = "material";
+    if (domain === "customer" && (tag === null || tag.scope !== scope)) body.scope = scope;
     const sortNum = Number(sort);
     if (Number.isFinite(sortNum) && (tag === null || tag.sort !== sortNum)) body.sort = sortNum;
     if (tag === null || tag.enabled !== enabled) body.enabled = enabled;
@@ -206,16 +281,18 @@ function TagFormModal({ title, tag, scopeOptions, busy, onClose, onSubmit }: Tag
           标签名
           <input required value={name} autoFocus onChange={(e) => setName(e.target.value)} />
         </label>
-        <label className="field">
-          分类
-          <select value={scope} onChange={(e) => setScope(e.target.value)}>
-            {scopeOptions.map((o) => (
-              <option key={o.value} value={o.value}>
-                {o.label}
-              </option>
-            ))}
-          </select>
-        </label>
+        {domain === "customer" && (
+          <label className="field">
+            分类
+            <select value={scope} onChange={(e) => setScope(e.target.value)}>
+              {scopeOptions.map((o) => (
+                <option key={o.value} value={o.value}>
+                  {o.label}
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
         <label className="field">
           排序
           <input type="number" min={0} value={sort} onChange={(e) => setSort(e.target.value)} />

@@ -26,26 +26,10 @@ export type AiConfigPatch = z.infer<typeof aiConfigPatchSchema>;
 // 存储为 system_configs code='pageAccess'（value = { operator: string[], assistant: string[] }）。
 // admin 固定全量，不参与配置（防锁死管理页）。配置只能在各角色 can() 允许集内收缩。
 
-// ── S3 兼容对象存储（远程备份，K53）──
-// 存储为 system_configs code='s3'（value = { enabled, endpoint, region, bucket, prefix,
-// accessKeyId, secretAccessKey, keep }）。GET 掩码同 LLM 配置：secretAccessKey 永不全量返回。
+// ── S3 兼容对象存储凭证（远程备份 K53 code='s3'；资料存储 K57 code='materialsS3'）──
+// GET 掩码同 LLM 配置：secretAccessKey 永不全量返回。
 // PATCH：secretAccessKey 空/缺席保留旧值（placeholder 语义）；enabled=true 时四要素必须齐
-// （endpoint/bucket/accessKeyId/secretAccessKey，服务端完整性校验 422）；keep 为远端滚动保留份数。
-
-export const s3ConfigGetSchema = z.object({
-  enabled: z.boolean(),
-  endpoint: z.string().nullable(),
-  region: z.string().nullable(),
-  bucket: z.string().nullable(),
-  /** 归一化后的对象 key 前缀："" 或 "xxx/"（无开头斜杠） */
-  prefix: z.string().nullable(),
-  accessKeyId: z.string().nullable(),
-  secretKeySet: z.boolean(),
-  secretKeyMasked: z.string().nullable(),
-  /** 远端滚动保留份数（1~30，默认 7） */
-  keep: z.number().int().min(1).max(30),
-});
-export type S3ConfigGet = z.infer<typeof s3ConfigGetSchema>;
+// （endpoint/bucket/accessKeyId/secretAccessKey，服务端完整性校验 422）。
 
 const httpUrlSchema = z
   .string()
@@ -61,7 +45,19 @@ const bucketNameSchema = z
   .max(200)
   .regex(/^[A-Za-z0-9][A-Za-z0-9._-]*$/, "Bucket 名只能包含字母、数字、点、下划线、连字符");
 
-export const s3ConfigPatchSchema = z.object({
+const s3CredentialsGetShape = {
+  enabled: z.boolean(),
+  endpoint: z.string().nullable(),
+  region: z.string().nullable(),
+  bucket: z.string().nullable(),
+  /** 归一化后的对象 key 前缀："" 或 "xxx/"（无开头斜杠） */
+  prefix: z.string().nullable(),
+  accessKeyId: z.string().nullable(),
+  secretKeySet: z.boolean(),
+  secretKeyMasked: z.string().nullable(),
+};
+
+const s3CredentialsPatchShape = {
   enabled: z.boolean().optional(),
   endpoint: httpUrlSchema.nullable().optional(),
   region: z.string().trim().max(100).nullable().optional(),
@@ -71,6 +67,25 @@ export const s3ConfigPatchSchema = z.object({
   accessKeyId: z.string().trim().max(200).nullable().optional(),
   /** 传非空串才更新；空串/缺席保留旧值（placeholder 语义，同 LLM apiKey） */
   secretAccessKey: z.string().trim().min(1).max(500).optional(),
+};
+
+/** 资料存储（K57，system_configs code='materialsS3'）：无 keep */
+export const materialsS3ConfigGetSchema = z.object(s3CredentialsGetShape);
+export type MaterialsS3ConfigGet = z.infer<typeof materialsS3ConfigGetSchema>;
+
+export const materialsS3ConfigPatchSchema = z.object(s3CredentialsPatchShape);
+export type MaterialsS3ConfigPatch = z.infer<typeof materialsS3ConfigPatchSchema>;
+
+/** 远程备份（K53，code='s3'）：在凭证之上多 keep */
+export const s3ConfigGetSchema = z.object({
+  ...s3CredentialsGetShape,
+  /** 远端滚动保留份数（1~30，默认 7） */
+  keep: z.number().int().min(1).max(30),
+});
+export type S3ConfigGet = z.infer<typeof s3ConfigGetSchema>;
+
+export const s3ConfigPatchSchema = z.object({
+  ...s3CredentialsPatchShape,
   /** 远端滚动保留份数（1~30）；缺席保留旧值，未配置时默认 7 */
   keep: z.number().int().min(1).max(30).optional(),
 });

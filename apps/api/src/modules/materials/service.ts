@@ -5,7 +5,13 @@
 // - PATCH 内核（K24）：标量键存在才 SET + updatedAt OCC；customerIds 关系数组缺席不动、[] 清空、
 //   事务内整表替换；changes===0 → 软删 404，否则 409 且 data 带当前完整行（DetailDto）；
 // - 删除 = 软删（join 行保留、不展开，K9）。
-import type { MaterialListQuery, MaterialPatch, MaterialWrite } from "@gb-crm/shared";
+import {
+  MATERIAL_FILE_KIND,
+  MATERIAL_TEXT_KINDS,
+  type MaterialListQuery,
+  type MaterialPatch,
+  type MaterialWrite,
+} from "@gb-crm/shared";
 
 import type { Db } from "../../db/client.js";
 import { createAudit, updateAudit, type AuditContext } from "../../lib/audit.js";
@@ -18,6 +24,7 @@ import {
   type MaterialDetailDto,
   type MaterialDto,
 } from "./assemble.js";
+import { deleteStoredObjectIfAny } from "./file.js";
 import {
   findLiveCustomerIds,
   getMaterialByIdAny,
@@ -27,16 +34,22 @@ import {
   replaceMaterialCustomers,
   softDeleteMaterial,
 } from "./repo.js";
+import { applyMaterialTags, existingMaterialTagIds } from "./tag-attach.js";
 
 // better-sqlite3 事务是同步的；tx 与 Db 的查询接口同构，收窄类型以复用 repo 函数
 function inTx<T>(db: Db, fn: (tx: Db) => T): T {
   return db.transaction((tx) => fn(tx as unknown as Db));
 }
 
-const TEXT_KINDS: ReadonlySet<string> = new Set(["transcript", "text"]);
+const TEXT_KINDS: ReadonlySet<string> = new Set(MATERIAL_TEXT_KINDS);
 
-/** kind↔url 组合校验（K54；create/PATCH 合并值后调用）：文本类 content 可空，媒体类 url 必填 */
+/** kind↔url 组合校验（K54；create/PATCH 合并值后调用）：文本类 content 可空，媒体类 url 必填；file 不走 JSON */
 function assertKindCombo(kind: string, url: string | null): void {
+  if (kind === MATERIAL_FILE_KIND) {
+    throw unprocessable("对象存储类型请通过上传接口创建", [
+      { path: "kind", message: "对象存储类型请通过上传接口创建" },
+    ]);
+  }
   if (!TEXT_KINDS.has(kind) && !url) {
     throw unprocessable("媒体类资料必须填写链接", [
       { path: "url", message: "audio/video/link 必须有 url" },
@@ -88,7 +101,7 @@ export function createMaterial(
   ctx: AuditContext,
 ): MaterialDetailDto {
   return inTx(db, (tx) => {
-    const { customerIds, ...fields } = body;
+    const { customerIds, tagIds, newTagNames, ...fields } = body;
     // Zod 已挡组合违规，此处与 PATCH 共用同一规则兜底
     assertKindCombo(fields.kind, fields.url ?? null);
     assertLiveDelivery(tx, fields.deliveryId);
@@ -96,6 +109,8 @@ export function createMaterial(
 
     const id = insertMaterial(tx, { ...fields, ...createAudit(ctx) });
     if (customerIds !== undefined) replaceMaterialCustomers(tx, id, customerIds);
+    // K58 资料标签：tagIds/newTagNames 合并去重（id 必须 material 域 live 词）
+    applyMaterialTags(tx, id, { tagIds, newTagNames }, ctx);
     return assembleMaterialDetail(tx, getMaterialByIdAny(tx, id)!);
   });
 }
@@ -113,11 +128,19 @@ export function patchMaterial(
     const existing = getMaterialByIdAny(tx, id);
     if (!existing || existing.deletedAt !== null) throw notFound("资料不存在");
 
-    // 组合校验：合并现有行 + patch 后重跑（只改 kind 也会触发；缺席键用现有值）
-    assertKindCombo(
-      patch.kind ?? existing.kind,
-      patch.url !== undefined ? patch.url : existing.url,
-    );
+    const nextKind = patch.kind ?? existing.kind;
+    if ((existing.kind === MATERIAL_FILE_KIND) !== (nextKind === MATERIAL_FILE_KIND)) {
+      throw unprocessable(
+        existing.kind === MATERIAL_FILE_KIND
+          ? "对象存储资料不能改为其他类型，请删除后重建"
+          : "请通过上传接口创建对象存储资料",
+        [{ path: "kind", message: "不能在对象存储与其他类型之间切换" }],
+      );
+    }
+    if (nextKind !== MATERIAL_FILE_KIND) {
+      // 组合校验：合并现有行 + patch 后重跑（只改 kind 也会触发；缺席键用现有值）
+      assertKindCombo(nextKind, patch.url !== undefined ? patch.url : existing.url);
+    }
     assertLiveDelivery(tx, patch.deliveryId);
     assertLiveCustomers(tx, patch.customerIds);
 
@@ -133,15 +156,31 @@ export function patchMaterial(
 
     // 关系键：缺席=不动；[]=清空；[ids]=整表替换（与标量同一事务，updated_at 已 bump）
     if (patch.customerIds !== undefined) replaceMaterialCustomers(tx, id, patch.customerIds);
+    // K58 资料标签：tagIds 缺席时以现有标签为 base 合并 newTagNames；都缺席则不动
+    applyMaterialTags(
+      tx,
+      id,
+      { tagIds: patch.tagIds, newTagNames: patch.newTagNames },
+      ctx,
+      existingMaterialTagIds(tx, id),
+    );
     return assembleMaterialDetail(tx, getMaterialByIdAny(tx, id)!);
   });
 }
 
-export function deleteMaterial(db: Db, id: number, ctx: AuditContext): void {
+export async function deleteMaterial(
+  db: Db,
+  id: number,
+  ctx: AuditContext,
+  opts: { fetchFn?: typeof fetch } = {},
+): Promise<void> {
+  const existing = getMaterialByIdAny(db, id);
+  if (!existing || existing.deletedAt !== null) throw notFound("资料不存在");
   const changes = softDeleteMaterial(db, id, {
     deletedAt: ctx.now,
     ...updateAudit(ctx),
   });
   if (changes === 0) throw notFound("资料不存在");
+  await deleteStoredObjectIfAny(db, existing, opts);
 }
 

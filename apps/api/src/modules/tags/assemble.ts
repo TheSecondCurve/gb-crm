@@ -12,6 +12,7 @@ export interface TagDto {
   id: number;
   name: string;
   scope: string;
+  domain: string;
   sort: number;
   enabled: boolean;
   createdAt: number;
@@ -26,6 +27,7 @@ function toDto(row: TagRow, refs: Map<number, UserRef>): TagDto {
     id: row.id,
     name: row.name,
     scope: row.scope,
+    domain: row.domain,
     sort: row.sort,
     enabled: row.enabled === 1,
     createdAt: row.createdAt,

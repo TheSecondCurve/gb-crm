@@ -17,6 +17,7 @@ import type {
   ProductType,
   SocialPlatform,
   SystemRole,
+  TagDomain,
   TagScope,
 } from "./enums.js";
 import type { TokenScope } from "./schemas/auth.js";
@@ -151,12 +152,18 @@ export const tagScopeLabels: Record<TagScope, string> = {
   other: "其它",
 };
 
+export const tagDomainLabels: Record<TagDomain, string> = {
+  customer: "客户",
+  material: "资料",
+};
+
 export const materialKindLabels: Record<MaterialKind, string> = {
   transcript: "录音文字稿",
   text: "文本资料",
   audio: "音频",
   video: "视频",
   link: "其他链接",
+  file: "对象存储",
 };
 
 export const maintenanceKindLabels: Record<MaintenanceKind, string> = {

@@ -1,10 +1,16 @@
 // 资料专区（K54）：列表渲染 / q+kind+orphan 请求参数 / 按关联交付类型分组 tab（deliveryKind）/
 // 新增（kind 切换显隐）/ 修改 OCC / assistant 只读 / 查看全文。
+// K58：标签列 / 标签筛选下拉（tagId）/ 表单词表选词 + newTagNames 新词 / 编辑清空标签。
 import { describe, expect, it } from "vitest";
 import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 
 import { adminMe, assistantMe, mockFetch, renderApp, type Me } from "./helpers";
-import type { MaterialDetailDto, MaterialDto } from "../src/api/types";
+import type { MaterialDetailDto, MaterialDto, TagDto } from "../src/api/types";
+
+const materialTags: TagDto[] = [
+  { id: 1, name: "复盘", domain: "material", scope: "other", sort: 1, enabled: true, createdAt: 1, updatedAt: 1, createdBy: null, updatedBy: null },
+  { id: 2, name: "话术", domain: "material", scope: "other", sort: 2, enabled: true, createdAt: 1, updatedAt: 1, createdBy: null, updatedBy: null },
+];
 
 const m1: MaterialDto = {
   id: 1,
@@ -13,6 +19,10 @@ const m1: MaterialDto = {
   url: null,
   contentLength: 5000,
   excerpt: "各位好，欢迎来到开营仪式……",
+  originalFilename: null,
+  contentType: null,
+  fileSize: null,
+  isImage: false,
   deliveryId: 11,
   delivery: {
     id: 11,
@@ -21,6 +31,7 @@ const m1: MaterialDto = {
     endsAt: null,
   },
   customers: [{ id: 101, nickname: "张三" }],
+  tags: [{ id: 1, name: "复盘" }],
   createdAt: 1000,
   updatedAt: 2000,
   createdBy: null,
@@ -35,9 +46,14 @@ const m2: MaterialDto = {
   url: "https://example.com/a.mp3",
   contentLength: 0,
   excerpt: null,
+  originalFilename: null,
+  contentType: null,
+  fileSize: null,
+  isImage: false,
   deliveryId: null,
   delivery: null,
   customers: [],
+  tags: [],
   createdAt: 1000,
   updatedAt: 3000,
   createdBy: null,
@@ -58,6 +74,10 @@ function mockMaterialsApi(me: Me, rows: MaterialDto[] = [m1, m2]) {
     const method = init?.method ?? "GET";
     calls.push({ url, method, body: init?.body });
     if (url === "/api/v1/auth/me") return { status: 200, body: { data: me } };
+    // K58：资料域词表（列表筛选下拉 + 表单选词）
+    if (url.startsWith("/api/v1/tags")) {
+      return { status: 200, body: { data: materialTags, meta: { page: 1, pageSize: 100, total: materialTags.length } } };
+    }
     // 交付单选项（MaterialFormModal 的 deliveryOptionsLoader）
     if (url.startsWith("/api/v1/deliveries")) {
       return {
@@ -97,6 +117,26 @@ function mockMaterialsApi(me: Me, rows: MaterialDto[] = [m1, m2]) {
         return { status: 200, body: { data: rows, meta: { page: 1, pageSize: 25, total: rows.length } } };
       }
       if (method === "POST") {
+        if (url === "/api/v1/materials/upload") {
+          const form = typeof FormData !== "undefined" && init?.body && typeof init.body === "object" && "get" in init.body
+            ? (init.body as FormData)
+            : null;
+          return {
+            status: 201,
+            body: {
+              data: {
+                ...m2,
+                id: 99,
+                kind: "file",
+                title: form?.get("title") ?? "对象",
+                originalFilename: "a.png",
+                contentType: "image/png",
+                fileSize: 12,
+                isImage: true,
+              },
+            },
+          };
+        }
         const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
         return { status: 201, body: { data: { ...m2, id: 99, ...body } } };
       }
@@ -318,6 +358,103 @@ describe("资料专区", () => {
       const gets = calls.filter((c) => c.method === "GET" && c.url.startsWith("/api/v1/materials?"));
       expect(gets.length).toBeGreaterThanOrEqual(2);
     });
+  });
+
+  it("K58 标签列渲染 + 标签筛选下拉：选词后列表请求带 tagId", async () => {
+    const calls = mockMaterialsApi(adminMe);
+    renderApp("/materials");
+    await screen.findByText("开营录音文字稿");
+
+    // 标签列：m1 的「复盘」徽章（资料域词表下拉同时加载，下拉里也有同名 option）
+    expect(screen.getAllByText("复盘").length).toBeGreaterThan(0);
+    const select = screen.getByLabelText("标签筛选") as HTMLSelectElement;
+    await waitFor(() => expect(within(select).getByRole("option", { name: "话术" })).toBeTruthy());
+
+    fireEvent.change(select, { target: { value: "2" } });
+    await waitFor(() => {
+      const hit = calls.find(
+        (c) => c.method === "GET" && c.url.startsWith("/api/v1/materials?") && c.url.includes("tagId=2"),
+      );
+      expect(hit).toBeTruthy();
+    });
+  });
+
+  it("K58 新增资料：词表选词 + 回车添加新词 + 同名回车复用 → POST 带 tagIds/newTagNames", async () => {
+    const calls = mockMaterialsApi(adminMe);
+    renderApp("/materials");
+    await screen.findByText("开营录音文字稿");
+
+    fireEvent.click(screen.getByRole("button", { name: "新增资料" }));
+    const dialog = screen.getByRole("dialog", { name: "新增资料" });
+    fireEvent.change(within(dialog).getByLabelText(/标题/), { target: { value: "带标签资料" } });
+
+    const tagInput = within(dialog).getByLabelText("搜索资料标签");
+    // 聚焦展开候选，点候选选词表词「话术」
+    fireEvent.focus(tagInput);
+    fireEvent.mouseDown(await within(dialog).findByRole("option", { name: "话术" }));
+    // 回车添加新词（前后空白被 trim）
+    fireEvent.change(tagInput, { target: { value: "  新主题  " } });
+    fireEvent.keyDown(tagInput, { key: "Enter" });
+    // 回车输入词表已有词 = 复用进 tagIds，不进 newTagNames
+    fireEvent.change(tagInput, { target: { value: "复盘" } });
+    fireEvent.keyDown(tagInput, { key: "Enter" });
+
+    fireEvent.click(within(dialog).getByRole("button", { name: "创建" }));
+    await waitFor(() => {
+      const post = calls.find((c) => c.method === "POST" && c.url === "/api/v1/materials");
+      expect(post).toBeTruthy();
+      const body = JSON.parse(String(post?.body)) as Record<string, unknown>;
+      expect(body.tagIds).toEqual([2, 1]);
+      expect(body.newTagNames).toEqual(["新主题"]);
+    });
+  });
+
+  it("K58 修改资料：移除已有标签 → PATCH tagIds: [] + newTagNames: []（清空语义）", async () => {
+    const calls = mockMaterialsApi(adminMe, [m1]);
+    renderApp("/materials");
+    await screen.findByText("开营录音文字稿");
+
+    fireEvent.click(screen.getByRole("button", { name: "修改" }));
+    const dialog = await screen.findByRole("dialog", { name: /修改资料/ });
+    // 编辑模式用 material.tags 预填 chip
+    fireEvent.click(within(dialog).getByRole("button", { name: "移除 复盘" }));
+    fireEvent.click(within(dialog).getByRole("button", { name: "保存" }));
+
+    await waitFor(() => {
+      const patch = calls.find((c) => c.method === "PATCH" && c.url === "/api/v1/materials/1");
+      expect(patch).toBeTruthy();
+      const body = JSON.parse(String(patch?.body)) as Record<string, unknown>;
+      expect(body.tagIds).toEqual([]);
+      expect(body.newTagNames).toEqual([]);
+    });
+  });
+
+  it("新增对象存储资料：切到对象存储 → 文件输入出现；FormData 上传（含标签键）不跳编辑页", async () => {
+    const calls = mockMaterialsApi(adminMe);
+    renderApp("/materials");
+    await screen.findByText("开营录音文字稿");
+
+    fireEvent.click(screen.getByRole("button", { name: "新增资料" }));
+    const dialog = screen.getByRole("dialog", { name: "新增资料" });
+    fireEvent.change(within(dialog).getByLabelText(/资料类型/), { target: { value: "file" } });
+    expect(within(dialog).queryByLabelText(/链接/)).toBeNull();
+    expect(within(dialog).getByLabelText(/文件/)).toBeTruthy();
+    fireEvent.change(within(dialog).getByLabelText(/标题/), { target: { value: "现场照片" } });
+    // K58：选一个词表标签，验证 multipart 以 JSON 数组字符串携带
+    const tagInput = within(dialog).getByLabelText("搜索资料标签");
+    fireEvent.focus(tagInput);
+    fireEvent.mouseDown(await within(dialog).findByRole("option", { name: "话术" }));
+    const file = new File([new Uint8Array([1, 2, 3])], "a.png", { type: "image/png" });
+    fireEvent.change(within(dialog).getByLabelText(/文件/), { target: { files: [file] } });
+    fireEvent.click(within(dialog).getByRole("button", { name: "创建" }));
+    await waitFor(() => {
+      const post = calls.find((c) => c.method === "POST" && c.url === "/api/v1/materials/upload");
+      expect(post).toBeTruthy();
+      const form = post?.body as unknown as FormData;
+      expect(form.get("tagIds")).toBe("[2]");
+      expect(form.get("newTagNames")).toBe("[]");
+    });
+    expect(screen.queryByLabelText("正文内容")).toBeNull();
   });
 
   it("assistant 只读：无新增/修改/删除，仅查看", async () => {
