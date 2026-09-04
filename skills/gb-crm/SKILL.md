@@ -1,13 +1,13 @@
 ---
 name: gb-crm
-version: 0.9.0
+version: 0.10.0
 description: >
   女商 私域运营管理端（gb-crm）本机 HTTP 客户端。用 ~/.gb-crm/credentials.json 的 PAT
-  通过单一 SQL 端点查询或维护客户、渠道、产品、团队成员、成交记录、交付管理与咨询资料。
+  通过单一 SQL 端点查询或维护客户、渠道、产品、团队成员、成交记录、交付管理与资料。
   当用户提到 CRM 查找（查客户/名单/资料/语料）、CRM 更新（增改删客户/渠道/产品/成交/交付/
-  咨询资料/维护记录）、客户跟进、新增客户维护（给客户记一条维护记录/状态变化/线索/备注）
+  资料/维护记录）、客户跟进、新增客户维护（给客户记一条维护记录/状态变化/线索/备注）
   这类对系统的增删改查操作，或提到 CRM、客户名单、渠道资产、产品目录、团队成员、成交、交付、
-  咨询资料、语料、gb-crm、女商私域运营管理端，或要查/改客户时使用。
+  资料、语料、gb-crm、女商私域运营管理端，或要查/改客户时使用。
   Use when the user runs /gb-crm.
 metadata:
   short-description: 用本机 PAT 对 gb-crm 跑 SQL
@@ -114,7 +114,7 @@ UPDATE customers SET owner_id = ?, updated_at = ?, updated_by = ? WHERE id = ?;
 
 ## 表结构
 
-真相源：`apps/api/drizzle/` 迁移最终态（`0000_init.sql` 为历史；`0002`–`0006` 删除飞书字段/客户旧字段/客户标签；`0007` 社交账号表 K41；`0008` 成交表 K42；`0010` 交付重构 K44，`0009` 旧交付模型 DROP 重建；`0012`–`0014` 交付起止日期/类型 kind+status/交付项排期；`0020` 咨询资料 + FTS5（K54）；`0026` 资料标签（K58））。列全部 snake_case（SQL 层没有 camelCase）。
+真相源：`apps/api/drizzle/` 迁移最终态（`0000_init.sql` 为历史；`0002`–`0006` 删除飞书字段/客户旧字段/客户标签；`0007` 社交账号表 K41；`0008` 成交表 K42；`0010` 交付重构 K44，`0009` 旧交付模型 DROP 重建；`0012`–`0014` 交付起止日期/类型 kind+status/交付项排期；`0020` 资料 + FTS5（K54）；`0026` 资料标签（K58））。列全部 snake_case（SQL 层没有 camelCase）。
 
 ### users（团队成员）
 
@@ -201,12 +201,18 @@ UPDATE customers SET owner_id = ?, updated_at = ?, updated_by = ? WHERE id = ?;
 - `deliverables`（交付项，挂交付单）：`delivery_id`（必填 FK，cascade）/ `content`（必填，如「拉群」）/ `dimension`（`project`/`customer`，默认 `project`）/ `description` / `delivery_url` / `starts_at` / `ends_at`（排期，可空）；软删。无独立状态，打勾进度即状态。
 - `delivery_tasks`（动作清单，交付项子表）：`deliverable_id`（必填 FK，cascade）/ `customer_id`（**可空**，NULL = 项目维度；客户维度按 customer 分别打勾）/ `content` / `done`（0/1）/ `done_at` / `done_by` / `remark`；**硬删**，无 deleted_at。
 
-### 咨询资料（K54）
+### 资料（K54/K58）
 
-领域模型：**每一场咨询服务 = 一条 `deliveries`**（无父子记录）。三类服务对应三条交付类型数据：微博365连麦、线下1v1咨询（kind=`consulting`），商业下午茶（kind=`activity`，一场 5-6 人，客户走 `delivery_customers`）。资料是场次的产出物，可挂交付单也可不挂（**孤儿资料允许**——整理旧资料时先导入、后补关联）。
+领域模型：资料是**交付的产出物**，挂在交付单上；交付不只有咨询——`delivery_types.kind` 分 `consulting` 咨询 / `activity` 活动 / `circle` 圈子 / `other` 其他（如微博365连麦、线下1v1咨询是 consulting，商业下午茶是 activity：一场 5-6 人，客户走 `delivery_customers`）。匹配关系与库结构一致：`delivery_materials.delivery_id` 是**可空** FK → deliveries.id，NULL = 未关联交付的孤儿（只应作为历史遗留/过渡状态存在）。
 
-- `delivery_materials`（资料）：`delivery_id`（**可空** FK → deliveries.id，NULL = 未关联场次的孤儿）/ `kind`（`transcript` 录音文字稿 / `text` 文本资料 / `audio` 音频 / `video` 视频 / `link` 其他链接 / `file` 对象存储）/ `title`（必填，标题+说明）/ `url`（媒体类必填）/ `content`（**文本类全文**，可上万字）/ `object_key` / `content_type` / `file_size` / `original_filename`（仅 `kind=file`）；审计四列 + `deleted_at` 软删。组合约束（管理端 Zod 强制，写 SQL 时自觉遵守）：`transcript`/`text` 必须有 `content`，`audio`/`video`/`link` 必须有 `url`，`file` 必须有 `object_key`（文件走管理端上传，不要手写 SQL 塞二进制）。
+- `delivery_materials`（资料）：`delivery_id`（可空 FK，见上）/ `kind`（`transcript` 录音文字稿 / `text` 文本资料 / `audio` 音频 / `video` 视频 / `link` 其他链接 / `file` 对象存储）/ `title`（必填，标题+说明）/ `url`（媒体类必填）/ `content`（**文本类全文**，可上万字）/ `object_key` / `content_type` / `file_size` / `original_filename`（仅 `kind=file`）；审计四列 + `deleted_at` 软删。组合约束（管理端 Zod 强制，写 SQL 时自觉遵守）：`transcript`/`text` 必须有 `content`，`audio`/`video`/`link` 必须有 `url`，`file` 必须有 `object_key`（文件走管理端上传，不要手写 SQL 塞二进制）。
 - `delivery_material_customers`（资料 × 客户 M2M）：`(material_id, customer_id)` 复合 PK，0..N——**一份资料可属多个人**（如下午茶整场录音稿挂全部参会者），0 行 = 未关联客户；**硬删**，无审计列。
+
+**新增资料先落交付单**（按语义匹配，不限咨询类）：
+
+1. **匹配**：按交付类型名 / 起止日期 / 关联客户收窄，查 live 交付单（`deliveries` JOIN `delivery_types`，两边都 `deleted_at IS NULL`），列出候选让用户确认后填 `delivery_id`；
+2. **新建**：没有合适的交付单就新建一条——先查 `delivery_types`（`deleted_at IS NULL AND status='active'`）选语义贴合的类型（kind 不限 consulting，活动/圈子/其他都可以）；连类型都不贴切就先跟用户确认，不要硬塞。新交付单补审计四列，参与客户走 `delivery_customers`；
+3. 不要主动造孤儿资料；只有用户明确说「先不关联交付」时才留 `delivery_id = NULL`。
 
 全文搜索（FTS5，`trigram` 分词，中文子串友好）：
 
@@ -221,6 +227,22 @@ WHERE m.deleted_at IS NULL
 - MATCH token 必须 **≥3 个字符**（trigram），用双引号包裹；短词（如 2 字「咨询」）退回 `LIKE '%咨询%'`（title 和 content 两列）。
 - 常用过滤：`kind = 'transcript'`、孤儿资料 `delivery_id IS NULL OR NOT EXISTS (SELECT 1 FROM delivery_material_customers mc WHERE mc.material_id = m.id)`、某客户的资料 `JOIN delivery_material_customers mc ON mc.material_id = m.id AND mc.customer_id = ?`。
 - 写资料时同守则 4 补审计列；软删走 `UPDATE ... SET deleted_at = <now>`（触发器会清 FTS，不用管）。
+
+**资料标签（K58）**：资料词与客户词同在 `tags` 表，按 `domain` 分域（`customer` / `material`），live 唯一按 `(domain, name)`——同名词在两域可以并存，解析时**必须带域**。关联表 `delivery_material_tags`：`(material_id, tag_id)` 复合 PK + `created_at`/`created_by`；**硬删**，无 `deleted_at`（同 customer_tags 形态）。
+
+加标签：按名字解析时带 `AND domain='material'`：
+
+```sql
+SELECT id FROM tags WHERE name=? AND domain='material' AND deleted_at IS NULL;
+```
+
+同名 live 资料词直接复用；词表没有时**直接建** material 域行（`scope='other'`、`enabled=1`、补 `created_at`/`created_by` 审计列）——与客户词表「先跟用户确认再建行」不同，资料词**免审批**（与管理端资料表单 `newTagNames` 行为一致）。然后：
+
+```sql
+INSERT OR IGNORE INTO delivery_material_tags (material_id, tag_id, created_at, created_by) VALUES (?, ?, <now>, <me>);
+```
+
+删标签：`DELETE FROM delivery_material_tags WHERE material_id=? AND tag_id=?`（先按名字解析出 `tag_id`，删前向用户复述）。
 
 ### 客户维护记录（K55）
 
@@ -240,7 +262,8 @@ WHERE m.deleted_at IS NULL
 
 - `tags`（词表，软删）：`name`（必填）/ `domain`（`customer` 客户 / `material` 资料，缺省 customer；live 唯一按 `(domain, name)`，同名跨域允许）/ `scope`（`identity` 身份 / `stage` 阶段 / `interest` 兴趣 / `other` 其它）/ `enabled` 0/1 / `sort`；审计四列 + `deleted_at`。
 - `customer_tags`（客户 × 标签 M2M）：`(customer_id, tag_id)` 复合 PK + `created_at`/`created_by`；**硬删**，无 `deleted_at`。
-- `delivery_material_tags`（资料 × 标签 M2M，K58）：`(material_id, tag_id)` 复合 PK + `created_at`/`created_by`；**硬删**，无 `deleted_at`（同 customer_tags 形态）。
+
+资料侧的标签词（`domain='material'`）与 `delivery_material_tags` 见上面「资料」一节。
 
 **加标签**：先按名字解析词表 `SELECT id FROM tags WHERE name=? AND domain='customer' AND deleted_at IS NULL`，同名 live 词直接复用；词表没有先跟用户确认再建行（补 `scope`/`enabled=1`/审计列，domain 缺省即 customer）。然后：
 
@@ -249,24 +272,6 @@ INSERT OR IGNORE INTO customer_tags (customer_id, tag_id, created_at, created_by
 ```
 
 **删标签**：join 表唯一允许的硬删——`DELETE FROM customer_tags WHERE customer_id=? AND tag_id=?`（先按名字解析出 `tag_id`，删前向用户复述）。
-
-### 资料标签（K58）
-
-资料词与客户词同在 `tags` 表，按 `domain` 分域（`customer` / `material`），live 唯一按 `(domain, name)`——同名词在两域可以并存，解析时**必须带域**。关联表 `delivery_material_tags`（结构见上）。
-
-**资料加标签**：按名字解析时带 `AND domain='material'`：
-
-```sql
-SELECT id FROM tags WHERE name=? AND domain='material' AND deleted_at IS NULL;
-```
-
-同名 live 资料词直接复用；词表没有时**直接建** material 域行（`scope='other'`、`enabled=1`、补 `created_at`/`created_by` 审计列）——与客户词表「先跟用户确认再建行」不同，资料词**免审批**（与管理端资料表单 `newTagNames` 行为一致）。然后：
-
-```sql
-INSERT OR IGNORE INTO delivery_material_tags (material_id, tag_id, created_at, created_by) VALUES (?, ?, <now>, <me>);
-```
-
-**资料删标签**：`DELETE FROM delivery_material_tags WHERE material_id=? AND tag_id=?`（先按名字解析出 `tag_id`，删前向用户复述）。
 
 ### 系统表（别动）
 
