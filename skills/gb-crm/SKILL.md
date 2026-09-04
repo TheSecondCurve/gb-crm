@@ -1,6 +1,6 @@
 ---
 name: gb-crm
-version: 0.8.4
+version: 0.8.5
 description: >
   女商 私域运营管理端（gb-crm）本机 HTTP 客户端。用 ~/.gb-crm/credentials.json 的 PAT
   通过单一 SQL 端点查询或维护客户、渠道、产品、团队成员、成交记录、交付管理与咨询资料。
@@ -73,7 +73,7 @@ curl -fsSL http://<crm-host>/agent/login.sh | sh
 
 1. 先 `me`，记下自己的 `id` 与 `systemRole`。
 2. **「我的」= 等值过滤，不是权限收紧**（助理/运营本身就能读全量，这一步只是按当前账号收敛查询范围）：用户说「我的客户 / 我的成交 / 我负责的 / 我名下的」→ 必须在 SQL 里写 `WHERE owner_id = <自己的 user id>`——这个 id 就是规则 1 里 `me` 拿到的 `id`（`customers.owner_id`、`deals.owner_id` 同理）。用户说「所有客户 / 全部客户 / 客户名单 / 全量」→ **不要**加 owner 过滤，默认只 `WHERE deleted_at IS NULL`。用户说「某人的客户」（如「小王的」）→ 先按昵称查到那个人的 `id`，再用其 `owner_id` 过滤——「我的」永远只等于当前令牌账号自己。拿不准（如「闪光那边的客户」）→ 先复述「只看我名下，还是全部？」确认再查。
-3. 查数据前先看下面的表结构；**默认过滤软删**：`WHERE deleted_at IS NULL`（sessions / api_tokens / delivery_tasks / delivery_customers / delivery_material_customers / channel_owners / customer_source_channels / customer_social_accounts 无此列）。
+3. 查数据前先看下面的表结构；**默认过滤软删**：`WHERE deleted_at IS NULL`（sessions / api_tokens / delivery_tasks / delivery_customers / delivery_material_customers / channel_owners / customer_source_channels / customer_social_accounts / customer_tags 无此列）。
 4. 写数据只在用户明确要求时做；删除前复述将删的行并得到确认。删除 = **软删**：`UPDATE ... SET deleted_at = <now>`，不要 `DELETE FROM`。
 5. 写时**手动维护** `updated_at = <当前 epoch 毫秒>`、`updated_by = <自己的 user id>`（`me` 拿到）；新建行同理补 `created_at` / `created_by`。
 6. 时间戳一律 **epoch 毫秒**（UTC）。金额 `price_cents` 是**分**，展示元；不要 `yuan * 100` 不 round 就写入。布尔 `is_package` 是 0/1。
@@ -235,6 +235,19 @@ WHERE m.deleted_at IS NULL
 
 - 同守则 4/5：软删只更新 `deleted_at`，不硬删；补 `created_at`/`created_by`、`updated_at`/`updated_by`。
 - `kind` 为 `follow_up` / `lead`（跟进/线索）时，**同步刷新该客户的 `customers.last_followed_at`**，取「当前值与本次 `happened_at` 的较大者」——与「最近跟进」展示保持一致。
+
+### 客户标签（K45）
+
+- `tags`（词表，软删）：`name`（必填）/ `scope`（`identity` 身份 / `stage` 阶段 / `interest` 兴趣 / `other` 其它）/ `enabled` 0/1 / `sort`；审计四列 + `deleted_at`。
+- `customer_tags`（客户 × 标签 M2M）：`(customer_id, tag_id)` 复合 PK + `created_at`/`created_by`；**硬删**，无 `deleted_at`。
+
+**加标签**：先按名字解析词表 `SELECT id FROM tags WHERE name=? AND deleted_at IS NULL`，同名 live 词直接复用；词表没有先跟用户确认再建行（补 `scope`/`enabled=1`/审计列）。然后：
+
+```sql
+INSERT OR IGNORE INTO customer_tags (customer_id, tag_id, created_at, created_by) VALUES (?, ?, <now>, <me>);
+```
+
+**删标签**：join 表唯一允许的硬删——`DELETE FROM customer_tags WHERE customer_id=? AND tag_id=?`（先按名字解析出 `tag_id`，删前向用户复述）。
 
 ### 系统表（别动）
 
