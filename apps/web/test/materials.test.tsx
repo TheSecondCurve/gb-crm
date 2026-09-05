@@ -574,4 +574,37 @@ describe("资料专区 · 文件专区 tab", () => {
     expect(screen.queryByRole("button", { name: "修改" })).toBeNull();
     expect(screen.queryByRole("button", { name: "删除" })).toBeNull();
   });
+
+  it("按交付名定位交付并过滤：选中交付单后请求带 deliveryId，移除 chip 后不再带", async () => {
+    const calls = mockMaterialsApi(adminMe, [f2]);
+    renderApp("/materials");
+    fireEvent.click(await screen.findByRole("tab", { name: "文件专区" }));
+    await screen.findByText("复盘手册");
+
+    const input = screen.getByLabelText("按交付过滤");
+    fireEvent.focus(input);
+    fireEvent.change(input, { target: { value: "私董" } });
+    fireEvent.mouseDown(await screen.findByRole("option", { name: /私董圈子 #11/ }));
+    await waitFor(() => {
+      const hit = calls.find(
+        (c) =>
+          c.method === "GET" &&
+          c.url.startsWith("/api/v1/materials?") &&
+          c.url.includes("kind=file") &&
+          c.url.includes("deliveryId=11"),
+      );
+      expect(hit).toBeTruthy();
+    });
+
+    // chip × 移除 → 最新请求不再带 deliveryId
+    fireEvent.click(screen.getByRole("button", { name: /移除 私董圈子/ }));
+    await waitFor(() => {
+      const gets = calls.filter(
+        (c) => c.method === "GET" && c.url.startsWith("/api/v1/materials?") && c.url.includes("kind=file"),
+      );
+      const last = gets[gets.length - 1];
+      expect(last).toBeTruthy();
+      expect(last?.url).not.toContain("deliveryId");
+    });
+  });
 });
