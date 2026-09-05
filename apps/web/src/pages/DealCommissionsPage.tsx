@@ -216,6 +216,9 @@ export function DealCommissionsPage() {
   const [pageSize, setPageSize] = useState(25);
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
+  const [deliveryStartDate, setDeliveryStartDate] = useState("");
+  const [deliveryEndDate, setDeliveryEndDate] = useState("");
+  const [deliveryStatus, setDeliveryStatus] = useState("notEmpty");
   const [status, setStatus] = useState("");
   const [payoutStatus, setPayoutStatus] = useState("");
   const [q, setQ] = useState("");
@@ -225,6 +228,9 @@ export function DealCommissionsPage() {
   const startMs = dateToEpochMs(startDate) ?? undefined;
   const endMs = dateToEpochMs(endDate);
   const endMsInclusive = endMs === null ? undefined : endMs + 86399999;
+  const deliveryStartMs = dateToEpochMs(deliveryStartDate) ?? undefined;
+  const deliveryEndMs = dateToEpochMs(deliveryEndDate);
+  const deliveryEndMsInclusive = deliveryEndMs === null ? undefined : deliveryEndMs + 86399999;
 
   const { data, isLoading } = useQuery({
     queryKey: [
@@ -236,6 +242,9 @@ export function DealCommissionsPage() {
       payoutStatus,
       startMs,
       endMsInclusive,
+      deliveryStartMs,
+      deliveryEndMsInclusive,
+      deliveryStatus,
       q,
     ],
     queryFn: async () =>
@@ -247,6 +256,9 @@ export function DealCommissionsPage() {
           payoutStatus,
           startDate: startMs,
           endDate: endMsInclusive,
+          deliveryStartDate: deliveryStartMs,
+          deliveryEndDate: deliveryEndMsInclusive,
+          deliveryStatus,
           q,
         })}`,
       )) ?? { data: [], meta: { total: 0 } },
@@ -319,6 +331,9 @@ export function DealCommissionsPage() {
       payoutStatus,
       startDate: startMs,
       endDate: endMsInclusive,
+      deliveryStartDate: deliveryStartMs,
+      deliveryEndDate: deliveryEndMsInclusive,
+      deliveryStatus,
     })}`;
     const a = document.createElement("a");
     a.href = href;
@@ -342,25 +357,62 @@ export function DealCommissionsPage() {
               setPage(1);
             }}
           />
-          <input
-            aria-label="开始日期"
-            type="date"
-            value={startDate}
-            onChange={(e) => {
-              setStartDate(e.target.value);
-              setPage(1);
-            }}
-          />
-          <span>~</span>
-          <input
-            aria-label="结束日期"
-            type="date"
-            value={endDate}
-            onChange={(e) => {
-              setEndDate(e.target.value);
-              setPage(1);
-            }}
-          />
+          <span className="filter-group">
+            <label>成交日期</label>
+            <input
+              aria-label="成交日期开始"
+              type="date"
+              value={startDate}
+              onChange={(e) => {
+                setStartDate(e.target.value);
+                setPage(1);
+              }}
+            />
+            <span>~</span>
+            <input
+              aria-label="成交日期结束"
+              type="date"
+              value={endDate}
+              onChange={(e) => {
+                setEndDate(e.target.value);
+                setPage(1);
+              }}
+            />
+          </span>
+          <span className="filter-group">
+            <label>交付日期</label>
+            <select
+              aria-label="交付日期空否"
+              value={deliveryStatus}
+              onChange={(e) => {
+                setDeliveryStatus(e.target.value);
+                setPage(1);
+              }}
+            >
+              <option value="notEmpty">已填</option>
+              <option value="empty">未填</option>
+              <option value="">全部</option>
+            </select>
+            <input
+              aria-label="交付日期开始"
+              type="date"
+              value={deliveryStartDate}
+              onChange={(e) => {
+                setDeliveryStartDate(e.target.value);
+                setPage(1);
+              }}
+            />
+            <span>~</span>
+            <input
+              aria-label="交付日期结束"
+              type="date"
+              value={deliveryEndDate}
+              onChange={(e) => {
+                setDeliveryEndDate(e.target.value);
+                setPage(1);
+              }}
+            />
+          </span>
           <select
             aria-label="分成状态"
             value={status}
