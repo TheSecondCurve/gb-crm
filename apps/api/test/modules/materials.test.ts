@@ -52,7 +52,7 @@ async function createCustomer(cookie: string, nickname: string): Promise<number>
   return res.json().data.id;
 }
 
-async function createDelivery(cookie: string): Promise<{ id: number; startsAt: number; endsAt: number }> {
+async function createDelivery(cookie: string, name?: string): Promise<{ id: number; startsAt: number; endsAt: number }> {
   const type = await post("/api/v1/delivery-types", cookie, { name: "一对一咨询", kind: "consulting" });
   expect(type.statusCode).toBe(201);
   const res = await post("/api/v1/deliveries", cookie, {
@@ -60,6 +60,7 @@ async function createDelivery(cookie: string): Promise<{ id: number; startsAt: n
     customerIds: [],
     startsAt: clock.t - 1000,
     endsAt: clock.t + 100000,
+    ...(name !== undefined ? { name } : {}),
   });
   expect(res.statusCode).toBe(201);
   const data = res.json().data;
@@ -155,6 +156,7 @@ describe("POST /api/v1/materials 创建", () => {
     expect(data.deliveryId).toBe(delivery.id);
     expect(data.delivery).toEqual({
       id: delivery.id,
+      name: null,
       deliveryType: { id: expect.any(Number), name: "一对一咨询", kind: "consulting" },
       startsAt: delivery.startsAt,
       endsAt: delivery.endsAt,
@@ -245,6 +247,31 @@ describe("GET /api/v1/materials 列表：搜索（FTS/LIKE 混合）", () => {
     expect(afterDelete.json().meta.total).toBe(0);
     const afterDeleteLike = await get(`/api/v1/materials?q=${encodeURIComponent("咨询")}`, cookie);
     expect(afterDeleteLike.json().meta.total).toBe(0);
+  });
+
+  it("q 命中关联交付名（name）：≥3 字符 FTS 分支与 <3 字符 LIKE 分支均 OR；软删交付不命中", async () => {
+    const { cookie } = await loginAsRole("admin");
+    const delivery = await createDelivery(cookie, "第12期商业下午茶");
+    const m = await createMaterial(cookie, { ...TEXT, deliveryId: delivery.id });
+    await createMaterial(cookie, AUDIO); // 未关联交付的对照行
+
+    // 交付名随 ref 展开
+    expect(m.delivery.name).toBe("第12期商业下午茶");
+
+    // FTS 分支（4 字符 token）：title/content 都不含该词，靠交付名命中
+    const ftsHit = await get(`/api/v1/materials?q=${encodeURIComponent("商业下午茶")}`, cookie);
+    expect(ftsHit.json().meta.total).toBe(1);
+    expect(ftsHit.json().data[0].id).toBe(m.id);
+
+    // LIKE 分支（2 字符 token）
+    const likeHit = await get(`/api/v1/materials?q=${encodeURIComponent("12期")}`, cookie);
+    expect(likeHit.json().meta.total).toBe(1);
+    expect(likeHit.json().data[0].id).toBe(m.id);
+
+    // 交付软删后不再命中
+    expect((await del(`/api/v1/deliveries/${delivery.id}`, cookie)).statusCode).toBe(204);
+    const afterDelete = await get(`/api/v1/materials?q=${encodeURIComponent("商业下午茶")}`, cookie);
+    expect(afterDelete.json().meta.total).toBe(0);
   });
 
   it("PATCH 改 content/title 后 FTS 更新触发器同步：新词可搜到、旧词搜不到", async () => {

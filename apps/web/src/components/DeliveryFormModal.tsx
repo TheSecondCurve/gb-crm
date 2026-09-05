@@ -38,7 +38,7 @@ async function fetchProductDealCustomers(productId: number): Promise<RelationOpt
 }
 
 /**
- * 交付单弹窗：类型（下拉）+ 起止日期（日历输入）+ 客户集合（两种来源合并：手动搜索多选 /
+ * 交付单弹窗：类型（下拉）+ 交付名（可空）+ 起止日期（日历输入）+ 客户集合（两种来源合并：手动搜索多选 /
  * 按意向产品从成交 merge）+ 备注。客户可不选（空交付单）。
  */
 export function DeliveryFormModal({ title, delivery, busy, onClose, onSubmit }: DeliveryFormModalProps) {
@@ -47,6 +47,7 @@ export function DeliveryFormModal({ title, delivery, busy, onClose, onSubmit }: 
 
   const [typeOptions, setTypeOptions] = useState<RelationOption[]>([]);
   const [typeId, setTypeId] = useState<string>(delivery ? String(delivery.deliveryTypeId) : "");
+  const [name, setName] = useState(delivery?.name ?? "");
   const [startsAt, setStartsAt] = useState(delivery ? epochMsToDate(delivery.startsAt) : "");
   const [endsAt, setEndsAt] = useState(delivery ? epochMsToDate(delivery.endsAt) : "");
   const [selected, setSelected] = useState<number[]>(delivery ? delivery.customers.map((c) => c.id) : []);
@@ -145,6 +146,7 @@ export function DeliveryFormModal({ title, delivery, busy, onClose, onSubmit }: 
       // PATCH 行级 OCC：修改模式必须带当前 updatedAt（新建模式缺席）
       ...(delivery ? { updatedAt: delivery.updatedAt } : {}),
       deliveryTypeId: Number(typeId),
+      name: name.trim() || null,
       customerIds: selected,
       startsAt: dateToEpochMs(startsAt),
       endsAt: dateToEpochMs(endsAt),
@@ -165,6 +167,15 @@ export function DeliveryFormModal({ title, delivery, busy, onClose, onSubmit }: 
               </option>
             ))}
           </select>
+        </label>
+        <label className="field">
+          交付名
+          <input
+            autoComplete="off"
+            placeholder="可空，如「第12期下午茶」"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+          />
         </label>
         <label className="field">
           交付备注

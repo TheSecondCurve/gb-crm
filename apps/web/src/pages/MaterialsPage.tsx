@@ -135,7 +135,7 @@ export function MaterialsPage() {
         <div className="search-bar">
           {view === "browse" && (
             <>
-              <SearchBar onSearch={list.changeSearch} placeholder="搜索资料…" />
+              <SearchBar onSearch={list.changeSearch} placeholder="搜索资料/交付名…" />
               <select aria-label="类型筛选" value={list.filter} onChange={(e) => list.changeFilter(e.target.value)}>
                 <option value="">全部类型</option>
                 {optionsOf(materialKindLabels).map((o) => (
@@ -234,7 +234,7 @@ export function MaterialsPage() {
                     </td>
                     <td>
                       {row.delivery
-                        ? `${row.delivery.deliveryType?.name ?? "交付"} ${
+                        ? `${row.delivery.name ?? row.delivery.deliveryType?.name ?? "交付"} ${
                             epochMsToDate(row.delivery.startsAt) || epochMsToDate(row.delivery.endsAt)
                               ? `（${epochMsToDate(row.delivery.startsAt) || "?"} ~ ${epochMsToDate(row.delivery.endsAt) || "?"}）`
                               : `#${row.delivery.id}`

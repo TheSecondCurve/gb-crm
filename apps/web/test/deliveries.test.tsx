@@ -9,6 +9,7 @@ const delivery: DeliveryDto = {
   id: 1,
   deliveryTypeId: 11,
   deliveryType: { id: 11, name: "圈子全年交付", kind: "circle" },
+  name: null,
   customers: [
     { id: 101, nickname: "张三" },
     { id: 102, nickname: "李四" },
@@ -123,6 +124,46 @@ describe("交付管理页（交付单列表）", () => {
     await screen.findByText("2 人"); // 表格已加载
     expect(screen.getAllByText("圈子全年交付").length).toBeGreaterThan(0); // 顶部类型 tab + 行内类型名
     expect(screen.getByText("备注甲")).toBeTruthy();
+  });
+
+  it("交付名：列表渲染 name（空显示 —）；新增表单填交付名 → POST 携带 name", async () => {
+    const named: DeliveryDto = { ...delivery, id: 2, name: "第12期下午茶" };
+    const calls = mockDeliveriesApi(adminMe, [delivery, named]);
+    renderApp("/deliveries");
+    await screen.findByText("第12期下午茶"); // name 列已渲染
+    expect(screen.getByText("—")).toBeTruthy(); // 无名行回退占位
+
+    fireEvent.click(screen.getByRole("button", { name: "新增交付" }));
+    const dialog = screen.getByRole("dialog", { name: "新增交付" });
+    await within(dialog).findByRole("option", { name: "圈子全年交付" });
+    fireEvent.change(within(dialog).getByLabelText("交付类型"), { target: { value: "11" } });
+    fireEvent.change(within(dialog).getByLabelText("交付名"), { target: { value: "第13期下午茶" } });
+    fireEvent.click(within(dialog).getByRole("button", { name: "创建" }));
+
+    await waitFor(() => {
+      const post = calls.find((c) => c.method === "POST" && c.url === "/api/v1/deliveries");
+      expect(post).toBeTruthy();
+      const body = JSON.parse(String(post?.body)) as { name: string | null };
+      expect(body.name).toBe("第13期下午茶");
+    });
+  });
+
+  it("交付名留空创建 → POST name=null", async () => {
+    const calls = mockDeliveriesApi(adminMe);
+    renderApp("/deliveries");
+    await screen.findByRole("button", { name: "新增交付" });
+
+    fireEvent.click(screen.getByRole("button", { name: "新增交付" }));
+    const dialog = screen.getByRole("dialog", { name: "新增交付" });
+    await within(dialog).findByRole("option", { name: "圈子全年交付" });
+    fireEvent.change(within(dialog).getByLabelText("交付类型"), { target: { value: "11" } });
+    fireEvent.click(within(dialog).getByRole("button", { name: "创建" }));
+
+    await waitFor(() => {
+      const post = calls.find((c) => c.method === "POST" && c.url === "/api/v1/deliveries");
+      const body = JSON.parse(String(post?.body)) as { name: string | null };
+      expect(body.name).toBeNull();
+    });
   });
 
   it("新增交付：选类型 + 手动选客户 + 按意向产品 merge → POST customerIds 合并", async () => {

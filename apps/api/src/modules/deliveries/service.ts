@@ -174,6 +174,7 @@ export function createDelivery(db: Db, body: DeliveryWrite, ctx: AuditContext): 
     assertLiveCustomers(tx, body.customerIds);
     const id = insertDelivery(tx, {
       deliveryTypeId: body.deliveryTypeId,
+      name: body.name ?? null,
       startsAt: body.startsAt ?? null,
       endsAt: body.endsAt ?? null,
       remark: body.remark,
@@ -184,7 +185,7 @@ export function createDelivery(db: Db, body: DeliveryWrite, ctx: AuditContext): 
   });
 }
 
-const DELIVERY_PATCHABLE_KEYS = new Set(["deliveryTypeId", "startsAt", "endsAt", "remark"]);
+const DELIVERY_PATCHABLE_KEYS = new Set(["deliveryTypeId", "name", "startsAt", "endsAt", "remark"]);
 
 export function patchDelivery(
   db: Db,

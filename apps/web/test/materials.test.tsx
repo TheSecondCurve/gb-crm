@@ -27,6 +27,7 @@ const m1: MaterialDto = {
   deliveryId: 11,
   delivery: {
     id: 11,
+    name: null,
     deliveryType: { id: 5, name: "私董圈子", kind: "circle" },
     startsAt: 1700000000000,
     endsAt: null,
@@ -99,6 +100,7 @@ const f2: MaterialDto = {
   deliveryId: 11,
   delivery: {
     id: 11,
+    name: null,
     deliveryType: { id: 5, name: "私董圈子", kind: "circle" },
     startsAt: 1700000000000,
     endsAt: null,

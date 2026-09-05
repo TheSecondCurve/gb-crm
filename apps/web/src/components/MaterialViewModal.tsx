@@ -21,7 +21,7 @@ export function MaterialViewModal({ material, canUpdate = false, onClose }: Mate
   const navigate = useNavigate();
   const delivery = material.delivery;
   const deliveryLabel = delivery
-    ? `${delivery.deliveryType?.name ?? "交付"} #${delivery.id}${
+    ? `${delivery.name ?? delivery.deliveryType?.name ?? "交付"} #${delivery.id}${
         delivery.startsAt || delivery.endsAt
           ? `（${epochMsToDate(delivery.startsAt) || "?"} ~ ${epochMsToDate(delivery.endsAt) || "?"}）`
           : ""

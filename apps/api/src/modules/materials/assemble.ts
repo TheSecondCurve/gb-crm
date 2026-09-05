@@ -1,7 +1,7 @@
 // materials 序列化 assembler（K21：JSON 一律 camelCase；GET list 项 = GET one = PATCH 响应）。
 // K54：列表版 DTO 不含 content（大文本不进列表），携带 contentLength（字符数，null→0）
 // 与 excerpt（前 100 字符，null→null）；DetailDto = MaterialDto + content。
-// 展开：delivery { id, deliveryType: { id, name, kind }, startsAt, endsAt } | null（软删交付 → null，K9）；
+// 展开：delivery { id, name, deliveryType: { id, name, kind }, startsAt, endsAt } | null（软删交付 → null，K9）；
 // customers [{ id, nickname }]（INNER 未删除）；createdBy/updatedBy { id, nickname } | null。
 // 批量展开避免 N+1（交付/客户/用户各一次 IN 查询，内存拼装）。
 import { and, eq, inArray, isNull } from "drizzle-orm";
@@ -15,6 +15,8 @@ import { listMaterialCustomerRows, listMaterialTagRows, type MaterialRow } from 
 
 export interface MaterialDeliveryRef {
   id: number;
+  /** 交付名，可空；前端展示回退类型名 */
+  name: string | null;
   /** 类型已软删 → null（K9，不展开已删引用） */
   deliveryType: { id: number; name: string; kind: string } | null;
   startsAt: number | null;
@@ -64,6 +66,7 @@ function assembleInternal(db: Db, rows: readonly MaterialRow[]): MaterialDto[] {
     const found = db
       .select({
         id: deliveries.id,
+        name: deliveries.name,
         startsAt: deliveries.startsAt,
         endsAt: deliveries.endsAt,
         typeId: deliveryTypes.id,
@@ -80,6 +83,7 @@ function assembleInternal(db: Db, rows: readonly MaterialRow[]): MaterialDto[] {
     for (const d of found) {
       deliveryRefs.set(d.id, {
         id: d.id,
+        name: d.name,
         deliveryType: { id: d.typeId, name: d.typeName, kind: d.typeKind },
         startsAt: d.startsAt,
         endsAt: d.endsAt,
