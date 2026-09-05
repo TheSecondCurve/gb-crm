@@ -20,10 +20,16 @@ export const dealCommissionPutSchema = z.object({
 });
 export type DealCommissionPut = z.infer<typeof dealCommissionPutSchema>;
 
-/** 管理页列表 query：分页 + 成交日期范围（epoch ms）+ 状态（default/custom）+ q + payout 状态 */
+/** 管理页列表 query：分页 + 成交日期范围（epoch ms）+ 交付日期范围 + 交付日期空否 + 状态（default/custom）+ q + payout 状态 */
 export const dealCommissionListQuerySchema = pageQuerySchema.extend({
+  /** 成交日期范围（epoch ms） */
   startDate: z.coerce.number().int().optional(),
   endDate: z.coerce.number().int().optional(),
+  /** 交付日期范围（epoch ms），与成交日期范围相互独立 */
+  deliveryStartDate: z.coerce.number().int().optional(),
+  deliveryEndDate: z.coerce.number().int().optional(),
+  /** 交付日期是否为空：empty=未填；notEmpty=已填（与交付日期范围叠加） */
+  deliveryStatus: z.enum(["empty", "notEmpty"]).optional(),
   /** default=未配置（套默认方案）；custom=已配置 */
   status: z.enum(["default", "custom"]).optional(),
   /** v2：按成交是否存在该状态的 payout 过滤 */
