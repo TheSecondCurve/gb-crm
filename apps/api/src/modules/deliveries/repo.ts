@@ -1,6 +1,6 @@
 // deliveries 域 Drizzle 查询（§3：repo 层，路由/服务不写 SQL）。
 // K44：交付类型配置表 / 交付单（客户集合 M2M）/ 交付项（双维度）/ 动作任务（客户维度按 customer_id 展开）。
-// list 排除软删；COUNT 与列表同一 WHERE（§9）；q 命中 客户昵称 OR 交付类型名称 OR 起止本地日期。
+// list 排除软删；COUNT 与列表同一 WHERE（§9）；q 命中 交付名 OR 客户昵称 OR 交付类型名称 OR 起止本地日期。
 import { and, asc, count, desc, eq, inArray, isNull, sql, type SQL } from "drizzle-orm";
 
 import type { DeliveryListQuery, DeliveryTypeListQuery } from "@gb-crm/shared";
@@ -132,12 +132,13 @@ const DELIVERY_SORT_COLUMNS = {
   createdAt: deliveries.createdAt,
 } as const;
 
-/** q → 每 token 命中 客户昵称 OR 交付类型名称 OR 起止本地日期(YYYY-MM-DD) 任一；token 间 AND */
+/** q → 每 token 命中 交付名 OR 客户昵称 OR 交付类型名称 OR 起止本地日期(YYYY-MM-DD) 任一；token 间 AND */
 function deliverySearch(tokens: string[]): SQL {
   const perToken = tokens.map((token) => {
     const pattern = `%${escapeLike(token)}%`;
     return sql`(
-      EXISTS (
+      ${deliveries.name} LIKE ${pattern} ESCAPE '\\'
+      OR EXISTS (
         SELECT 1 FROM delivery_customers dc JOIN customers c ON c.id = dc.customer_id
         WHERE dc.delivery_id = deliveries.id AND c.nickname LIKE ${pattern} ESCAPE '\\'
       )

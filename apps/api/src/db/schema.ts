@@ -491,7 +491,7 @@ export const deliveryTypes = sqliteTable(
   ],
 );
 
-// K44 交付单（精简：类型 + 客户集合 + 备注 + 起止日期；与成交弱关联）
+// K44 交付单（精简：名称（可空）+ 类型 + 客户集合 + 备注 + 起止日期；与成交弱关联）
 export const deliveries = sqliteTable(
   "deliveries",
   {
@@ -499,6 +499,7 @@ export const deliveries = sqliteTable(
     deliveryTypeId: integer("delivery_type_id")
       .notNull()
       .references(() => deliveryTypes.id),
+    name: text("name"),
     startsAt: integer("starts_at"),
     endsAt: integer("ends_at"),
     remark: text("remark"),

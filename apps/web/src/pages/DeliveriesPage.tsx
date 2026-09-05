@@ -49,6 +49,13 @@ function deliveryColumns(role: SystemRole | null): GridColumn<DeliveryDto>[] {
   const canUpdate = can(role, "deliveries", "update");
   return [
     {
+      key: "name",
+      label: "交付名",
+      editor: "text",
+      editable: canUpdate,
+      render: (row: DeliveryDto) => row.name || "—",
+    },
+    {
       key: "deliveryType",
       label: "交付类型",
       editable: false,
@@ -258,7 +265,7 @@ export function DeliveriesPage() {
       )}
       {editing && (
         <DeliveryFormModal
-          title={`修改交付：${editing.deliveryType?.name ?? `#${editing.id}`}`}
+          title={`修改交付：${editing.name ?? editing.deliveryType?.name ?? `#${editing.id}`}`}
           delivery={editing}
           busy={busy}
           onClose={() => setEditing(null)}
@@ -268,7 +275,7 @@ export function DeliveriesPage() {
       {deleting && (
         <ConfirmDialog
           title="删除交付"
-          message={`确定删除交付「${deleting.deliveryType?.name ?? `#${deleting.id}`}」吗？删除后不在列表显示。`}
+          message={`确定删除交付「${deleting.name ?? deleting.deliveryType?.name ?? `#${deleting.id}`}」吗？删除后不在列表显示。`}
           confirmText="删除"
           loading={busy}
           onConfirm={() => void confirmDelete()}

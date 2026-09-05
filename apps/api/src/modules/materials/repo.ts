@@ -44,7 +44,7 @@ function ftsMatchIds(db: Db, token: string): number[] {
 }
 
 /** q → WHERE 片段：逐 token AND；≥3 字符走 FTS（无命中 → 恒假），<3 字符 LIKE title/content OR；
- *  两个分支都额外 OR 文件名（original_filename LIKE）与资料标签名命中 */
+ *  两个分支都额外 OR 文件名（original_filename LIKE）、资料标签名与关联交付名（live 交付）命中 */
 function searchWhere(db: Db, q: string): SQL | undefined {
   const tokens = fuzzyTokens(q);
   if (tokens.length === 0) return undefined;
@@ -64,16 +64,29 @@ function searchWhere(db: Db, q: string): SQL | undefined {
         ),
     );
     const filenameHit = sql`${deliveryMaterials.originalFilename} LIKE ${pattern} ESCAPE '\\'`;
+    const deliveryNameHit = exists(
+      db
+        .select({ x: sql`1` })
+        .from(deliveries)
+        .where(
+          and(
+            eq(deliveries.id, deliveryMaterials.deliveryId),
+            isNull(deliveries.deletedAt),
+            sql`${deliveries.name} LIKE ${pattern} ESCAPE '\\'`,
+          ),
+        ),
+    );
     if (safe.length >= FTS_MIN_TOKEN) {
       const ids = ftsMatchIds(db, safe);
       const ftsHit = ids.length === 0 ? sql`0` : inArray(deliveryMaterials.id, ids);
-      return or(ftsHit, tagHit, filenameHit)!;
+      return or(ftsHit, tagHit, filenameHit, deliveryNameHit)!;
     }
     return or(
       sql`${deliveryMaterials.title} LIKE ${pattern} ESCAPE '\\'`,
       sql`${deliveryMaterials.content} LIKE ${pattern} ESCAPE '\\'`,
       tagHit,
       filenameHit,
+      deliveryNameHit,
     )!;
   });
   return and(...perToken);

@@ -295,6 +295,46 @@ describe("deliveries 交付单", () => {
     expect(r3.json().data.customers).toEqual([]);
   });
 
+  it("交付名 name：创建可带可省；PATCH 更新/null 清空/缺席不动", async () => {
+    const { cookie, typeId } = await seedTypeAndDelivery(1);
+    // 创建带 name
+    const named = await post("/api/v1/deliveries", cookie, {
+      deliveryTypeId: typeId,
+      customerIds: [],
+      name: "第12期下午茶",
+    });
+    expect(named.statusCode).toBe(201);
+    expect(named.json().data.name).toBe("第12期下午茶");
+    // 创建省略 → null
+    const plain = await post("/api/v1/deliveries", cookie, { deliveryTypeId: typeId, customerIds: [] });
+    expect(plain.statusCode).toBe(201);
+    expect(plain.json().data.name).toBeNull();
+
+    const id = named.json().data.id;
+    // PATCH 更新
+    clock.t += 1000;
+    const r1 = await patch(`/api/v1/deliveries/${id}`, cookie, {
+      name: "第13期下午茶",
+      updatedAt: named.json().data.updatedAt,
+    });
+    expect(r1.statusCode).toBe(200);
+    expect(r1.json().data.name).toBe("第13期下午茶");
+    // 缺席不动
+    clock.t += 1000;
+    const r2 = await patch(`/api/v1/deliveries/${id}`, cookie, {
+      remark: "只改备注",
+      updatedAt: r1.json().data.updatedAt,
+    });
+    expect(r2.json().data.name).toBe("第13期下午茶");
+    // null 清空
+    clock.t += 1000;
+    const r3 = await patch(`/api/v1/deliveries/${id}`, cookie, {
+      name: null,
+      updatedAt: r2.json().data.updatedAt,
+    });
+    expect(r3.json().data.name).toBeNull();
+  });
+
   it("软删：列表不出现、GET 404、重复删除 404", async () => {
     const { cookie, delivery } = await seedTypeAndDelivery();
     expect((await get("/api/v1/deliveries", cookie)).json().meta.total).toBe(1);
@@ -332,6 +372,21 @@ describe("交付单列表搜索（q 跨 日期/客户/名称）", () => {
     // 按客户昵称（新客户 c3）
     const byCust = await get("/api/v1/deliveries?q=" + encodeURIComponent("专属客户"), cookie);
     expect(byCust.json().meta.total).toBe(1);
+  });
+
+  it("q 命中交付名 name；无名交付不受影响", async () => {
+    const { cookie, typeId } = await seedTypeAndDelivery(2);
+    const named = await post("/api/v1/deliveries", cookie, {
+      deliveryTypeId: typeId,
+      customerIds: [],
+      name: "第12期商业下午茶",
+    });
+    expect(named.statusCode).toBe(201);
+
+    const hit = await get("/api/v1/deliveries?q=" + encodeURIComponent("第12期"), cookie);
+    expect(hit.json().meta.total).toBe(1);
+    expect(hit.json().data[0].id).toBe(named.json().data.id);
+    expect(hit.json().data[0].name).toBe("第12期商业下午茶");
   });
 });
 

@@ -364,7 +364,7 @@ export function DeliveryCirclePage() {
   return (
     <>
       <div className="page-head">
-        <h1>圈子工作台 · {delivery.deliveryType?.name ?? `交付 #${deliveryId}`}</h1>
+        <h1>圈子工作台 · {delivery.name ?? delivery.deliveryType?.name ?? `交付 #${deliveryId}`}</h1>
         <div className="search-bar">
           <button type="button" onClick={() => navigate("/deliveries")}>
             返回列表
@@ -414,6 +414,10 @@ export function DeliveryCirclePage() {
                 <span className="circle-stat-label">客户已全数覆盖</span>
               </div>
             )}
+          </div>
+          <div className="detail-row">
+            <span className="detail-label">交付名</span>
+            <span>{delivery.name || "—"}</span>
           </div>
           <div className="detail-row">
             <span className="detail-label">交付类型</span>

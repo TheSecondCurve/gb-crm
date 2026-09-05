@@ -73,6 +73,8 @@ export interface DeliveryDto {
   deliveryTypeId: number;
   /** kind 供前端判断圈子类交付（圈子工作台入口） */
   deliveryType: { id: number; name: string; kind: string } | null;
+  /** 交付名，可空；前端展示回退类型名 */
+  name: string | null;
   customers: CustomerRef[];
   startsAt: number | null;
   endsAt: number | null;
@@ -134,6 +136,7 @@ export function assembleDeliveries(db: Db, rows: readonly DeliveryRow[]): Delive
     id: row.id,
     deliveryTypeId: row.deliveryTypeId,
     deliveryType: typeRefs.get(row.deliveryTypeId) ?? null,
+    name: row.name,
     customers: customersByDelivery.get(row.id) ?? [],
     startsAt: row.startsAt,
     endsAt: row.endsAt,

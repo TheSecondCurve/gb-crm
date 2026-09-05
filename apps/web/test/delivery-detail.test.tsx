@@ -9,6 +9,7 @@ const delivery: DeliveryDto = {
   id: 1,
   deliveryTypeId: 11,
   deliveryType: { id: 11, name: "圈子全年交付", kind: "circle" },
+  name: null,
   customers: [
     { id: 101, nickname: "张三" },
     { id: 102, nickname: "李四" },
@@ -251,7 +252,7 @@ describe("交付单详情页", () => {
       fileSize: null,
       isImage: false,
       deliveryId: 1,
-      delivery: { id: 1, deliveryType: { id: 11, name: "圈子全年交付", kind: "circle" }, startsAt: null, endsAt: null },
+      delivery: { id: 1, name: null, deliveryType: { id: 11, name: "圈子全年交付", kind: "circle" }, startsAt: null, endsAt: null },
       customers: [{ id: 101, nickname: "张三" }],
       tags: [],
       createdAt: 1000,

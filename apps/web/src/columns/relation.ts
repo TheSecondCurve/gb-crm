@@ -74,16 +74,18 @@ export const deliveryTypeOptionsLoader: RelationLoader = createRelationLoader(
   deliveryTypeLabelCache,
 );
 
-/** 交付单选项（K54 资料关联）：类型名 #id + 起止日期（有值才拼） */
+/** 交付单选项（K54 资料关联）：有交付名用「名（类型）」，否则「类型名 #id」；起止日期有值才拼 */
 export const deliveryOptionsLoader: RelationLoader = createRelationLoader(
   "/deliveries",
   (item) => {
     const row = item as {
+      name?: string | null;
       deliveryType?: { name?: string } | null;
       startsAt?: number | null;
       endsAt?: number | null;
     };
-    const base = `${row.deliveryType?.name ?? "交付"} #${String(item.id)}`;
+    const typeName = row.deliveryType?.name ?? "交付";
+    const base = row.name ? `${row.name}（${typeName}）` : `${typeName} #${String(item.id)}`;
     const fmt = (ts: number | null | undefined) => (ts == null ? "" : epochMsToDate(ts));
     const range = [fmt(row.startsAt), fmt(row.endsAt)].filter(Boolean).join(" ~ ");
     return range ? `${base}（${range}）` : base;

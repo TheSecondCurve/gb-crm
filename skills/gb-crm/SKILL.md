@@ -122,7 +122,7 @@ UPDATE customers SET owner_id = ?, updated_at = ?, updated_by = ? WHERE id = ?;
 
 ## 表结构
 
-真相源：`apps/api/drizzle/` 迁移最终态（`0000_init.sql` 为历史；`0002`–`0006` 删除飞书字段/客户旧字段/客户标签；`0007` 社交账号表 K41；`0008` 成交表 K42；`0010` 交付重构 K44，`0009` 旧交付模型 DROP 重建；`0012`–`0014` 交付起止日期/类型 kind+status/交付项排期；`0020` 资料 + FTS5（K54）；`0026` 资料标签（K58）；`0027` 成交分成 v2（总比例 + payout））。列全部 snake_case（SQL 层没有 camelCase）。
+真相源：`apps/api/drizzle/` 迁移最终态（`0000_init.sql` 为历史；`0002`–`0006` 删除飞书字段/客户旧字段/客户标签；`0007` 社交账号表 K41；`0008` 成交表 K42；`0010` 交付重构 K44，`0009` 旧交付模型 DROP 重建；`0012`–`0014` 交付起止日期/类型 kind+status/交付项排期；`0020` 资料 + FTS5（K54）；`0026` 资料标签（K58）；`0027` 成交分成 v2（总比例 + payout）；`0028` 交付名（deliveries.name，可空））。列全部 snake_case（SQL 层没有 camelCase）。
 
 **维护**：本节的每张表（`<!-- SCHEMA:<table> -->` 区块）由 `scripts/gen-schema.py` 生成——schema 变更后跑 `python3 skills/gb-crm/scripts/gen-schema.py [sqlite路径]` 即可（需先 `npm run db:migrate` 的库）；列名/类型/PK/非空自动同步，新增列标「—」，**含义列手写、保留不动**。
 
@@ -329,6 +329,7 @@ UPDATE customers SET owner_id = ?, updated_at = ?, updated_by = ? WHERE id = ?;
 | --- | --- | --- |
 | id | INTEGER PK | — |
 | delivery_type_id | INTEGER NOT NULL | → delivery_types.id（必填） |
+| name | TEXT | 交付名，可空（展示/搜索回退类型名） |
 | remark | TEXT |  |
 | created_at | INTEGER NOT NULL | — |
 | updated_at | INTEGER NOT NULL | — |
@@ -425,7 +426,7 @@ UPDATE customers SET owner_id = ?, updated_at = ?, updated_by = ? WHERE id = ?;
 
 **新增资料先落交付单**（按语义匹配，不限咨询类）：
 
-1. **匹配**：按交付类型名 / 起止日期 / 关联客户收窄，查 live 交付单（`deliveries` JOIN `delivery_types`，两边都 `deleted_at IS NULL`），列出候选让用户确认后填 `delivery_id`；
+1. **匹配**：按交付名（deliveries.name）/ 交付类型名 / 起止日期 / 关联客户收窄，查 live 交付单（`deliveries` JOIN `delivery_types`，两边都 `deleted_at IS NULL`），列出候选让用户确认后填 `delivery_id`；
 2. **新建**：没有合适的交付单就新建一条——先查 `delivery_types`（`deleted_at IS NULL AND status='active'`）选语义贴合的类型（kind 不限 consulting，活动/圈子/其他都可以）；连类型都不贴切就先跟用户确认，不要硬塞。新交付单补审计四列，参与客户走 `delivery_customers`；
 3. 不要主动造孤儿资料；只有用户明确说「先不关联交付」时才留 `delivery_id = NULL`。
 
@@ -439,7 +440,7 @@ WHERE m.deleted_at IS NULL
                WHERE delivery_materials_fts MATCH '"私域运营"');
 ```
 
-- MATCH token 必须 **≥3 个字符**（trigram），用双引号包裹；短词（如 2 字「咨询」）退回 `LIKE '%咨询%'`（title 和 content 两列）。管理端列表 q 的完整覆盖面 = title/content（FTS 或 LIKE）**OR 资料标签名 OR 文件名（original_filename）**；skill 直写 SQL 搜资料时对齐这个口径（标签名 join `delivery_material_tags`+`tags`，文件名 `m.original_filename LIKE`）。
+- MATCH token 必须 **≥3 个字符**（trigram），用双引号包裹；短词（如 2 字「咨询」）退回 `LIKE '%咨询%'`（title 和 content 两列）。管理端列表 q 的完整覆盖面 = title/content（FTS 或 LIKE）**OR 资料标签名 OR 文件名（original_filename）OR 关联交付名（deliveries.name，live 交付）**；skill 直写 SQL 搜资料时对齐这个口径（标签名 join `delivery_material_tags`+`tags`，文件名 `m.original_filename LIKE`，交付名 `EXISTS (SELECT 1 FROM deliveries d WHERE d.id = m.delivery_id AND d.deleted_at IS NULL AND d.name LIKE ...)`）。
 - 常用过滤：`kind = 'transcript'`、孤儿资料 `delivery_id IS NULL OR NOT EXISTS (SELECT 1 FROM delivery_material_customers mc WHERE mc.material_id = m.id)`、某客户的资料 `JOIN delivery_material_customers mc ON mc.material_id = m.id AND mc.customer_id = ?`、某交付的资料 `m.delivery_id = ?`。
 - 写资料时同守则 4 补审计列；软删走 `UPDATE ... SET deleted_at = <now>`（触发器会清 FTS，不用管）。
 
