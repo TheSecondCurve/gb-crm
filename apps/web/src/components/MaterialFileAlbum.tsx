@@ -1,6 +1,7 @@
 // 资料专区「文件专区」tab：kind=file 的资料按 album 格子展示（区别于「浏览」tab 的表格）。
 // 图片直接渲染缩略图（GET /materials/:id/file 同源 cookie），其他类型按扩展名/ contentType 给图标占位；
 // 卡片带标题 / 文件名·大小 / 更新时间 / 标签 + 查看/下载/修改/删除（权限收敛与列表页一致）。
+// 过滤：q 搜索（服务端命中标题/全文/文件名/标签名）+ 交付名单选过滤（EntityPicker 按交付名定位）。
 // 查询键以 "materials" 开头：列表页保存/删除后的 invalidateQueries(["materials"]) 会顺带刷新本 tab。
 import { Fragment, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
@@ -22,7 +23,9 @@ import { api, buildQuery } from "../api/client";
 import { formatFileSize, materialFileUrl } from "../api/materials";
 import type { MaterialDto } from "../api/types";
 import { badge, formatDateTime } from "../columns/common";
+import { deliveryLabelCache, deliveryOptionsLoader } from "../columns/relation";
 import { Pagination } from "./DataGrid/DataGrid";
+import { EntityPicker } from "./EntityPicker";
 import { SearchBar } from "./SearchBar";
 
 type IconComponent = typeof FileIcon;
@@ -63,12 +66,14 @@ export function MaterialFileAlbum({ canUpdate, canDelete, onView, onEdit, onDele
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(25);
   const [q, setQ] = useState("");
+  /** 交付过滤（deliveryId 等值；EntityPicker 单选，× 即清空） */
+  const [deliveryId, setDeliveryId] = useState<number | null>(null);
 
   const { data, isLoading } = useQuery({
-    queryKey: ["materials", "file-album", page, pageSize, q],
+    queryKey: ["materials", "file-album", page, pageSize, q, deliveryId],
     queryFn: async () =>
       (await api.get<ListEnvelope<MaterialDto>>(
-        `/materials${buildQuery({ kind: "file", q, page, pageSize })}`,
+        `/materials${buildQuery({ kind: "file", q, deliveryId: deliveryId ?? undefined, page, pageSize })}`,
       )) ?? { data: [], meta: { page, pageSize, total: 0 } },
   });
   const rows = data?.data ?? [];
@@ -84,6 +89,20 @@ export function MaterialFileAlbum({ canUpdate, canDelete, onView, onEdit, onDele
           }}
           placeholder="搜索文件资料…"
         />
+        <div className="album-delivery-filter">
+          <EntityPicker
+            loader={deliveryOptionsLoader}
+            cache={deliveryLabelCache}
+            selectedIds={deliveryId != null ? [deliveryId] : []}
+            onChange={(ids) => {
+              setDeliveryId(ids[0] ?? null);
+              setPage(1);
+            }}
+            multiple={false}
+            placeholder="按交付名定位交付单…"
+            ariaLabel="按交付过滤"
+          />
+        </div>
       </div>
       {rows.length === 0 && !isLoading && <div className="task-empty">暂无文件资料</div>}
       {rows.length > 0 && (
