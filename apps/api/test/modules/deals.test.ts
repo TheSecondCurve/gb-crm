@@ -134,7 +134,8 @@ describe("POST /api/v1/deals 创建", () => {
     expect(data.deliveryDate).toBeNull();
     expect(data.amountCents).toBeNull();
     expect(data.afterTaxRatio).toBeNull();
-    expect(data.customer).toEqual({ id: customerId, nickname: "极简客户", city: "杭州" });
+    expect(data.commissionRatio).toBeNull();
+    expect(data.customer).toEqual({ id: customerId, nickname: "极简客户", city: "杭州", owner: null });
     expect(data.createdBy).toEqual({ id: adminId, nickname: "昵称-admin" });
   });
 
@@ -437,6 +438,33 @@ describe("PATCH /api/v1/deals/:id 内核（K24）", () => {
     expect(ascDelivery.json().data.map((x: { id: number }) => x.id)).toEqual([d1.id, d2.id]);
     const descDelivery = await get("/api/v1/deals?sort=deliveryDate&order=desc", cookie);
     expect(descDelivery.json().data.map((x: { id: number }) => x.id)).toEqual([d2.id, d1.id]);
+  });
+});
+
+describe("客户归属人与分红总比例（v2）", () => {
+  it("DTO 携带 customer.owner 与 commissionRatio", async () => {
+    const { cookie } = await loginAsRole("admin");
+    const { id: ownerId } = await loginAsRole("operator", "cust-owner");
+    const customerId = seedCustomer(tmp.db, "客户归属", { ownerId });
+    const res = await post("/api/v1/deals", cookie, { customerId, commissionRatio: 0.05, dealDate: DEAL_DATE });
+    expect(res.statusCode).toBe(201);
+    const d = res.json().data;
+    expect(d.customer).toEqual({ id: customerId, nickname: "客户归属", city: "杭州", owner: { id: ownerId, nickname: "昵称-operator" } });
+    expect(d.commissionRatio).toBe(0.05);
+  });
+
+  it("PATCH commissionRatio 写入读回、null 清空", async () => {
+    const { cookie, data: d } = await createDealAsAdmin();
+    clock.t += 1000;
+    const r1 = await patch(`/api/v1/deals/${d.id}`, cookie, { commissionRatio: 0.08, updatedAt: d.updatedAt });
+    expect(r1.statusCode).toBe(200);
+    expect(r1.json().data.commissionRatio).toBe(0.08);
+    clock.t += 1000;
+    const r2 = await patch(`/api/v1/deals/${d.id}`, cookie, {
+      commissionRatio: null,
+      updatedAt: r1.json().data.updatedAt,
+    });
+    expect(r2.json().data.commissionRatio).toBeNull();
   });
 });
 

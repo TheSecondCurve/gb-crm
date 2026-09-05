@@ -73,6 +73,19 @@ export function convertDealBody(body: Record<string, unknown>): Record<string, u
     }
     next = { ...next, afterTaxRatio: n };
   }
+  if ("commissionRatio" in next) {
+    // UI 输入为百分比（如 5 → 0.05）；空 = null 清空（回退产品/全局默认）
+    const s = String(next.commissionRatio ?? "").trim();
+    if (s === "") {
+      next = { ...next, commissionRatio: null };
+    } else {
+      const n = Number(s);
+      if (!Number.isFinite(n)) {
+        throw new Error("分红总比例需为数字");
+      }
+      next = { ...next, commissionRatio: n / 100 };
+    }
+  }
   return next;
 }
 
@@ -82,7 +95,7 @@ const STAGE_TONES: Record<string, BadgeTone> = {
   closed: "muted",
 };
 
-const makeCustomerRef = (id: number, nickname: string): DealCustomerRefDto => ({ id, nickname, city: null });
+const makeCustomerRef = (id: number, nickname: string): DealCustomerRefDto => ({ id, nickname, city: null, owner: null });
 const makeProductRef = (id: number, name: string): DealProductRefDto => ({ id, name });
 const makeUserRef = (id: number, nickname: string): UserRefDto => ({ id, nickname });
 
@@ -155,6 +168,12 @@ export function dealColumns(role: SystemRole | null): GridColumn<DealDto>[] {
       },
     },
     {
+      key: "customerOwner",
+      label: "客户归属人",
+      editable: false,
+      render: (row) => row.customer?.owner?.nickname ?? "—",
+    },
+    {
       key: "city",
       label: "客户城市",
       editable: false,
@@ -188,6 +207,20 @@ export function dealColumns(role: SystemRole | null): GridColumn<DealDto>[] {
         const s = String(v ?? "").trim();
         const n = s === "" ? null : Number(s);
         return { ...row, afterTaxRatio: n === null || !Number.isFinite(n) ? null : n };
+      },
+    },
+    {
+      key: "commissionRatio",
+      label: "分红总比例(%)",
+      editor: "text",
+      editable: canUpdate,
+      getValue: (row) => (row.commissionRatio === null ? "" : String(Math.round(row.commissionRatio * 10000) / 100)),
+      render: (row) =>
+        row.commissionRatio === null ? "—" : `${Math.round(row.commissionRatio * 10000) / 100}%`,
+      applyOptimistic: (row, v) => {
+        const s = String(v ?? "").trim();
+        const n = s === "" ? null : Number(s);
+        return { ...row, commissionRatio: n === null || !Number.isFinite(n) ? null : n / 100 };
       },
     },
     { key: "orderNo", label: "订单号", editor: "text", editable: canUpdate },

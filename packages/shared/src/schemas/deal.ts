@@ -21,6 +21,8 @@ export const dealWriteSchema = z.object({
   // K13 金额约定：amountCents 整数「分」，NULL = 未填；afterTaxRatio 税后比例 0~1（REAL）。
   amountCents: z.number().int().nullable().optional(),
   afterTaxRatio: z.number().min(0).max(1).nullable().optional(),
+  // 成交分成 v2：分红总比例 0~1（可空；null=清空回退产品/全局默认）
+  commissionRatio: z.number().min(0).max(1).nullable().optional(),
 });
 export type DealWrite = z.infer<typeof dealWriteSchema>;
 

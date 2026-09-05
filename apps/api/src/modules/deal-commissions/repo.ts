@@ -20,6 +20,7 @@ import {
   customers,
   dealCommissionItems,
   dealCommissions,
+  dealPayouts,
   deals,
   products,
   users,
@@ -49,6 +50,9 @@ export interface CommissionJoinRow {
   productId: number | null;
   productName: string | null;
   productDeletedAt: number | null;
+  // v2：总比例三级回退——成交覆盖 → 产品默认 → 全局默认
+  dealCommissionRatio: number | null;
+  productCommissionRatio: number | null;
   createdAt: number;
   updatedAt: number;
   commissionId: number | null;
@@ -79,6 +83,12 @@ function commissionListWhere(query: DealCommissionListQuery): SQL | undefined {
       sql`NOT EXISTS (SELECT 1 FROM deal_commissions dc WHERE dc.deal_id = ${deals.id})`,
     );
   }
+  // v2：按成交是否存在该状态的 payout 过滤
+  if (query.payoutStatus !== undefined) {
+    conditions.push(
+      sql`EXISTS (SELECT 1 FROM deal_payouts dp WHERE dp.deal_id = ${deals.id} AND dp.status = ${query.payoutStatus})`,
+    );
+  }
   return and(...conditions);
 }
 
@@ -103,6 +113,9 @@ const JOIN_SELECT = {
   productId: deals.productId,
   productName: products.name,
   productDeletedAt: products.deletedAt,
+  // v2：总比例三级回退——成交覆盖 → 产品默认 → 全局默认
+  dealCommissionRatio: deals.commissionRatio,
+  productCommissionRatio: products.commissionRatio,
   createdAt: deals.createdAt,
   updatedAt: deals.updatedAt,
   commissionId: dealCommissions.id,
@@ -240,4 +253,91 @@ export function listLiveUserRefs(db: Db, ids: readonly number[]): Map<number, { 
     .all();
   for (const u of rows) map.set(u.id, { id: u.id, nickname: u.nickname });
   return map;
+}
+
+// ---- payout（v2）----
+
+export interface PayoutRow {
+  dealId: number;
+  seq: number;
+  payoutDate: number;
+  rate: number;
+  amountCents: number;
+  status: string;
+  paidAt: number | null;
+}
+
+/** 批量拉取指定成交的 payout（一成交最多 2 行，按 seq 排序） */
+export function listPayoutsByDealIds(db: Db, dealIds: readonly number[]): PayoutRow[] {
+  if (dealIds.length === 0) return [];
+  return db
+    .select({
+      dealId: dealPayouts.dealId,
+      seq: dealPayouts.seq,
+      payoutDate: dealPayouts.payoutDate,
+      rate: dealPayouts.rate,
+      amountCents: dealPayouts.amountCents,
+      status: dealPayouts.status,
+      paidAt: dealPayouts.paidAt,
+    })
+    .from(dealPayouts)
+    .where(inArray(dealPayouts.dealId, [...dealIds]))
+    .orderBy(asc(dealPayouts.seq))
+    .all();
+}
+
+/** 单条 payout（不存在/软删成交 → undefined 由 service 判 404） */
+export function getPayoutRow(db: Db, dealId: number, seq: number): PayoutRow | undefined {
+  return db
+    .select({
+      dealId: dealPayouts.dealId,
+      seq: dealPayouts.seq,
+      payoutDate: dealPayouts.payoutDate,
+      rate: dealPayouts.rate,
+      amountCents: dealPayouts.amountCents,
+      status: dealPayouts.status,
+      paidAt: dealPayouts.paidAt,
+    })
+    .from(dealPayouts)
+    .where(and(eq(dealPayouts.dealId, dealId), eq(dealPayouts.seq, seq)))
+    .get();
+}
+
+export function deletePayoutsByDealId(db: Db, dealId: number): void {
+  db.delete(dealPayouts).where(eq(dealPayouts.dealId, dealId)).run();
+}
+
+/** 更新 payout 状态（pending↔paid，paid 记 paid_at） */
+export function updatePayoutStatus(
+  db: Db,
+  dealId: number,
+  seq: number,
+  set: { status: "pending" | "paid"; paidAt: number | null; updatedAt: number; updatedBy: number | null },
+): void {
+  db.update(dealPayouts)
+    .set(set)
+    .where(and(eq(dealPayouts.dealId, dealId), eq(dealPayouts.seq, seq)))
+    .run();
+}
+
+/** upsert 一条 payout（deal_id+seq 唯一） */
+export function upsertPayout(
+  db: Db,
+  values: typeof dealPayouts.$inferInsert,
+): void {
+  db.insert(dealPayouts)
+    .values(values)
+    .onConflictDoUpdate({
+      target: [dealPayouts.dealId, dealPayouts.seq],
+      set: {
+        payoutDate: values.payoutDate,
+        rate: values.rate,
+        amountCents: values.amountCents,
+        status: values.status,
+        paidAt: values.paidAt,
+        updatedAt: values.updatedAt,
+        updatedBy: values.updatedBy,
+      },
+    })
+    .run();
 }

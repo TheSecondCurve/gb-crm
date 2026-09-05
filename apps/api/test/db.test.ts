@@ -37,6 +37,7 @@ describe("migration", () => {
       "customers",
       "deal_commission_items",
       "deal_commissions",
+      "deal_payouts",
       "deals",
       "deliverables",
       "deliveries",

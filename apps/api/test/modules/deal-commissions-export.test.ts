@@ -36,6 +36,8 @@ const post = (url: string, cookie: string, payload: Record<string, unknown>) =>
   app.inject({ method: "POST", url, headers: { cookie }, payload });
 const put = (url: string, cookie: string, payload: Record<string, unknown>) =>
   app.inject({ method: "PUT", url, headers: { cookie }, payload });
+const patch = (url: string, cookie: string, payload: Record<string, unknown>) =>
+  app.inject({ method: "PATCH", url, headers: { cookie }, payload });
 
 let seq = 0;
 async function loginAsRole(
@@ -119,6 +121,9 @@ describe("GET /api/v1/deals/commissions/export.xlsx", () => {
       deliveryDate: Date.UTC(2026, 6, 1),
     });
 
+    // v2：设置全局默认总比例 0.1（成交/产品未单独覆盖 → 分红池 = 90000 × 0.1 = 9000）
+    await patch("/api/v1/system/commission-default", cookie, { totalRatio: 0.1, rules: [] });
+
     const cfg = await put(`/api/v1/deals/${d.id}/commissions`, cookie, {
       items: [
         { userId: m1, percentage: 0.06 },
@@ -138,6 +143,7 @@ describe("GET /api/v1/deals/commissions/export.xlsx", () => {
     expect(dealWs.rowCount).toBe(2); // 表头 + 1
     const dealRow = dealWs.getRow(2);
     expect(cellByHeader(dealWs, dealRow, "客户")).toBe("客户甲");
+    expect(cellByHeader(dealWs, dealRow, "成交归属人")).toBeNull(); // 该客户未设归属人
     expect(cellByHeader(dealWs, dealRow, "成交产品")).toBe("咨询产品");
     expect(cellByHeader(dealWs, dealRow, "负责人")).toBe("昵称-operator");
     expect(cellByHeader(dealWs, dealRow, "成交金额(元)")).toBe(1000);
@@ -145,14 +151,16 @@ describe("GET /api/v1/deals/commissions/export.xlsx", () => {
     expect(cellByHeader(dealWs, dealRow, "税后基数(元)")).toBe(900);
     expect(cellByHeader(dealWs, dealRow, "方案")).toBe("已配置");
     expect(cellByHeader(dealWs, dealRow, "总比例")).toBe(0.1);
-    expect(cellByHeader(dealWs, dealRow, "总分成(元)")).toBe(90);
-    // 负责人=m1 → 负责人分成 6.0%(¥54.00)；其他参与方=m2 4.0%(¥36.00)
+    expect(cellByHeader(dealWs, dealRow, "分红池(元)")).toBe(90);
+    expect(cellByHeader(dealWs, dealRow, "内部分配比例")).toBe(0.1);
+    expect(cellByHeader(dealWs, dealRow, "总分成(元)")).toBe(9);
+    // 负责人=m1 → 负责人分成 6.0%(¥5.40)；其他参与方=m2 4.0%(¥3.60)
     const ownerSplit = String(cellByHeader(dealWs, dealRow, "负责人分成"));
     expect(ownerSplit).toContain("6.0%");
-    expect(ownerSplit).toContain("¥54.00");
+    expect(ownerSplit).toContain("¥5.40");
     const others = String(cellByHeader(dealWs, dealRow, "其他参与方"));
     expect(others).toContain("4.0%");
-    expect(others).toContain("¥36.00");
+    expect(others).toContain("¥3.60");
 
     // —— Sheet2 参与方明细（成交 × 参与方长表）——
     const partyWs = await loadSheet(res.rawPayload, "参与方明细");
@@ -160,14 +168,14 @@ describe("GET /api/v1/deals/commissions/export.xlsx", () => {
     const partyByUser = new Map<number, ExcelJS.Row>();
     partyWs.eachRow((r, n) => {
       if (n === 1) return;
-      partyByUser.set(Number(r.getCell(11).value), r);
+      partyByUser.set(Number(r.getCell(12).value), r);
     });
-    expect(partyByUser.get(m1)!.getCell(13).value).toBe("是"); // 是否负责人
-    expect(partyByUser.get(m1)!.getCell(14).value).toBe(0.06);
-    expect(partyByUser.get(m1)!.getCell(15).value).toBe(54);
-    expect(partyByUser.get(m2)!.getCell(13).value).toBe("否");
-    expect(partyByUser.get(m2)!.getCell(14).value).toBe(0.04);
-    expect(partyByUser.get(m2)!.getCell(15).value).toBe(36);
+    expect(partyByUser.get(m1)!.getCell(14).value).toBe("是"); // 是否负责人
+    expect(partyByUser.get(m1)!.getCell(15).value).toBe(0.06);
+    expect(partyByUser.get(m1)!.getCell(16).value).toBe(5.4);
+    expect(partyByUser.get(m2)!.getCell(14).value).toBe("否");
+    expect(partyByUser.get(m2)!.getCell(15).value).toBe(0.04);
+    expect(partyByUser.get(m2)!.getCell(16).value).toBe(3.6);
 
     // —— Sheet3 统计：汇总 + 参与人小计 ——
     const statWs = await loadSheet(res.rawPayload, "统计");
@@ -183,10 +191,10 @@ describe("GET /api/v1/deals/commissions/export.xlsx", () => {
     expect(statText).toContain("有分成成交笔数\t1");
     expect(statText).toContain("原金额合计(元)\t1000");
     expect(statText).toContain("税后基数合计(元)\t900");
-    expect(statText).toContain("总分成合计(元)\t90");
+    expect(statText).toContain("总分成合计(元)\t9");
     expect(statText).toContain("参与人数(去重)\t2");
-    expect(statText).toContain("昵称-operator\t1\t54\t60.0%");
-    expect(statText).toContain("昵称-operator\t1\t36\t40.0%");
+    expect(statText).toContain("昵称-operator\t1\t5.4\t60.0%");
+    expect(statText).toContain("昵称-operator\t1\t3.6\t40.0%");
   });
 
   it("尊重筛选：日期范围只导出范围内成交；未配置套默认方案（items 空）也能导出", async () => {

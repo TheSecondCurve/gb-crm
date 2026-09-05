@@ -1,6 +1,6 @@
 ---
 name: gb-crm
-version: 0.11.1
+version: 0.12.0
 description: >
   女商 私域运营管理端（gb-crm）本机 HTTP 客户端。用 ~/.gb-crm/credentials.json 的 PAT
   通过单一 SQL 端点查询或维护客户、渠道、产品、团队成员、成交记录、交付管理与资料。
@@ -122,39 +122,61 @@ UPDATE customers SET owner_id = ?, updated_at = ?, updated_by = ? WHERE id = ?;
 
 ## 表结构
 
-真相源：`apps/api/drizzle/` 迁移最终态（`0000_init.sql` 为历史；`0002`–`0006` 删除飞书字段/客户旧字段/客户标签；`0007` 社交账号表 K41；`0008` 成交表 K42；`0010` 交付重构 K44，`0009` 旧交付模型 DROP 重建；`0012`–`0014` 交付起止日期/类型 kind+status/交付项排期；`0020` 资料 + FTS5（K54）；`0026` 资料标签（K58））。列全部 snake_case（SQL 层没有 camelCase）。
+真相源：`apps/api/drizzle/` 迁移最终态（`0000_init.sql` 为历史；`0002`–`0006` 删除飞书字段/客户旧字段/客户标签；`0007` 社交账号表 K41；`0008` 成交表 K42；`0010` 交付重构 K44，`0009` 旧交付模型 DROP 重建；`0012`–`0014` 交付起止日期/类型 kind+status/交付项排期；`0020` 资料 + FTS5（K54）；`0026` 资料标签（K58）；`0027` 成交分成 v2（总比例 + payout））。列全部 snake_case（SQL 层没有 camelCase）。
+
+**维护**：本节的每张表（`<!-- SCHEMA:<table> -->` 区块）由 `scripts/gen-schema.py` 生成——schema 变更后跑 `python3 skills/gb-crm/scripts/gen-schema.py [sqlite路径]` 即可（需先 `npm run db:migrate` 的库）；列名/类型/PK/非空自动同步，新增列标「—」，**含义列手写、保留不动**。
 
 ### users（团队成员）
 
+<!-- SCHEMA:users -->
 | 列 | 类型 | 含义 |
 | --- | --- | --- |
-| id | INTEGER PK | |
-| username / password_hash | TEXT | 登录名 / argon2id hash（永不读给用户看） |
-| nickname / real_name | TEXT | 昵称（必填）/ 真实姓名 |
-| phone / wechat | TEXT | |
-| job_title | TEXT | 岗位，枚举见下，默认 `other` |
+| id | INTEGER PK |  |
+| username | TEXT | 登录名 / argon2id hash（永不读给用户看） |
+| password_hash | TEXT | 登录名 / argon2id hash（永不读给用户看） |
+| nickname | TEXT NOT NULL | 昵称（必填）/ 真实姓名 |
+| real_name | TEXT | 昵称（必填）/ 真实姓名 |
+| phone | TEXT |  |
+| wechat | TEXT |  |
+| job_title | TEXT NOT NULL | 岗位，枚举见下，默认 `other` |
 | system_role | TEXT | 登录权限 `admin`/`operator`/`assistant`，NULL = 无登录 |
-| employment_status | TEXT | `employed`/`handing_over`/`left`，默认 `employed` |
-| account_status | TEXT | 闸门 `enabled`/`disabled`，默认 `disabled` |
-| duties / notes | TEXT | 职责 / 备注 |
-| created_at / updated_at | INTEGER | epoch 毫秒 |
-| created_by / updated_by | INTEGER | → users.id |
+| employment_status | TEXT NOT NULL | `employed`/`handing_over`/`left`，默认 `employed` |
+| account_status | TEXT NOT NULL | 闸门 `enabled`/`disabled`，默认 `disabled` |
+| duties | TEXT | 职责 / 备注 |
+| notes | TEXT | 职责 / 备注 |
+| created_at | INTEGER NOT NULL | epoch 毫秒 |
+| updated_at | INTEGER NOT NULL | epoch 毫秒 |
+| created_by | INTEGER | → users.id |
+| updated_by | INTEGER | → users.id |
 | deleted_at | INTEGER | 软删 |
+<!-- /SCHEMA:users -->
 
 ### customers（客户）
 
+<!-- SCHEMA:customers -->
 | 列 | 类型 | 含义 |
 | --- | --- | --- |
-| id | INTEGER PK | |
-| nickname / real_name / title | TEXT | 昵称（必填）/ 姓名 / 头衔 |
-| phone / wechat | TEXT | |
-| country / city | TEXT | |
-| origin_story / notes | TEXT | 来历 / 备注 |
-| customer_type | TEXT | 枚举见下，默认 `customer` |
+| id | INTEGER PK |  |
+| nickname | TEXT NOT NULL | 昵称（必填）/ 姓名 / 头衔 |
+| real_name | TEXT | 昵称（必填）/ 姓名 / 头衔 |
+| title | TEXT | 昵称（必填）/ 姓名 / 头衔 |
+| phone | TEXT |  |
+| wechat | TEXT |  |
+| country | TEXT |  |
+| city | TEXT |  |
+| origin_story | TEXT | 来历 / 备注 |
+| notes | TEXT | 来历 / 备注 |
+| customer_type | TEXT NOT NULL | 枚举见下，默认 `customer` |
 | wechat_openid | TEXT | 预留，可空唯一（live 行内唯一） |
 | last_followed_at | INTEGER | 最近跟进，epoch 毫秒 |
+| created_at | INTEGER NOT NULL | 同上 |
+| updated_at | INTEGER NOT NULL | 同上 |
+| created_by | INTEGER | 同上 |
+| updated_by | INTEGER | 同上 |
+| deleted_at | INTEGER | 同上 |
 | owner_id | INTEGER | 归属人，单值可空 FK → users.id（K39，非 join 表） |
-| created_at / updated_at / created_by / updated_by / deleted_at | | 同上 |
+| industry | TEXT | — |
+<!-- /SCHEMA:customers -->
 
 社交账号（K41）：`customer_social_accounts(customer_id, platform, account, …审计列)`，platform 枚举见下，同平台可多账号。归属人是 customers 表上的单值可空列（K39，不是 join 表）：`customers.owner_id` → users.id。
 
@@ -162,59 +184,244 @@ UPDATE customers SET owner_id = ?, updated_at = ?, updated_by = ? WHERE id = ?;
 
 ### channels（渠道资产）
 
+<!-- SCHEMA:channels -->
 | 列 | 类型 | 含义 |
 | --- | --- | --- |
-| id / name / description | | name 必填 |
-| account_id / register_phone / registrant / real_name_person / login_device | TEXT | **密钥字段**（SQL 端点全角色可读，仍属敏感信息，别主动展示） |
-| platform / channel_type / account_type / status | TEXT | 枚举见下 |
+| id | INTEGER PK | name 必填 |
+| name | TEXT NOT NULL | name 必填 |
+| description | TEXT | name 必填 |
+| account_id | TEXT | **密钥字段**（SQL 端点全角色可读，仍属敏感信息，别主动展示） |
+| register_phone | TEXT | **密钥字段**（SQL 端点全角色可读，仍属敏感信息，别主动展示） |
+| registrant | TEXT | **密钥字段**（SQL 端点全角色可读，仍属敏感信息，别主动展示） |
+| real_name_person | TEXT | **密钥字段**（SQL 端点全角色可读，仍属敏感信息，别主动展示） |
+| login_device | TEXT | **密钥字段**（SQL 端点全角色可读，仍属敏感信息，别主动展示） |
+| notes | TEXT |  |
+| platform | TEXT NOT NULL | 枚举见下 |
+| channel_type | TEXT NOT NULL | 枚举见下 |
+| account_type | TEXT NOT NULL | 枚举见下 |
+| status | TEXT NOT NULL | 枚举见下 |
 | follower_count | INTEGER | 粉丝数 |
-| notes | TEXT | |
-| created_at / updated_at / created_by / updated_by / deleted_at | | 同上 |
+| created_at | INTEGER NOT NULL | 同上 |
+| updated_at | INTEGER NOT NULL | 同上 |
+| created_by | INTEGER | 同上 |
+| updated_by | INTEGER | 同上 |
+| deleted_at | INTEGER | 同上 |
+<!-- /SCHEMA:channels -->
 
 - `channel_owners(channel_id, user_id)`：渠道负责人。
 
 ### products（产品）
 
+<!-- SCHEMA:products -->
 | 列 | 类型 | 含义 |
 | --- | --- | --- |
-| id / name / notes | | name 必填 |
-| sop_url / package_includes / delivery_cycle | TEXT | SOP / 套餐内容 / 交付周期 |
-| product_type | TEXT | 枚举见下，默认 `c_consulting` |
-| is_package | INTEGER | 0/1 |
-| status | TEXT | `on_sale`/`off_sale`/`in_dev` |
+| id | INTEGER PK | name 必填 |
+| name | TEXT NOT NULL | name 必填 |
+| notes | TEXT | name 必填 |
+| sop_url | TEXT | SOP / 套餐内容 / 交付周期 |
+| package_includes | TEXT | SOP / 套餐内容 / 交付周期 |
+| delivery_cycle | TEXT | SOP / 套餐内容 / 交付周期 |
+| product_type | TEXT NOT NULL | 枚举见下，默认 `c_consulting` |
+| is_package | INTEGER NOT NULL | 0/1 |
+| status | TEXT NOT NULL | `on_sale`/`off_sale`/`in_dev` |
 | price_cents | INTEGER | 分；NULL = 未定价 |
-| created_at / updated_at / created_by / updated_by / deleted_at | | 同上 |
+| created_at | INTEGER NOT NULL | 同上 |
+| updated_at | INTEGER NOT NULL | 同上 |
+| created_by | INTEGER | 同上 |
+| updated_by | INTEGER | 同上 |
+| deleted_at | INTEGER | 同上 |
+| commission_ratio | REAL | — |
+<!-- /SCHEMA:products -->
 
 ### deals（成交记录，K42）
 
+<!-- SCHEMA:deals -->
 | 列 | 类型 | 含义 |
 | --- | --- | --- |
-| id | INTEGER PK | |
-| customer_id | INTEGER NOT NULL FK | 客户，必填 → customers.id |
+| id | INTEGER PK |  |
+| customer_id | INTEGER NOT NULL | 客户，必填 → customers.id |
 | product_id | INTEGER | 意向产品，可空 FK → products.id |
 | owner_id | INTEGER | 负责人，单值可空 FK → users.id |
-| stage | TEXT | 默认 `gift`，枚举见下 |
+| stage | TEXT NOT NULL | 默认 `gift`，枚举见下 |
 | order_no | TEXT | 订单号 |
 | payment_remark | TEXT | 支付信息备注 |
 | delivery_date | INTEGER | 交付日期，epoch 毫秒，可空 |
-| created_at / updated_at / created_by / updated_by / deleted_at | | 同上（软删） |
+| created_at | INTEGER NOT NULL | 同上（软删） |
+| updated_at | INTEGER NOT NULL | 同上（软删） |
+| created_by | INTEGER | 同上（软删） |
+| updated_by | INTEGER | 同上（软删） |
+| deleted_at | INTEGER | 同上（软删） |
+| amount_cents | INTEGER | 金额，分（K13）；NULL = 未填 |
+| after_tax_ratio | REAL | 税后金额比例 0~1（K13）；NULL = 未填 |
+| deal_date | INTEGER NOT NULL | 成交日期，epoch 毫秒（新建必填） |
+| commission_ratio | REAL | 分红总比例 0~1（K56 v2）；NULL = 回退产品/全局默认 |
+<!-- /SCHEMA:deals -->
+
+### 成交分成（K56 v2）
+
+三级分红：税后基数（`round(amount_cents × after_tax_ratio)`）→ 总比例（`deals.commission_ratio` → `products.commission_ratio` → `commissionDefault.totalRatio`）→ 内部分配（`deal_commission_items.percentage` 占分红池，Σ≤1）。分红池 = `round(税后基数 × totalRatio)`，每人 = `round(分红池 × percentage)`。默认方案总是包含成交负责人 + 客户归属人（规则缺席以 0 占位）。
+
+<!-- SCHEMA:deal_commissions -->
+| 列 | 类型 | 含义 |
+| --- | --- | --- |
+| id | INTEGER PK | — |
+| deal_id | INTEGER NOT NULL | → deals.id；懒生成（只有被配置过的成交有行） |
+| configured_by | INTEGER | 最近一次配置人 / 时间 |
+| configured_at | INTEGER | 最近一次配置人 / 时间 |
+| created_at | INTEGER NOT NULL | — |
+| updated_at | INTEGER NOT NULL | — |
+| created_by | INTEGER | — |
+| updated_by | INTEGER | — |
+<!-- /SCHEMA:deal_commissions -->
+
+<!-- SCHEMA:deal_commission_items -->
+| 列 | 类型 | 含义 |
+| --- | --- | --- |
+| id | INTEGER PK | — |
+| deal_commission_id | INTEGER NOT NULL | → deal_commissions.id |
+| user_id | INTEGER NOT NULL | → users.id（参与分成人） |
+| percentage | REAL NOT NULL | 占分红池的内部分配比例（0~1，Σ≤1） |
+| created_at | INTEGER NOT NULL | — |
+| updated_at | INTEGER NOT NULL | — |
+| created_by | INTEGER | — |
+| updated_by | INTEGER | — |
+<!-- /SCHEMA:deal_commission_items -->
+
+<!-- SCHEMA:deal_payouts -->
+| 列 | 类型 | 含义 |
+| --- | --- | --- |
+| id | INTEGER PK | — |
+| deal_id | INTEGER NOT NULL | → deals.id |
+| seq | INTEGER NOT NULL | 支付期序号（1 | 2） |
+| payout_date | INTEGER NOT NULL | 支付期，epoch 毫秒 |
+| rate | REAL NOT NULL | 占分红池比例（0~1） |
+| amount_cents | INTEGER NOT NULL | round(分红池 × rate) |
+| status | TEXT NOT NULL | `pending` 待发 / `paid` 已发，默认 pending |
+| paid_at | INTEGER | 已发时间，epoch 毫秒 |
+| created_at | INTEGER NOT NULL | — |
+| updated_at | INTEGER NOT NULL | — |
+| created_by | INTEGER | — |
+| updated_by | INTEGER | — |
+<!-- /SCHEMA:deal_payouts -->
 
 ### 交付管理（K44）
 
 交付与成交**弱关联**：交付单独立存在，客户来源可来自成交 merge（前端交互，不持久化关联）。
 
-- `delivery_types`（交付类型配置）：`name`（必填）/ `kind`（`consulting` 咨询类/`activity` 活动类/`circle` 圈子类/`other` 其他类，默认 `other`）/ `status`（`active` 有效/`inactive` 失效，默认 `active`）/ `description` / `default_tasks`（多行文本，每行一个默认动作，创建交付项时预填）；软删。
-- `deliveries`（交付单）：`delivery_type_id`（必填 FK → delivery_types.id）/ `starts_at` / `ends_at`（起止日期，epoch 毫秒，可空）/ `remark`；软删。
-- `delivery_customers`（交付 × 客户 M2M）：`(delivery_id, customer_id)` 复合 PK；**硬删**，无审计列。
-- `deliverables`（交付项，挂交付单）：`delivery_id`（必填 FK，cascade）/ `content`（必填，如「拉群」）/ `dimension`（`project`/`customer`，默认 `project`）/ `description` / `delivery_url` / `starts_at` / `ends_at`（排期，可空）；软删。无独立状态，打勾进度即状态。
-- `delivery_tasks`（动作清单，交付项子表）：`deliverable_id`（必填 FK，cascade）/ `customer_id`（**可空**，NULL = 项目维度；客户维度按 customer 分别打勾）/ `content` / `done`（0/1）/ `done_at` / `done_by` / `remark`；**硬删**，无 deleted_at。
+<!-- SCHEMA:delivery_types -->
+| 列 | 类型 | 含义 |
+| --- | --- | --- |
+| id | INTEGER PK | — |
+| name | TEXT NOT NULL | 名称（必填） |
+| description | TEXT |  |
+| default_tasks | TEXT | 多行文本，每行一个默认动作，创建交付项时预填 |
+| created_at | INTEGER NOT NULL | — |
+| updated_at | INTEGER NOT NULL | — |
+| created_by | INTEGER | — |
+| updated_by | INTEGER | — |
+| deleted_at | INTEGER | — |
+| kind | TEXT NOT NULL | `consulting` 咨询类/`activity` 活动类/`circle` 圈子类/`other` 其他类，默认 `other` |
+| status | TEXT NOT NULL | `active` 有效/`inactive` 失效，默认 `active` |
+<!-- /SCHEMA:delivery_types -->
+
+<!-- SCHEMA:deliveries -->
+| 列 | 类型 | 含义 |
+| --- | --- | --- |
+| id | INTEGER PK | — |
+| delivery_type_id | INTEGER NOT NULL | → delivery_types.id（必填） |
+| remark | TEXT |  |
+| created_at | INTEGER NOT NULL | — |
+| updated_at | INTEGER NOT NULL | — |
+| created_by | INTEGER | — |
+| updated_by | INTEGER | — |
+| deleted_at | INTEGER | — |
+| starts_at | INTEGER | 起止日期，epoch 毫秒，可空 |
+| ends_at | INTEGER | 起止日期，epoch 毫秒，可空 |
+<!-- /SCHEMA:deliveries -->
+
+<!-- SCHEMA:delivery_customers -->
+| 列 | 类型 | 含义 |
+| --- | --- | --- |
+| delivery_id | INTEGER PK NOT NULL | → deliveries.id |
+| customer_id | INTEGER PK NOT NULL | → customers.id |
+<!-- /SCHEMA:delivery_customers -->
+
+<!-- SCHEMA:deliverables -->
+| 列 | 类型 | 含义 |
+| --- | --- | --- |
+| id | INTEGER PK | — |
+| delivery_id | INTEGER NOT NULL | → deliveries.id，cascade |
+| content | TEXT NOT NULL | 必填，如「拉群」 |
+| dimension | TEXT NOT NULL | `project`/`customer`，默认 `project` |
+| description | TEXT |  |
+| delivery_url | TEXT |  |
+| created_at | INTEGER NOT NULL | — |
+| updated_at | INTEGER NOT NULL | — |
+| created_by | INTEGER | — |
+| updated_by | INTEGER | — |
+| deleted_at | INTEGER | — |
+| starts_at | INTEGER | 排期，可空 |
+| ends_at | INTEGER | 排期，可空 |
+<!-- /SCHEMA:deliverables -->
+
+<!-- SCHEMA:delivery_tasks -->
+| 列 | 类型 | 含义 |
+| --- | --- | --- |
+| id | INTEGER PK | — |
+| deliverable_id | INTEGER NOT NULL | → deliverables.id，cascade |
+| customer_id | INTEGER | 可空，NULL = 项目维度；客户维度按 customer 分别打勾 |
+| content | TEXT NOT NULL |  |
+| done | INTEGER NOT NULL | 0/1 |
+| done_at | INTEGER |  |
+| done_by | INTEGER |  |
+| remark | TEXT |  |
+| created_at | INTEGER NOT NULL | — |
+| updated_at | INTEGER NOT NULL | — |
+| created_by | INTEGER | — |
+| updated_by | INTEGER | — |
+<!-- /SCHEMA:delivery_tasks -->
 
 ### 资料（K54/K58）
 
 领域模型：资料是**交付的产出物**，挂在交付单上；交付不只有咨询——`delivery_types.kind` 分 `consulting` 咨询 / `activity` 活动 / `circle` 圈子 / `other` 其他（如微博365连麦、线下1v1咨询是 consulting，商业下午茶是 activity：一场 5-6 人，客户走 `delivery_customers`）。匹配关系与库结构一致：`delivery_materials.delivery_id` 是**可空** FK → deliveries.id，NULL = 未关联交付的孤儿（只应作为历史遗留/过渡状态存在）。
 
-- `delivery_materials`（资料）：`delivery_id`（可空 FK，见上）/ `kind`（`transcript` 录音文字稿 / `text` 文本资料 / `audio` 音频 / `video` 视频 / `link` 其他链接 / `file` 对象存储）/ `title`（必填，标题+说明）/ `url`（媒体类必填）/ `content`（**文本类全文**，可上万字）/ `object_key` / `content_type` / `file_size` / `original_filename`（仅 `kind=file`）；审计四列 + `deleted_at` 软删。组合约束（管理端 Zod 强制，写 SQL 时自觉遵守）：`transcript`/`text` 必须有 `content`，`audio`/`video`/`link` 必须有 `url`，`file` 必须有 `object_key`（**kind=file 走脚本的 `upload` 子命令**（见「用法」），不要手写 SQL 塞二进制——手写 INSERT 没有真实对象存储文件，管理端下载会坏）。
-- `delivery_material_customers`（资料 × 客户 M2M）：`(material_id, customer_id)` 复合 PK，0..N——**一份资料可属多个人**（如下午茶整场录音稿挂全部参会者），0 行 = 未关联客户；**硬删**，无审计列。
+<!-- SCHEMA:delivery_materials -->
+| 列 | 类型 | 含义 |
+| --- | --- | --- |
+| id | INTEGER PK | — |
+| delivery_id | INTEGER | 可空 FK → deliveries.id；NULL = 未关联交付的孤儿 |
+| kind | TEXT NOT NULL | `transcript` 录音文字稿 / `text` 文本资料 / `audio` 音频 / `video` 视频 / `link` 其他链接 / `file` 对象存储 |
+| title | TEXT NOT NULL | 必填，标题+说明 |
+| created_at | INTEGER NOT NULL | — |
+| updated_at | INTEGER NOT NULL | — |
+| created_by | INTEGER | — |
+| updated_by | INTEGER | — |
+| deleted_at | INTEGER | — |
+| object_key | TEXT | 仅 `kind=file`（对象存储 key） |
+| content_type | TEXT | 仅 `kind=file` |
+| file_size | INTEGER | 仅 `kind=file` |
+| original_filename | TEXT | 仅 `kind=file` |
+| url | TEXT | 媒体类必填 |
+| content | TEXT | **文本类全文**，可上万字 |
+<!-- /SCHEMA:delivery_materials -->
+
+<!-- SCHEMA:delivery_material_customers -->
+| 列 | 类型 | 含义 |
+| --- | --- | --- |
+| material_id | INTEGER PK NOT NULL | → delivery_materials.id |
+| customer_id | INTEGER PK NOT NULL | → customers.id |
+<!-- /SCHEMA:delivery_material_customers -->
+
+<!-- SCHEMA:delivery_material_tags -->
+| 列 | 类型 | 含义 |
+| --- | --- | --- |
+| material_id | INTEGER PK NOT NULL | → delivery_materials.id |
+| tag_id | INTEGER PK NOT NULL | → tags.id（material 域） |
+| created_at | INTEGER NOT NULL | 审计 |
+| created_by | INTEGER | 审计 |
+<!-- /SCHEMA:delivery_material_tags -->
+
+组合约束（管理端 Zod 强制，写 SQL 时自觉遵守）：`transcript`/`text` 必须有 `content`，`audio`/`video`/`link` 必须有 `url`，`file` 必须有 `object_key`（**kind=file 走脚本的 `upload` 子命令**（见「用法」），不要手写 SQL 塞二进制——手写 INSERT 没有真实对象存储文件，管理端下载会坏）。
 
 **新增资料先落交付单**（按语义匹配，不限咨询类）：
 
@@ -256,8 +463,22 @@ INSERT OR IGNORE INTO delivery_material_tags (material_id, tag_id, created_at, c
 
 销售为每个客户随手记录跟进触点，纯时间线表达客户状态（**不新增 `customers.status` 列**）。一张记录对应一个客户（`customer_id` → `customers.id`），单表标量时间线，**无父子 / 无 M2M / 无多态 / 无 FTS**。
 
-- `customer_maintenance_records`（维护记录，软删）：`customer_id`（必填，指向客户）/ `kind`（必填，枚举见下）/ `happened_at`（记录对应的时间点，epoch 毫秒，**可回填**补录旧记录，与 `created_at` 分开）/ `content`（自由文本，可空）；审计四列 + `deleted_at` 软删。
-- kind 枚举（CHECK 限定）：`follow_up` 跟进 / `status_change` 状态变化 / `lead` 线索 / `note` 备注 / `other` 其他。
+<!-- SCHEMA:customer_maintenance_records -->
+| 列 | 类型 | 含义 |
+| --- | --- | --- |
+| id | INTEGER PK | — |
+| customer_id | INTEGER NOT NULL | 必填，指向客户 → customers.id |
+| kind | TEXT NOT NULL | 必填，枚举见下 |
+| happened_at | INTEGER NOT NULL | 记录对应的时间点，epoch 毫秒，**可回填**补录旧记录，与 created_at 分开 |
+| content | TEXT | 自由文本，可空 |
+| created_at | INTEGER NOT NULL | — |
+| updated_at | INTEGER NOT NULL | — |
+| created_by | INTEGER | — |
+| updated_by | INTEGER | — |
+| deleted_at | INTEGER | — |
+<!-- /SCHEMA:customer_maintenance_records -->
+
+kind 枚举（CHECK 限定）：`follow_up` 跟进 / `status_change` 状态变化 / `lead` 线索 / `note` 备注 / `other` 其他。
 
 **触发与指令**：用户说「**客户跟进**」「**新增客户维护**」「给客户记一条跟进/记录」「客户状态变化」「补一条线索/备注」等，一律走本表**新增一条记录**，不要往 `customers` 塞列。`kind` 按语义取（无需用户说枚举值）：跟进/回访/联系 → `follow_up`；状态变了（改主意/转介绍）→ `status_change`；新意向/线索 → `lead`；随手记 → `note`/`other`。`content` = 用户描述的事；`happened_at` 未说明则用现在，说明「补记周五那次/上次」就给对应时间点（可回填）。一律落在某个 `customer_id` 上——先按昵称找到对应客户，找不到就明确告知。
 
@@ -268,8 +489,30 @@ INSERT OR IGNORE INTO delivery_material_tags (material_id, tag_id, created_at, c
 
 ### 客户标签（K45）
 
-- `tags`（词表，软删）：`name`（必填）/ `domain`（`customer` 客户 / `material` 资料，缺省 customer；live 唯一按 `(domain, name)`，同名跨域允许）/ `scope`（`identity` 身份 / `stage` 阶段 / `interest` 兴趣 / `other` 其它）/ `enabled` 0/1 / `sort`；审计四列 + `deleted_at`。
-- `customer_tags`（客户 × 标签 M2M）：`(customer_id, tag_id)` 复合 PK + `created_at`/`created_by`；**硬删**，无 `deleted_at`。
+<!-- SCHEMA:tags -->
+| 列 | 类型 | 含义 |
+| --- | --- | --- |
+| id | INTEGER PK | — |
+| name | TEXT NOT NULL | 必填 |
+| scope | TEXT NOT NULL | `identity` 身份 / `stage` 阶段 / `interest` 兴趣 / `other` 其它 |
+| sort | INTEGER NOT NULL | 排序 |
+| enabled | INTEGER NOT NULL | 0/1 |
+| created_at | INTEGER NOT NULL | — |
+| updated_at | INTEGER NOT NULL | — |
+| created_by | INTEGER | — |
+| updated_by | INTEGER | — |
+| deleted_at | INTEGER | — |
+| domain | TEXT NOT NULL | `customer` 客户 / `material` 资料，缺省 customer；live 唯一按 `(domain, name)`，同名跨域允许 |
+<!-- /SCHEMA:tags -->
+
+<!-- SCHEMA:customer_tags -->
+| 列 | 类型 | 含义 |
+| --- | --- | --- |
+| customer_id | INTEGER PK NOT NULL | → customers.id |
+| tag_id | INTEGER PK NOT NULL | → tags.id（customer 域） |
+| created_at | INTEGER NOT NULL | 审计 |
+| created_by | INTEGER | 审计 |
+<!-- /SCHEMA:customer_tags -->
 
 资料侧的标签词（`domain='material'`）与 `delivery_material_tags` 见上面「资料」一节。
 
@@ -283,7 +526,36 @@ INSERT OR IGNORE INTO customer_tags (customer_id, tag_id, created_at, created_by
 
 ### 系统表（别动）
 
-`sessions`（cookie 会话）、`api_tokens`（PAT，只有 hash）——认证用，看一眼结构即可，**不要写**。
+认证用，看一眼结构即可，**不要写**。
+
+<!-- SCHEMA:sessions -->
+| 列 | 类型 | 含义 |
+| --- | --- | --- |
+| id | TEXT PK | — |
+| user_id | INTEGER NOT NULL | — |
+| created_at | INTEGER NOT NULL | — |
+| expires_at | INTEGER NOT NULL | — |
+| last_touched_at | INTEGER NOT NULL | — |
+| ip | TEXT | — |
+| user_agent | TEXT | — |
+| impersonated_by | INTEGER | — |
+<!-- /SCHEMA:sessions -->
+
+<!-- SCHEMA:api_tokens -->
+| 列 | 类型 | 含义 |
+| --- | --- | --- |
+| id | INTEGER PK | — |
+| user_id | INTEGER NOT NULL | — |
+| token_hash | TEXT NOT NULL | — |
+| token_prefix | TEXT NOT NULL | — |
+| scope | TEXT NOT NULL | — |
+| name | TEXT | — |
+| created_at | INTEGER NOT NULL | — |
+| expires_at | INTEGER NOT NULL | — |
+| last_used_at | INTEGER | — |
+| revoked_at | INTEGER | — |
+| revoked_by | INTEGER | — |
+<!-- /SCHEMA:api_tokens -->
 
 ## 枚举 code → 中文（完整表，对齐 `packages/shared/src/labels.ts`）
 

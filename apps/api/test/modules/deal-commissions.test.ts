@@ -135,10 +135,11 @@ describe("默认方案（system_configs commissionDefault）", () => {
     const d = deal.json().data;
 
     const patchDefault = await patch("/api/v1/system/commission-default", cookie, {
+      totalRatio: 0.05,
       rules: [
-        { source: "owner", percentage: 0.02 },
-        { source: "dealOwner", percentage: 0.04 },
-        { source: "user", userId: helperId, percentage: 0.04 },
+        { source: "owner", percentage: 0.3 },
+        { source: "dealOwner", percentage: 0.4 },
+        { source: "user", userId: helperId, percentage: 0.3 },
       ],
     });
     expect(patchDefault.statusCode).toBe(200);
@@ -147,14 +148,18 @@ describe("默认方案（system_configs commissionDefault）", () => {
     expect(res.statusCode).toBe(200);
     const c = res.json().data;
     expect(c.isCustomized).toBe(false);
-    expect(c.totalPercentage).toBe(0.1);
+    expect(c.customerOwner).toEqual({ id: ownerId, nickname: "昵称-operator" });
+    expect(c.owner).toEqual({ id: dealOwnerId, nickname: "昵称-operator" });
+    expect(c.totalRatio).toBe(0.05);
+    expect(c.totalPercentage).toBe(1);
     expect(c.baseAmountCents).toBe(90000);
+    expect(c.poolAmountCents).toBe(4500);
     expect(c.items).toEqual([
-      { userId: ownerId, nickname: "昵称-operator", percentage: 0.02, amountCents: 1800 },
-      { userId: dealOwnerId, nickname: "昵称-operator", percentage: 0.04, amountCents: 3600 },
-      { userId: helperId, nickname: "昵称-operator", percentage: 0.04, amountCents: 3600 },
+      { userId: dealOwnerId, nickname: "昵称-operator", percentage: 0.4, amountCents: 1800 },
+      { userId: ownerId, nickname: "昵称-operator", percentage: 0.3, amountCents: 1350 },
+      { userId: helperId, nickname: "昵称-operator", percentage: 0.3, amountCents: 1350 },
     ]);
-    expect(c.totalAmountCents).toBe(9000);
+    expect(c.totalAmountCents).toBe(4500);
   });
 
   it("默认方案校验：user 规则缺 userId → 422；Σ>1 → 422；user 不存在 → 422", async () => {
@@ -162,6 +167,7 @@ describe("默认方案（system_configs commissionDefault）", () => {
     expect(
       (
         await patch("/api/v1/system/commission-default", cookie, {
+          totalRatio: 0.05,
           rules: [{ source: "user", percentage: 0.1 }],
         })
       ).statusCode,
@@ -169,6 +175,7 @@ describe("默认方案（system_configs commissionDefault）", () => {
     expect(
       (
         await patch("/api/v1/system/commission-default", cookie, {
+          totalRatio: 0.05,
           rules: [
             { source: "owner", percentage: 0.6 },
             { source: "dealOwner", percentage: 0.6 },
@@ -179,6 +186,7 @@ describe("默认方案（system_configs commissionDefault）", () => {
     expect(
       (
         await patch("/api/v1/system/commission-default", cookie, {
+          totalRatio: 0.05,
           rules: [{ source: "user", userId: 9999, percentage: 0.1 }],
         })
       ).statusCode,
@@ -231,14 +239,17 @@ describe("成交产品/交付日期/负责人与负责人分成（K56 扩展）"
     ).json().data;
 
     await patch("/api/v1/system/commission-default", cookie, {
-      rules: [{ source: "dealOwner", percentage: 0.1 }],
+      totalRatio: 0.1,
+      rules: [{ source: "dealOwner", percentage: 1 }],
     });
 
     const c = (await get(`/api/v1/deals/${d.id}/commissions`, cookie)).json().data;
     const ownerItem = c.items.find((it: { userId: number }) => it.userId === dealOwnerId);
-    expect(ownerItem.percentage).toBe(0.1);
+    expect(ownerItem.percentage).toBe(1);
     expect(ownerItem.amountCents).toBe(9000);
-    expect(c.totalPercentage).toBe(0.1);
+    expect(c.totalPercentage).toBe(1);
+    expect(c.poolAmountCents).toBe(9000);
+    expect(c.totalAmountCents).toBe(9000);
   });
 });
 
@@ -249,6 +260,13 @@ describe("自定义配置 PUT /deals/:id/commissions", () => {
     const { id: m2 } = await loginAsRole("operator", "m2");
     const { data: d } = await createDealAsAdmin({ amountCents: 100000, afterTaxRatio: 0.9 });
 
+    // v2：总比例在 deals 上维护（0.1 → 分红池 = 90000 × 0.1 = 9000）
+    const setRatio = await patch(`/api/v1/deals/${d.id}`, cookie, {
+      commissionRatio: 0.1,
+      updatedAt: d.updatedAt,
+    });
+    expect(setRatio.statusCode).toBe(200);
+
     const res = await put(`/api/v1/deals/${d.id}/commissions`, cookie, {
       items: [
         { userId: m1, percentage: 0.06 },
@@ -258,9 +276,13 @@ describe("自定义配置 PUT /deals/:id/commissions", () => {
     expect(res.statusCode).toBe(200);
     const c = res.json().data;
     expect(c.isCustomized).toBe(true);
+    expect(c.totalRatio).toBe(0.1);
+    expect(c.poolAmountCents).toBe(9000);
     expect(c.totalPercentage).toBe(0.1);
     expect(c.items.map((i: { userId: number }) => i.userId)).toEqual([m1, m2]);
-    expect(c.totalAmountCents).toBe(9000);
+    expect(c.items[0].amountCents).toBe(540);
+    expect(c.items[1].amountCents).toBe(360);
+    expect(c.totalAmountCents).toBe(900);
 
     // 状态筛选：custom 1 条、default 0 条
     const custom = await get("/api/v1/deals/commissions?status=custom", cookie);
@@ -348,5 +370,135 @@ describe("列表：日期范围与搜索", () => {
 
     const byQ = await get("/api/v1/deals/commissions?q=" + encodeURIComponent("ORD-SEARCH"), cookie);
     expect(byQ.json().meta.total).toBe(1);
+  });
+});
+
+describe("成交分成 v2：总比例三级回退 + 默认必含双人 + payout", () => {
+  it("总比例三级回退：成交覆盖 → 产品默认 → 全局默认", async () => {
+    const { cookie } = await loginAsRole("admin");
+    const productId = seedProduct(tmp.db, "产品X", { commissionRatio: 0.08 });
+    const customerId = seedCustomer(tmp.db, "客户T");
+    await patch("/api/v1/system/commission-default", cookie, { totalRatio: 0.05, rules: [] });
+
+    // 无成交/产品覆盖 → 全局默认 0.05
+    const d1 = (await post("/api/v1/deals", cookie, { customerId, dealDate: clock.t })).json().data;
+    let c = (await get(`/api/v1/deals/${d1.id}/commissions`, cookie)).json().data;
+    expect(c.totalRatio).toBe(0.05);
+    expect(c.productCommissionRatio).toBeNull();
+    expect(c.dealCommissionRatio).toBeNull();
+
+    // 产品默认 0.08（成交未覆盖）
+    const d2 = (await post("/api/v1/deals", cookie, { customerId, productId, dealDate: clock.t })).json().data;
+    c = (await get(`/api/v1/deals/${d2.id}/commissions`, cookie)).json().data;
+    expect(c.totalRatio).toBe(0.08);
+    expect(c.productCommissionRatio).toBe(0.08);
+
+    // 成交覆盖 0.1
+    const d3 = (
+      await post("/api/v1/deals", cookie, { customerId, productId, commissionRatio: 0.1, dealDate: clock.t })
+    ).json().data;
+    c = (await get(`/api/v1/deals/${d3.id}/commissions`, cookie)).json().data;
+    expect(c.totalRatio).toBe(0.1);
+    expect(c.dealCommissionRatio).toBe(0.1);
+  });
+
+  it("默认方案总是包含成交负责人与客户归属人（规则缺席也以 0 占位）", async () => {
+    const { cookie } = await loginAsRole("admin");
+    const { id: dealOwnerId } = await loginAsRole("operator", "owner-必含");
+    const { id: custOwnerId } = await loginAsRole("operator", "cust-owner-必含");
+    const customerId = seedCustomer(tmp.db, "客户必含", { ownerId: custOwnerId });
+    await patch("/api/v1/system/commission-default", cookie, { totalRatio: 0.1, rules: [] });
+
+    const d = (
+      await post("/api/v1/deals", cookie, {
+        customerId,
+        ownerId: dealOwnerId,
+        amountCents: 100000,
+        afterTaxRatio: 0.9,
+        dealDate: clock.t,
+      })
+    ).json().data;
+    const c = (await get(`/api/v1/deals/${d.id}/commissions`, cookie)).json().data;
+    const uids = c.items.map((it: { userId: number }) => it.userId);
+    expect(uids).toContain(dealOwnerId); // 成交负责人总在
+    expect(uids).toContain(custOwnerId); // 客户归属人总在
+    const ownerItem = c.items.find((it: { userId: number }) => it.userId === dealOwnerId);
+    expect(ownerItem.percentage).toBe(0);
+    expect(ownerItem.amountCents).toBe(0);
+  });
+
+  it("payout PUT：金额=round(分红池×rate)、交付日期为空 → 422、[] 清空", async () => {
+    const { cookie } = await loginAsRole("admin");
+    const { data: d } = await createDealAsAdmin({
+      amountCents: 100000,
+      afterTaxRatio: 0.9,
+      deliveryDate: Date.UTC(2026, 6, 1),
+    });
+    await patch(`/api/v1/deals/${d.id}`, cookie, { commissionRatio: 0.1, updatedAt: d.updatedAt });
+
+    const putRes = await put(`/api/v1/deals/${d.id}/payouts`, cookie, {
+      payouts: [
+        { seq: 1, payoutDate: Date.UTC(2026, 6, 1), rate: 0.5 },
+        { seq: 2, payoutDate: Date.UTC(2026, 9, 1), rate: 0.5 },
+      ],
+    });
+    expect(putRes.statusCode).toBe(200);
+    const payouts = putRes.json().data;
+    expect(payouts).toHaveLength(2);
+    expect(payouts[0]).toMatchObject({ seq: 1, rate: 0.5, amountCents: 4500, status: "pending" });
+    expect(payouts[1]).toMatchObject({ seq: 2, rate: 0.5, amountCents: 4500, status: "pending" });
+
+    // 交付日期为空 → 422
+    const d2 = (
+      await post("/api/v1/deals", cookie, { customerId: seedCustomer(tmp.db, "无交付"), dealDate: clock.t })
+    ).json().data;
+    expect(
+      (await put(`/api/v1/deals/${d2.id}/payouts`, cookie, { payouts: [{ seq: 1, payoutDate: clock.t, rate: 1 }] }))
+        .statusCode,
+    ).toBe(422);
+
+    // [] 清空
+    const clear = await put(`/api/v1/deals/${d.id}/payouts`, cookie, { payouts: [] });
+    expect(clear.json().data).toEqual([]);
+  });
+
+  it("payout PATCH 状态：pending↔paid，paid 记 paid_at", async () => {
+    const { cookie } = await loginAsRole("admin");
+    const { data: d } = await createDealAsAdmin({
+      amountCents: 100000,
+      afterTaxRatio: 0.9,
+      deliveryDate: Date.UTC(2026, 6, 1),
+    });
+    await patch(`/api/v1/deals/${d.id}`, cookie, { commissionRatio: 0.1, updatedAt: d.updatedAt });
+    await put(`/api/v1/deals/${d.id}/payouts`, cookie, {
+      payouts: [{ seq: 1, payoutDate: Date.UTC(2026, 6, 1), rate: 1 }],
+    });
+
+    const paid = await patch(`/api/v1/deals/${d.id}/payouts/1`, cookie, { status: "paid" });
+    expect(paid.statusCode).toBe(200);
+    expect(paid.json().data.status).toBe("paid");
+    expect(paid.json().data.paidAt).toBe(clock.t);
+
+    const pending = await patch(`/api/v1/deals/${d.id}/payouts/1`, cookie, { status: "pending" });
+    expect(pending.json().data.status).toBe("pending");
+    expect(pending.json().data.paidAt).toBeNull();
+  });
+
+  it("列表 payoutStatus 过滤", async () => {
+    const { cookie } = await loginAsRole("admin");
+    const { data: d } = await createDealAsAdmin({
+      amountCents: 100000,
+      afterTaxRatio: 0.9,
+      deliveryDate: Date.UTC(2026, 6, 1),
+    });
+    await patch(`/api/v1/deals/${d.id}`, cookie, { commissionRatio: 0.1, updatedAt: d.updatedAt });
+    await put(`/api/v1/deals/${d.id}/payouts`, cookie, {
+      payouts: [{ seq: 1, payoutDate: Date.UTC(2026, 6, 1), rate: 1 }],
+    });
+
+    const pending = await get("/api/v1/deals/commissions?payoutStatus=pending", cookie);
+    expect(pending.json().meta.total).toBe(1);
+    const paid = await get("/api/v1/deals/commissions?payoutStatus=paid", cookie);
+    expect(paid.json().meta.total).toBe(0);
   });
 });

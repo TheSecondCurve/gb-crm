@@ -7,7 +7,6 @@ import type {
   AiConfigPatch,
   CommissionDefaultGet,
   CommissionDefaultPatch,
-  CommissionDefaultRule,
   MaterialsS3ConfigGet,
   MaterialsS3ConfigPatch,
   S3ConfigGet,
@@ -282,7 +281,7 @@ export function getEffectivePages(db: Db, role: SystemRole | null): PageKey[] {
 // 未配置的成交动态套用该方案；Σ percentage ≤ 1；source=user 的 userId 必须为 live 用户。
 
 export function getCommissionDefaultResult(db: Db): CommissionDefaultGet {
-  return { rules: getCommissionDefault(db) };
+  return getCommissionDefault(db);
 }
 
 export function patchCommissionDefault(
@@ -290,15 +289,18 @@ export function patchCommissionDefault(
   patch: CommissionDefaultPatch,
   ctx: { now: number; userId: number },
 ): CommissionDefaultGet {
-  validateCommissionDefault(db, patch.rules);
-  upsertCommissionDefault(db, patch.rules, ctx.now, ctx.userId);
+  validateCommissionDefault(db, patch);
+  upsertCommissionDefault(db, patch, ctx.now, ctx.userId);
   return getCommissionDefaultResult(db);
 }
 
-function validateCommissionDefault(db: Db, rules: readonly CommissionDefaultRule[]): void {
+function validateCommissionDefault(
+  db: Db,
+  scheme: CommissionDefaultPatch,
+): void {
   let sum = 0;
   const userIds: number[] = [];
-  for (const rule of rules) {
+  for (const rule of scheme.rules) {
     sum += rule.percentage;
     if (rule.userId !== undefined) userIds.push(rule.userId);
   }

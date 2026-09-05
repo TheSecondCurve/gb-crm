@@ -36,6 +36,18 @@ function otherParticipantsText(row: DealCommissionDto): string {
   return others.length === 0 ? "—" : others.map(itemText).join("、");
 }
 
+/** payout 文本：「#1 2026-08 50.0%(¥90.00 待发)、…」；空 → — */
+function payoutsText(row: DealCommissionDto): string {
+  return row.payouts.length === 0
+    ? "—"
+    : row.payouts
+        .map(
+          (p) =>
+            `#${p.seq} ${formatEpochDay(p.payoutDate)} ${percentText(p.rate)}(${moneyText(p.amountCents)} ${p.status === "paid" ? "已发" : "待发"})`,
+        )
+        .join("、");
+}
+
 interface ColumnDef {
   header: string;
   width: number;
@@ -57,6 +69,7 @@ const dateCol = (header: string, get: (row: DealCommissionDto) => number | null)
 const DEAL_COLUMNS: ColumnDef[] = [
   { header: "成交ID", width: 8, value: (r) => r.dealId },
   { header: "客户", width: 16, value: (r) => r.customer?.nickname ?? null },
+  { header: "成交归属人", width: 12, value: (r) => r.customerOwner?.nickname ?? null },
   { header: "成交产品", width: 16, value: (r) => r.product?.name ?? null },
   dateCol("成交日期", (r) => r.dealDate),
   dateCol("交付日期", (r) => r.deliveryDate),
@@ -65,10 +78,13 @@ const DEAL_COLUMNS: ColumnDef[] = [
   { header: "成交金额(元)", width: 14, value: (r) => yuan(r.amountCents) },
   { header: "税后比例", width: 10, value: (r) => r.afterTaxRatio },
   { header: "税后基数(元)", width: 14, value: (r) => yuan(r.baseAmountCents) },
+  { header: "总比例", width: 10, value: (r) => r.totalRatio },
+  { header: "分红池(元)", width: 14, value: (r) => yuan(r.poolAmountCents) },
   { header: "负责人分成", width: 22, value: (r) => ownerSplitText(r) },
   { header: "其他参与方", width: 46, value: (r) => otherParticipantsText(r) },
-  { header: "总比例", width: 10, value: (r) => r.totalPercentage },
+  { header: "内部分配比例", width: 12, value: (r) => r.totalPercentage },
   { header: "总分成(元)", width: 14, value: (r) => yuan(r.totalAmountCents) },
+  { header: "payout", width: 34, value: (r) => payoutsText(r) },
   { header: "方案", width: 8, value: (r) => (r.isCustomized ? "已配置" : "默认") },
 ];
 
@@ -109,6 +125,7 @@ export async function buildCommissionXlsx(
   partySheet.columns = [
     { header: "成交ID", width: 8 },
     { header: "客户", width: 16 },
+    { header: "成交归属人", width: 12 },
     { header: "成交产品", width: 16 },
     { header: "成交日期", width: 18 },
     { header: "交付日期", width: 18 },
@@ -128,6 +145,7 @@ export async function buildCommissionXlsx(
       const excelRow = partySheet.addRow([
         row.dealId,
         row.customer?.nickname ?? null,
+        row.customerOwner?.nickname ?? null,
         row.product?.name ?? null,
         new Date(row.dealDate),
         row.deliveryDate === null ? null : new Date(row.deliveryDate),
@@ -142,8 +160,8 @@ export async function buildCommissionXlsx(
         item.percentage,
         yuan(item.amountCents),
       ]);
-      excelRow.getCell(4).numFmt = DATE_FMT;
-      if (row.deliveryDate !== null) excelRow.getCell(5).numFmt = DATE_FMT;
+      excelRow.getCell(5).numFmt = DATE_FMT;
+      if (row.deliveryDate !== null) excelRow.getCell(6).numFmt = DATE_FMT;
     }
   }
   partySheet.getRow(1).font = { bold: true };
