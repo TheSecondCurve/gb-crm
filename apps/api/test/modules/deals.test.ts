@@ -260,6 +260,37 @@ describe("GET /api/v1/deals 列表", () => {
     expect((await get("/api/v1/deals?sort=deletedAt", cookie)).statusCode).toBe(422);
   });
 
+  it("默认按 dealDate 倒序（并列 id DESC）；productId 过滤", async () => {
+    const { cookie } = await loginAsRole("admin");
+    const c1 = seedCustomer(tmp.db, "客户1");
+    const c2 = seedCustomer(tmp.db, "客户2");
+    const productA = seedProduct(tmp.db, "产品A");
+    const productB = seedProduct(tmp.db, "产品B");
+
+    const d1 = (
+      await post("/api/v1/deals", cookie, {
+        customerId: c1,
+        productId: productA,
+        dealDate: Date.UTC(2026, 2, 1),
+      })
+    ).json().data;
+    const d2 = (
+      await post("/api/v1/deals", cookie, {
+        customerId: c2,
+        productId: productB,
+        dealDate: Date.UTC(2026, 8, 1),
+      })
+    ).json().data;
+
+    // 默认（不带 sort）：dealDate DESC，成交日期晚的在前
+    const def = await get("/api/v1/deals", cookie);
+    expect(def.json().data.map((x: { id: number }) => x.id)).toEqual([d2.id, d1.id]);
+
+    const byProduct = await get(`/api/v1/deals?productId=${productA}`, cookie);
+    expect(byProduct.json().meta.total).toBe(1);
+    expect(byProduct.json().data[0].id).toBe(d1.id);
+  });
+
   it("展开：软删的客户/产品/负责人 ref 为 null（K9），join 行保留", async () => {
     const { cookie } = await loginAsRole("admin");
     const customerId = seedCustomer(tmp.db, "将删客户");

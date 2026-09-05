@@ -10,10 +10,12 @@ const deliveryMs = (y: number, m: number, d: number) => new Date(y, m - 1, d).ge
 const defaultRow: DealCommissionDto = {
   dealId: 1,
   customer: { id: 101, nickname: "张三", city: "上海" },
+  product: { id: 201, name: "产品A" },
   owner: { id: 1, nickname: "老王" },
   stage: "paid",
   orderNo: "ORD-001",
   dealDate: deliveryMs(2026, 8, 22),
+  deliveryDate: deliveryMs(2026, 9, 1),
   amountCents: 100000,
   afterTaxRatio: 0.9,
   baseAmountCents: 90000,
@@ -94,13 +96,17 @@ describe("成交分成页", () => {
     renderApp("/deals/commissions");
     expect(await screen.findByText("张三")).toBeTruthy();
     expect(screen.getByText("李四")).toBeTruthy();
-    // 未配置行：默认 badge + 明细徽章
+    // 成交产品/交付日期/负责人列
+    expect(screen.getAllByText("产品A").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("2026-09-01").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("老王").length).toBeGreaterThan(0);
+    // 未配置行：默认 badge + 负责人分成（比例+金额）
     expect(screen.getByText("默认")).toBeTruthy();
-    expect(screen.getByText("老王 10.0%")).toBeTruthy();
+    expect(screen.getByText("10.0%(¥90.00)")).toBeTruthy();
     // 已配置行（状态下拉里也有一个「已配置」option，故用 getAllByText）
     expect(screen.getAllByText("已配置").length).toBeGreaterThan(0);
-    expect(screen.getByText("老王 6.0%")).toBeTruthy();
-    expect(screen.getByText("小李 4.0%")).toBeTruthy();
+    expect(screen.getByText("6.0%(¥54.00)")).toBeTruthy();
+    expect(screen.getByText("小李 4.0%(¥36.00)")).toBeTruthy();
     expect(screen.getAllByText("¥900.00").length).toBeGreaterThan(0); // 两行税后基数相同
     // admin 可见默认方案编辑器
     expect(screen.getByText("默认分成方案")).toBeTruthy();

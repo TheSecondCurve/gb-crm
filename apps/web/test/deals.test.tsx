@@ -108,7 +108,8 @@ describe("成交记录页", () => {
     mockDealsApi(adminMe);
     renderApp("/deals");
     expect(await screen.findByText("张三")).toBeTruthy();
-    expect(screen.getByText("咨询产品")).toBeTruthy();
+    // 意向产品列 + 产品筛选下拉里都有「咨询产品」option → getAllByText
+    expect(screen.getAllByText("咨询产品").length).toBeGreaterThan(0);
     expect(screen.getByText("老王")).toBeTruthy();
     expect(screen.getAllByText("已付款").length).toBeGreaterThan(0); // badge（过滤下拉里也有同名 option）
     expect(screen.getByText("上海")).toBeTruthy(); // 客户城市只读列
@@ -134,6 +135,15 @@ describe("成交记录页", () => {
 
     fireEvent.change(screen.getByLabelText("阶段筛选"), { target: { value: "refunded" } });
     await waitFor(() => expect(calls.some((c) => c.url.includes("stage=refunded"))).toBe(true));
+  });
+
+  it("产品过滤下拉触发新 query（productId）", async () => {
+    const calls = mockDealsApi(adminMe);
+    renderApp("/deals");
+    await screen.findByText("张三");
+
+    fireEvent.change(screen.getByLabelText("产品筛选"), { target: { value: "201" } });
+    await waitFor(() => expect(calls.some((c) => c.url.includes("productId=201"))).toBe(true));
   });
 
   it("新增：表单必填客户，成交日期 YYYY-MM-DD → POST 为 epoch ms", async () => {
