@@ -9,6 +9,12 @@ import { optionsOf } from "../columns/common";
 import { convertDealBody, dealColumns } from "../columns/deals";
 import { DataGrid, Pagination } from "../components/DataGrid/DataGrid";
 import { ConfirmDialog } from "../components/ConfirmDialog";
+import {
+  DealFilterBar,
+  dealFiltersToQuery,
+  EMPTY_DEAL_FILTERS,
+  type DealFilterValues,
+} from "../components/DealFilterBar";
 import { RecordFormModal } from "../components/RecordFormModal";
 import { SearchBar } from "../components/SearchBar";
 import { useToast } from "../components/Toast";
@@ -18,7 +24,10 @@ export function DealsPage() {
   const { me } = useAuth();
   const role = me?.systemRole ?? null;
   const showToast = useToast();
-  const list = useResourceList<DealDto>("deals", "stage", undefined, "productId");
+  // 多维筛选（客户/负责人/客户归属人/成交与交付日期范围/交付日期空否）→ 并入列表 query 与 queryKey
+  const [filters, setFilters] = useState<DealFilterValues>(EMPTY_DEAL_FILTERS);
+  const dealQuery = useMemo(() => dealFiltersToQuery(filters), [filters]);
+  const list = useResourceList<DealDto>("deals", "stage", dealQuery, "productId");
   const columns = useMemo(() => dealColumns(role), [role]);
   const [creating, setCreating] = useState(false);
   const [editing, setEditing] = useState<DealDto | null>(null);
@@ -35,6 +44,13 @@ export function DealsPage() {
   const canCreate = can(role, "deals", "create");
   const canUpdate = can(role, "deals", "update");
   const canDelete = can(role, "deals", "delete");
+
+  // 改筛选：先 flush 行内 PATCH 队列再回第一页（与 useResourceList.changeFilter 同语义）
+  const changeFilters = (next: DealFilterValues) => {
+    void list.gridRef.current?.flushAll();
+    setFilters(next);
+    list.changePage(1, list.pageSize);
+  };
 
   /** POST/PATCH body 转换唯一实现见 columns/deals.convertDealBody（行内编辑 / 弹窗共用） */
   const patchRow = useCallback(async (id: number, body: Record<string, unknown>) => {
@@ -124,6 +140,7 @@ export function DealsPage() {
               </option>
             ))}
           </select>
+          <DealFilterBar value={filters} onChange={changeFilters} />
           {canCreate && (
             <button type="button" className="btn-primary" onClick={() => setCreating(true)}>
               新增

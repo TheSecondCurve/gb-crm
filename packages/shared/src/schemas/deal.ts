@@ -42,5 +42,15 @@ export const dealListQuerySchema = pageQuerySchema.extend({
   customerId: z.coerce.number().int().positive().optional(),
   productId: z.coerce.number().int().positive().optional(),
   ownerId: z.coerce.number().int().positive().optional(),
+  // 客户归属人（customers.owner_id，EXISTS 子查询）；日期字段一律 epoch ms（同成交分成列表约定）
+  customerOwnerId: z.coerce.number().int().positive().optional(),
+  /** 成交日期范围（deal_date，endDate 含当日尾） */
+  startDate: z.coerce.number().int().optional(),
+  endDate: z.coerce.number().int().optional(),
+  /** 交付日期范围（delivery_date），与成交日期范围相互独立 */
+  deliveryStartDate: z.coerce.number().int().optional(),
+  deliveryEndDate: z.coerce.number().int().optional(),
+  /** 交付日期是否为空：empty=未填；notEmpty=已填（可与交付日期范围叠加） */
+  deliveryStatus: z.enum(["empty", "notEmpty"]).optional(),
 });
 export type DealListQuery = z.infer<typeof dealListQuerySchema>;

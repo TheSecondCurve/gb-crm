@@ -90,6 +90,25 @@ function mockDealsApi(me: Me, rows: DealDto[] = [deal]) {
     const method = init?.method ?? "GET";
     calls.push({ url, method, body: init?.body });
     if (url === "/api/v1/auth/me") return { status: 200, body: { data: me } };
+    // 筛选条 EntityPicker loader
+    if (url.startsWith("/api/v1/users")) {
+      return {
+        status: 200,
+        body: {
+          data: [
+            { id: 1, nickname: "老王" },
+            { id: 3, nickname: "团队运营" },
+          ],
+          meta: { page: 1, pageSize: 100, total: 2 },
+        },
+      };
+    }
+    if (url.startsWith("/api/v1/customers")) {
+      return {
+        status: 200,
+        body: { data: [{ id: 1, nickname: "张三", city: "上海" }], meta: { page: 1, pageSize: 100, total: 1 } },
+      };
+    }
     if (url.startsWith("/api/v1/deals")) {
       if (method === "PATCH") {
         const patch = JSON.parse(String(init?.body)) as Record<string, unknown>;
@@ -206,6 +225,26 @@ describe("我的运营菜单", () => {
     expect(await screen.findByText("D-001")).toBeTruthy();
     expect(calls.some((c) => c.method === "GET" && c.url.includes("ownerId=3"))).toBe(true);
     expect(screen.queryByRole("button", { name: "新增" })).toBeNull();
+  });
+
+  it("我的成交：筛选条无负责人（固定当前用户），归属人筛选与 ownerId 叠加", async () => {
+    const calls = mockDealsApi(operatorMe);
+    renderApp("/my/deals");
+    await screen.findByRole("heading", { name: "我的成交" });
+    await screen.findByText("D-001");
+
+    expect(screen.queryByLabelText("负责人筛选")).toBeNull();
+    expect(screen.getByLabelText("客户筛选")).toBeTruthy();
+    expect(screen.getByLabelText("客户归属人筛选")).toBeTruthy();
+    expect(screen.getByLabelText("交付日期空否")).toBeTruthy();
+
+    fireEvent.focus(screen.getByLabelText("客户归属人筛选"));
+    fireEvent.mouseDown(await screen.findByRole("option", { name: "老王" }));
+    await waitFor(() =>
+      expect(
+        calls.some((c) => c.url.includes("ownerId=3") && c.url.includes("customerOwnerId=1")),
+      ).toBe(true),
+    );
   });
 
   it("我的成交：行内编辑金额 → PATCH 提交分整数（number，K13）", async () => {
