@@ -18,10 +18,14 @@ export interface CommissionItemDto {
 export interface DealCommissionDto {
   dealId: number;
   customer: { id: number; nickname: string; city: string | null } | null;
+  /** 成交产品（软删/无产品 → null） */
+  product: { id: number; name: string } | null;
   owner: UserRef | null;
   stage: string;
   orderNo: string | null;
   dealDate: number;
+  /** 交付日期（可空） */
+  deliveryDate: number | null;
   /** 金额，整数分（K13，同 deals）；null = 未填 */
   amountCents: number | null;
   /** 税后金额比例 0~1；null = 未填 */
@@ -99,6 +103,10 @@ export function assembleCommissionRows(
         row.customerDeletedAt !== null
           ? null
           : { id: row.customerId, nickname: row.customerNickname ?? "", city: row.customerCity },
+      product:
+        row.productId === null || row.productDeletedAt !== null
+          ? null
+          : { id: row.productId, name: row.productName ?? "" },
       owner:
         row.ownerId === null || row.ownerDeletedAt !== null
           ? null
@@ -106,6 +114,7 @@ export function assembleCommissionRows(
       stage: row.stage,
       orderNo: row.orderNo,
       dealDate: row.dealDate,
+      deliveryDate: row.deliveryDate,
       amountCents: row.amountCents,
       afterTaxRatio: row.afterTaxRatio,
       baseAmountCents: base,

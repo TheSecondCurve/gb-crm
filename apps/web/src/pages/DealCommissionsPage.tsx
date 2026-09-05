@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { can } from "@gb-crm/shared";
 
@@ -6,6 +6,7 @@ import { api, ApiError, buildQuery } from "../api/client";
 import type {
   CommissionDefaultDto,
   CommissionDefaultRuleDto,
+  CommissionItemDto,
   DealCommissionDto,
   UserDto,
 } from "../api/types";
@@ -20,6 +21,29 @@ function percentText(p: number): string {  return `${(p * 100).toFixed(1)}%`;
 
 function showAmount(cents: number | null): string {
   return cents === null ? "—" : `¥${centsToYuan(cents)}`;
+}
+
+/** 单个参与方徽章文本：昵称 比例(金额) */
+function itemText(it: CommissionItemDto): string {
+  return `${it.nickname ?? `#${it.userId}`} ${percentText(it.percentage)}(${showAmount(it.amountCents)})`;
+}
+
+/** 参与方徽章列表（空 → —） */
+function participantBadges(items: CommissionItemDto[]): ReactNode {
+  if (items.length === 0) return "—";
+  return (
+    <span className="inline-badges">
+      {items.map((it) => (
+        <span key={it.userId}>{badge(itemText(it), "plain")}</span>
+      ))}
+    </span>
+  );
+}
+
+/** 负责人分成：按 deals.owner_id 在明细里找到对应人的比例+金额；负责人未参与 → — */
+function ownerSplitText(row: DealCommissionDto): string {
+  const item = row.items.find((it) => it.userId === row.owner?.id);
+  return item ? `${percentText(item.percentage)}(${showAmount(item.amountCents)})` : "—";
 }
 
 function CommissionDefaultEditor() {
@@ -306,9 +330,14 @@ export function DealCommissionsPage() {
               <thead>
               <tr>
                 <th>客户</th>
-                <th>成交时间</th>
+                <th>成交产品</th>
+                <th>成交日期</th>
+                <th>交付日期</th>
+                <th>负责人</th>
+                <th>成交金额</th>
                 <th>税后基数</th>
-                <th>分成明细</th>
+                <th>负责人分成</th>
+                <th>其他参与方</th>
                 <th>总比例</th>
                 <th>总分成</th>
                 <th>状态</th>
@@ -318,7 +347,7 @@ export function DealCommissionsPage() {
             <tbody>
               {rows.length === 0 && (
                 <tr>
-                  <td colSpan={canUpdate ? 8 : 7} className="empty-cell">
+                  <td colSpan={canUpdate ? 13 : 12} className="empty-cell">
                     暂无成交数据
                   </td>
                 </tr>
@@ -326,24 +355,14 @@ export function DealCommissionsPage() {
               {rows.map((row) => (
                 <tr key={row.dealId}>
                   <td>{row.customer ? row.customer.nickname : "—"}</td>
+                  <td>{row.product ? row.product.name : "—"}</td>
                   <td>{epochMsToDate(row.dealDate)}</td>
+                  <td>{row.deliveryDate === null ? "—" : epochMsToDate(row.deliveryDate)}</td>
+                  <td>{row.owner ? row.owner.nickname : "—"}</td>
+                  <td>{showAmount(row.amountCents)}</td>
                   <td>{showAmount(row.baseAmountCents)}</td>
-                  <td>
-                    {row.items.length === 0 ? (
-                      "—"
-                    ) : (
-                      <span className="inline-badges">
-                        {row.items.map((it) => (
-                          <span key={it.userId}>
-                            {badge(
-                              `${it.nickname ?? `#${it.userId}`} ${percentText(it.percentage)}`,
-                              "plain",
-                            )}
-                          </span>
-                        ))}
-                      </span>
-                    )}
-                  </td>
+                  <td>{ownerSplitText(row)}</td>
+                  <td>{participantBadges(row.items.filter((it) => it.userId !== row.owner?.id))}</td>
                   <td>{percentText(row.totalPercentage)}</td>
                   <td>{showAmount(row.totalAmountCents)}</td>
                   <td>{badge(row.isCustomized ? "已配置" : "默认", row.isCustomized ? "accent" : "muted")}</td>

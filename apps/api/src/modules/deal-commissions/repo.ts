@@ -21,6 +21,7 @@ import {
   dealCommissionItems,
   dealCommissions,
   deals,
+  products,
   users,
 } from "../../db/schema.js";
 import { fuzzyWhere } from "../../lib/fuzzy.js";
@@ -42,8 +43,12 @@ export interface CommissionJoinRow {
   orderNo: string | null;
   paymentRemark: string | null;
   dealDate: number;
+  deliveryDate: number | null;
   amountCents: number | null;
   afterTaxRatio: number | null;
+  productId: number | null;
+  productName: string | null;
+  productDeletedAt: number | null;
   createdAt: number;
   updatedAt: number;
   commissionId: number | null;
@@ -92,8 +97,12 @@ const JOIN_SELECT = {
   orderNo: deals.orderNo,
   paymentRemark: deals.paymentRemark,
   dealDate: deals.dealDate,
+  deliveryDate: deals.deliveryDate,
   amountCents: deals.amountCents,
   afterTaxRatio: deals.afterTaxRatio,
+  productId: deals.productId,
+  productName: products.name,
+  productDeletedAt: products.deletedAt,
   createdAt: deals.createdAt,
   updatedAt: deals.updatedAt,
   commissionId: dealCommissions.id,
@@ -112,6 +121,7 @@ export function listCommissionRows(
     .from(deals)
     .leftJoin(customers, eq(customers.id, deals.customerId))
     .leftJoin(users, eq(users.id, deals.ownerId))
+    .leftJoin(products, eq(products.id, deals.productId))
     .leftJoin(dealCommissions, eq(dealCommissions.dealId, deals.id))
     .where(where)
     .orderBy(dir(deals.updatedAt), desc(deals.id))
@@ -134,6 +144,7 @@ export function listAllCommissionRows(
     .from(deals)
     .leftJoin(customers, eq(customers.id, deals.customerId))
     .leftJoin(users, eq(users.id, deals.ownerId))
+    .leftJoin(products, eq(products.id, deals.productId))
     .leftJoin(dealCommissions, eq(dealCommissions.dealId, deals.id))
     .where(where)
     .orderBy(dir(deals.updatedAt), desc(deals.id))
@@ -147,6 +158,7 @@ export function getCommissionJoinRow(db: Db, dealId: number): CommissionJoinRow 
     .from(deals)
     .leftJoin(customers, eq(customers.id, deals.customerId))
     .leftJoin(users, eq(users.id, deals.ownerId))
+    .leftJoin(products, eq(products.id, deals.productId))
     .leftJoin(dealCommissions, eq(dealCommissions.dealId, deals.id))
     .where(eq(deals.id, dealId))
     .get();
