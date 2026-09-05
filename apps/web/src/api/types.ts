@@ -202,10 +202,14 @@ export interface CommissionItemDto {
 export interface DealCommissionDto {
   dealId: number;
   customer: DealCustomerRefDto | null;
+  /** 成交产品（软删/无产品 → null） */
+  product: { id: number; name: string } | null;
   owner: UserRefDto | null;
   stage: string;
   orderNo: string | null;
   dealDate: number;
+  /** 交付日期（可空） */
+  deliveryDate: number | null;
   /** 金额，整数分（K13）；null = 未填 */
   amountCents: number | null;
   /** 税后金额比例 0~1；null = 未填 */

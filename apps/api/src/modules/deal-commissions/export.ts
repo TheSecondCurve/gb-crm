@@ -14,15 +14,26 @@ const yuan = (cents: number | null): number | null => (cents === null ? null : c
 
 const percentText = (p: number): string => `${(p * 100).toFixed(1)}%`;
 
-/** 参与方明细文本：「昵称 30.0%(¥1,800)、…」（nickname 缺失回落 #id） */
-function itemsText(row: DealCommissionDto): string {
-  return row.items
-    .map((it) => {
-      const name = it.nickname ?? `#${it.userId}`;
-      const amt = it.amountCents === null ? "—" : `¥${yuan(it.amountCents)}`;
-      return `${name} ${percentText(it.percentage)}(${amt})`;
-    })
-    .join("、");
+/** 金额文本（分 → ¥xx.xx）；null → — */
+const moneyText = (cents: number | null): string =>
+  cents === null ? "—" : `¥${(cents / 100).toFixed(2)}`;
+
+/** 单个参与方文本：「昵称 30.0%(¥1,800.00)」（nickname 缺失回落 #id） */
+function itemText(it: DealCommissionDto["items"][number]): string {
+  const name = it.nickname ?? `#${it.userId}`;
+  return `${name} ${percentText(it.percentage)}(${moneyText(it.amountCents)})`;
+}
+
+/** 负责人分成文本：按 deals.owner_id 在明细里找对应人的 比例(金额)；负责人未参与 → — */
+function ownerSplitText(row: DealCommissionDto): string {
+  const item = row.items.find((it) => it.userId === row.owner?.id);
+  return item ? `${percentText(item.percentage)}(${moneyText(item.amountCents)})` : "—";
+}
+
+/** 其他参与方（除负责人）文本：昵称 比例(金额)、…；空 → — */
+function otherParticipantsText(row: DealCommissionDto): string {
+  const others = row.items.filter((it) => it.userId !== row.owner?.id);
+  return others.length === 0 ? "—" : others.map(itemText).join("、");
 }
 
 interface ColumnDef {
@@ -46,15 +57,19 @@ const dateCol = (header: string, get: (row: DealCommissionDto) => number | null)
 const DEAL_COLUMNS: ColumnDef[] = [
   { header: "成交ID", width: 8, value: (r) => r.dealId },
   { header: "客户", width: 16, value: (r) => r.customer?.nickname ?? null },
+  { header: "成交产品", width: 16, value: (r) => r.product?.name ?? null },
   dateCol("成交日期", (r) => r.dealDate),
+  dateCol("交付日期", (r) => r.deliveryDate),
+  { header: "负责人", width: 12, value: (r) => r.owner?.nickname ?? null },
   { header: "订单号", width: 16, value: (r) => r.orderNo },
   { header: "成交金额(元)", width: 14, value: (r) => yuan(r.amountCents) },
   { header: "税后比例", width: 10, value: (r) => r.afterTaxRatio },
   { header: "税后基数(元)", width: 14, value: (r) => yuan(r.baseAmountCents) },
-  { header: "方案", width: 8, value: (r) => (r.isCustomized ? "已配置" : "默认") },
-  { header: "参与方明细", width: 46, value: (r) => itemsText(r) },
+  { header: "负责人分成", width: 22, value: (r) => ownerSplitText(r) },
+  { header: "其他参与方", width: 46, value: (r) => otherParticipantsText(r) },
   { header: "总比例", width: 10, value: (r) => r.totalPercentage },
   { header: "总分成(元)", width: 14, value: (r) => yuan(r.totalAmountCents) },
+  { header: "方案", width: 8, value: (r) => (r.isCustomized ? "已配置" : "默认") },
 ];
 
 const formatEpochDay = (ms: number | null | undefined): string => {
@@ -94,13 +109,17 @@ export async function buildCommissionXlsx(
   partySheet.columns = [
     { header: "成交ID", width: 8 },
     { header: "客户", width: 16 },
+    { header: "成交产品", width: 16 },
     { header: "成交日期", width: 18 },
+    { header: "交付日期", width: 18 },
+    { header: "负责人", width: 12 },
     { header: "订单号", width: 16 },
     { header: "成交金额(元)", width: 14 },
     { header: "税后比例", width: 10 },
     { header: "税后基数(元)", width: 14 },
     { header: "参与人ID", width: 10 },
     { header: "参与人", width: 14 },
+    { header: "是否负责人", width: 10 },
     { header: "比例", width: 10 },
     { header: "分成金额(元)", width: 14 },
   ];
@@ -109,17 +128,22 @@ export async function buildCommissionXlsx(
       const excelRow = partySheet.addRow([
         row.dealId,
         row.customer?.nickname ?? null,
+        row.product?.name ?? null,
         new Date(row.dealDate),
+        row.deliveryDate === null ? null : new Date(row.deliveryDate),
+        row.owner?.nickname ?? null,
         row.orderNo,
         yuan(row.amountCents),
         row.afterTaxRatio,
         yuan(row.baseAmountCents),
         item.userId,
         item.nickname ?? `#${item.userId}`,
+        item.userId === row.owner?.id ? "是" : "否",
         item.percentage,
         yuan(item.amountCents),
       ]);
-      excelRow.getCell(3).numFmt = DATE_FMT;
+      excelRow.getCell(4).numFmt = DATE_FMT;
+      if (row.deliveryDate !== null) excelRow.getCell(5).numFmt = DATE_FMT;
     }
   }
   partySheet.getRow(1).font = { bold: true };

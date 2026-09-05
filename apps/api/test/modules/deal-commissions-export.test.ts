@@ -8,7 +8,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { buildApp } from "../../src/app.js";
 import type { Db } from "../../src/db/client.js";
-import { customers } from "../../src/db/schema.js";
+import { customers, products } from "../../src/db/schema.js";
 import { loginAs, seedUser, testEnv } from "../helpers/auth.js";
 import { createTmpDb, type TmpDb } from "../helpers/tmp-db.js";
 
@@ -58,6 +58,16 @@ function seedCustomer(db: Db, nickname: string, extra: Record<string, unknown> =
   );
 }
 
+function seedProduct(db: Db, name: string, extra: Record<string, unknown> = {}): number {
+  const now = clock.t;
+  return Number(
+    db
+      .insert(products)
+      .values({ name, createdAt: now, updatedAt: now, ...extra } as never)
+      .run().lastInsertRowid,
+  );
+}
+
 async function createDealExtra(
   cookie: string,
   extra: Record<string, unknown>,
@@ -100,7 +110,14 @@ describe("GET /api/v1/deals/commissions/export.xlsx", () => {
     const { cookie } = await loginAsRole("admin");
     const m1 = (await loginAsRole("operator", "m1")).id;
     const m2 = (await loginAsRole("operator", "m2")).id;
-    const d = await createDealExtra(cookie, { amountCents: 100000, afterTaxRatio: 0.9 });
+    const productId = seedProduct(tmp.db, "咨询产品");
+    const d = await createDealExtra(cookie, {
+      amountCents: 100000,
+      afterTaxRatio: 0.9,
+      productId,
+      ownerId: m1,
+      deliveryDate: Date.UTC(2026, 6, 1),
+    });
 
     const cfg = await put(`/api/v1/deals/${d.id}/commissions`, cookie, {
       items: [
@@ -121,15 +138,21 @@ describe("GET /api/v1/deals/commissions/export.xlsx", () => {
     expect(dealWs.rowCount).toBe(2); // 表头 + 1
     const dealRow = dealWs.getRow(2);
     expect(cellByHeader(dealWs, dealRow, "客户")).toBe("客户甲");
+    expect(cellByHeader(dealWs, dealRow, "成交产品")).toBe("咨询产品");
+    expect(cellByHeader(dealWs, dealRow, "负责人")).toBe("昵称-operator");
     expect(cellByHeader(dealWs, dealRow, "成交金额(元)")).toBe(1000);
     expect(cellByHeader(dealWs, dealRow, "税后比例")).toBe(0.9);
     expect(cellByHeader(dealWs, dealRow, "税后基数(元)")).toBe(900);
     expect(cellByHeader(dealWs, dealRow, "方案")).toBe("已配置");
     expect(cellByHeader(dealWs, dealRow, "总比例")).toBe(0.1);
     expect(cellByHeader(dealWs, dealRow, "总分成(元)")).toBe(90);
-    const summary = String(cellByHeader(dealWs, dealRow, "参与方明细"));
-    expect(summary).toContain("6.0%");
-    expect(summary).toContain("4.0%");
+    // 负责人=m1 → 负责人分成 6.0%(¥54.00)；其他参与方=m2 4.0%(¥36.00)
+    const ownerSplit = String(cellByHeader(dealWs, dealRow, "负责人分成"));
+    expect(ownerSplit).toContain("6.0%");
+    expect(ownerSplit).toContain("¥54.00");
+    const others = String(cellByHeader(dealWs, dealRow, "其他参与方"));
+    expect(others).toContain("4.0%");
+    expect(others).toContain("¥36.00");
 
     // —— Sheet2 参与方明细（成交 × 参与方长表）——
     const partyWs = await loadSheet(res.rawPayload, "参与方明细");
@@ -137,12 +160,14 @@ describe("GET /api/v1/deals/commissions/export.xlsx", () => {
     const partyByUser = new Map<number, ExcelJS.Row>();
     partyWs.eachRow((r, n) => {
       if (n === 1) return;
-      partyByUser.set(Number(r.getCell(8).value), r);
+      partyByUser.set(Number(r.getCell(11).value), r);
     });
-    expect(partyByUser.get(m1)!.getCell(10).value).toBe(0.06);
-    expect(partyByUser.get(m1)!.getCell(11).value).toBe(54);
-    expect(partyByUser.get(m2)!.getCell(10).value).toBe(0.04);
-    expect(partyByUser.get(m2)!.getCell(11).value).toBe(36);
+    expect(partyByUser.get(m1)!.getCell(13).value).toBe("是"); // 是否负责人
+    expect(partyByUser.get(m1)!.getCell(14).value).toBe(0.06);
+    expect(partyByUser.get(m1)!.getCell(15).value).toBe(54);
+    expect(partyByUser.get(m2)!.getCell(13).value).toBe("否");
+    expect(partyByUser.get(m2)!.getCell(14).value).toBe(0.04);
+    expect(partyByUser.get(m2)!.getCell(15).value).toBe(36);
 
     // —— Sheet3 统计：汇总 + 参与人小计 ——
     const statWs = await loadSheet(res.rawPayload, "统计");
@@ -175,9 +200,10 @@ describe("GET /api/v1/deals/commissions/export.xlsx", () => {
     expect(res.statusCode).toBe(200);
     const dealWs = await loadSheet(res.rawPayload, "成交明细");
     expect(dealWs.rowCount).toBe(2); // 只 1 条在范围内
-    // 未配置 → 方案=默认、参与方明细空
+    // 未配置 → 方案=默认、无参与方 → 负责人分成/其他参与方为 —
     expect(cellByHeader(dealWs, dealWs.getRow(2), "方案")).toBe("默认");
-    expect(cellByHeader(dealWs, dealWs.getRow(2), "参与方明细")).toBe("");
+    expect(cellByHeader(dealWs, dealWs.getRow(2), "负责人分成")).toBe("—");
+    expect(cellByHeader(dealWs, dealWs.getRow(2), "其他参与方")).toBe("—");
   });
 
   it("assistant 也可导出（dealCommissions.list 放行）", async () => {

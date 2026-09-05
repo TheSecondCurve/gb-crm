@@ -1,8 +1,9 @@
 import { useCallback, useMemo, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { can, dealStageLabels } from "@gb-crm/shared";
 
 import { api, ApiError } from "../api/client";
-import type { DealDto } from "../api/types";
+import type { DealDto, ProductDto } from "../api/types";
 import { useAuth } from "../auth/AuthProvider";
 import { optionsOf } from "../columns/common";
 import { convertDealBody, dealColumns } from "../columns/deals";
@@ -17,12 +18,19 @@ export function DealsPage() {
   const { me } = useAuth();
   const role = me?.systemRole ?? null;
   const showToast = useToast();
-  const list = useResourceList<DealDto>("deals", "stage");
+  const list = useResourceList<DealDto>("deals", "stage", undefined, "productId");
   const columns = useMemo(() => dealColumns(role), [role]);
   const [creating, setCreating] = useState(false);
   const [editing, setEditing] = useState<DealDto | null>(null);
   const [deleting, setDeleting] = useState<DealDto | null>(null);
   const [busy, setBusy] = useState(false);
+
+  // 产品筛选下拉选项（意向产品词表；空=全部）
+  const { data: productOptions = [] } = useQuery({
+    queryKey: ["products", "options"],
+    queryFn: async () =>
+      (await api.get<{ data: ProductDto[] }>("/products?pageSize=100"))?.data ?? [],
+  });
 
   const canCreate = can(role, "deals", "create");
   const canUpdate = can(role, "deals", "update");
@@ -101,6 +109,18 @@ export function DealsPage() {
             {optionsOf(dealStageLabels).map((o) => (
               <option key={o.value} value={o.value}>
                 {o.label}
+              </option>
+            ))}
+          </select>
+          <select
+            aria-label="产品筛选"
+            value={list.secondFilter}
+            onChange={(e) => list.changeSecondFilter(e.target.value)}
+          >
+            <option value="">全部产品</option>
+            {productOptions.map((p) => (
+              <option key={p.id} value={p.id}>
+                {p.name}
               </option>
             ))}
           </select>

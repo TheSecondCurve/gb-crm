@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { buildApp } from "../../src/app.js";
 import type { Db } from "../../src/db/client.js";
-import { customers } from "../../src/db/schema.js";
+import { customers, products } from "../../src/db/schema.js";
 import { loginAs, seedUser, testEnv } from "../helpers/auth.js";
 import { createTmpDb, type TmpDb } from "../helpers/tmp-db.js";
 
@@ -52,6 +52,16 @@ function seedCustomer(db: Db, nickname: string, extra: JsonBody = {}): number {
     db
       .insert(customers)
       .values({ nickname, city: "杭州", createdAt: now, updatedAt: now, ...extra } as never)
+      .run().lastInsertRowid,
+  );
+}
+
+function seedProduct(db: Db, name: string, extra: JsonBody = {}): number {
+  const now = clock.t;
+  return Number(
+    db
+      .insert(products)
+      .values({ name, createdAt: now, updatedAt: now, ...extra } as never)
       .run().lastInsertRowid,
   );
 }
@@ -173,6 +183,62 @@ describe("默认方案（system_configs commissionDefault）", () => {
         })
       ).statusCode,
     ).toBe(422);
+  });
+});
+
+describe("成交产品/交付日期/负责人与负责人分成（K56 扩展）", () => {
+  it("DTO 携带 product/deliveryDate/owner；产品软删 → product null", async () => {
+    const { cookie } = await loginAsRole("admin");
+    const customerId = seedCustomer(tmp.db, "客户B");
+    const productId = seedProduct(tmp.db, "咨询产品");
+    const { id: ownerId } = await loginAsRole("operator", "owner-展开");
+    const res = await post("/api/v1/deals", cookie, {
+      customerId,
+      productId,
+      ownerId,
+      dealDate: Date.UTC(2026, 5, 15),
+      deliveryDate: Date.UTC(2026, 6, 1),
+      amountCents: 100000,
+      afterTaxRatio: 0.9,
+    });
+    const d = res.json().data;
+
+    const c = (await get(`/api/v1/deals/${d.id}/commissions`, cookie)).json().data;
+    expect(c.product).toEqual({ id: productId, name: "咨询产品" });
+    expect(c.deliveryDate).toBe(Date.UTC(2026, 6, 1));
+    expect(c.owner).toEqual({ id: ownerId, nickname: "昵称-operator" });
+    expect(c.amountCents).toBe(100000);
+    expect(c.baseAmountCents).toBe(90000);
+
+    // 产品软删 → product null（K9）
+    tmp.sqlite.prepare("UPDATE products SET deleted_at = ? WHERE id = ?").run(clock.t, productId);
+    const c2 = (await get(`/api/v1/deals/${d.id}/commissions`, cookie)).json().data;
+    expect(c2.product).toBeNull();
+  });
+
+  it("负责人参与分成：默认方案 dealOwner 规则 → 负责人分成比例/金额正确", async () => {
+    const { cookie } = await loginAsRole("admin");
+    const { id: dealOwnerId } = await loginAsRole("operator", "owner-分成");
+    const customerId = seedCustomer(tmp.db, "客户C");
+    const d = (
+      await post("/api/v1/deals", cookie, {
+        customerId,
+        ownerId: dealOwnerId,
+        amountCents: 100000,
+        afterTaxRatio: 0.9,
+        dealDate: clock.t,
+      })
+    ).json().data;
+
+    await patch("/api/v1/system/commission-default", cookie, {
+      rules: [{ source: "dealOwner", percentage: 0.1 }],
+    });
+
+    const c = (await get(`/api/v1/deals/${d.id}/commissions`, cookie)).json().data;
+    const ownerItem = c.items.find((it: { userId: number }) => it.userId === dealOwnerId);
+    expect(ownerItem.percentage).toBe(0.1);
+    expect(ownerItem.amountCents).toBe(9000);
+    expect(c.totalPercentage).toBe(0.1);
   });
 });
 

@@ -620,7 +620,7 @@ DataGrid 测试：**Tab 连续改两格不得出现 409**，网络层看到两�
   - channels：`updatedAt | createdAt | name`
   - products：`updatedAt | createdAt | name | priceCents`
   - customers：`updatedAt | createdAt | nickname`
-- 默认 `sort=updatedAt&order=desc`，并列 `id DESC`。
+- 默认 `sort=updatedAt&order=desc`，并列 `id DESC`（deals 资源默认 `sort=dealDate&order=desc`，成交日期倒序）。
 - `q` 按空白切 token，token AND，字段 OR。`LIKE` 转义 `\` `%` `_`。
 - 搜索列（SQL 列名）：users `username,nickname,real_name,phone,wechat`；channels `name,account_id,register_phone,notes`；products `name,notes`；customers `nickname,real_name,phone,wechat,city,origin_story,notes`。
 - `COUNT(*)` 与列表同一 WHERE，排除软删。

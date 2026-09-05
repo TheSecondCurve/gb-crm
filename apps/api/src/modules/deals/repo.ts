@@ -44,8 +44,8 @@ function listWhere(query: DealListQuery): SQL | undefined {
 
 export function listDeals(db: Db, query: DealListQuery): { rows: DealRow[]; total: number } {
   const where = listWhere(query);
-  // 默认 sort=updatedAt&order=desc，并列 id DESC（§9）
-  const sortCol = SORT_COLUMNS[query.sort ?? "updatedAt"];
+  // 默认 sort=dealDate&order=desc（成交日期倒序），并列 id DESC
+  const sortCol = SORT_COLUMNS[query.sort ?? "dealDate"];
   const dir = query.order === "asc" ? asc : desc;
 
   const rows = db
