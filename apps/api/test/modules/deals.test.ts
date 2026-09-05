@@ -350,7 +350,7 @@ describe("GET /api/v1/deals 多维筛选（客户归属人/日期范围/交付�
     const c = seedCustomer(tmp.db, "范围客户");
     const d1 = (await post("/api/v1/deals", cookie, { customerId: c, dealDate: D1 })).json().data;
     const d2 = (await post("/api/v1/deals", cookie, { customerId: c, dealDate: D2 })).json().data;
-    (await post("/api/v1/deals", cookie, { customerId: c, dealDate: D3 })).json().data;
+    await post("/api/v1/deals", cookie, { customerId: c, dealDate: D3 });
 
     const range = await get(`/api/v1/deals?startDate=${D1}&endDate=${D2}`, cookie);
     expect(range.json().meta.total).toBe(2);
