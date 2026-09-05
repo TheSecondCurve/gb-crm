@@ -8,12 +8,14 @@ import type {
   CommissionDefaultRuleDto,
   CommissionItemDto,
   DealCommissionDto,
+  DealPayoutDto,
   UserDto,
 } from "../api/types";
 import { useAuth } from "../auth/AuthProvider";
 import { badge, centsToYuan, dateToEpochMs, epochMsToDate } from "../columns/common";
 import { Pagination } from "../components/DataGrid/DataGrid";
 import { CommissionFormModal } from "../components/CommissionFormModal";
+import { PayoutFormModal } from "../components/PayoutFormModal";
 import { useToast } from "../components/Toast";
 
 function percentText(p: number): string {  return `${(p * 100).toFixed(1)}%`;
@@ -46,9 +48,15 @@ function ownerSplitText(row: DealCommissionDto): string {
   return item ? `${percentText(item.percentage)}(${showAmount(item.amountCents)})` : "—";
 }
 
+/** payout 徽章文本：日期 比例(金额 状态) */
+function payoutText(p: DealPayoutDto): string {
+  return `${epochMsToDate(p.payoutDate)} ${percentText(p.rate)}(${showAmount(p.amountCents)} ${p.status === "paid" ? "已发" : "待发"})`;
+}
+
 function CommissionDefaultEditor() {
   const showToast = useToast();
   const queryClient = useQueryClient();
+  const [totalRatio, setTotalRatio] = useState(0);
   const [rules, setRules] = useState<CommissionDefaultRuleDto[]>([]);
   const [busy, setBusy] = useState(false);
   const [open, setOpen] = useState(false);
@@ -67,18 +75,21 @@ function CommissionDefaultEditor() {
   const memberOptions = (members ?? []).filter((u) => u.accountStatus === "enabled");
 
   useEffect(() => {
-    if (config && rules.length === 0) setRules(config.rules);
+    if (config) {
+      setTotalRatio(config.totalRatio);
+      setRules(config.rules);
+    }
   }, [config]);
 
   const setRule = (index: number, patch: Partial<CommissionDefaultRuleDto>) =>
     setRules((prev) => prev.map((r, i) => (i === index ? { ...r, ...patch } : r)));
-  const addRule = () => setRules((p) => [...p, { source: "owner", percentage: 0 }]);
+  const addRule = () => setRules((p) => [...p, { source: "user", percentage: 0 }]);
   const removeRule = (index: number) => setRules((p) => p.filter((_, i) => i !== index));
 
   const save = async () => {
     setBusy(true);
     try {
-      await api.patch("/system/commission-default", { rules });
+      await api.patch("/system/commission-default", { totalRatio, rules });
       await queryClient.invalidateQueries({ queryKey: ["system", "commission-default"] });
       await queryClient.invalidateQueries({ queryKey: ["deals", "commissions"] });
       showToast("已保存默认分成方案");
@@ -101,10 +112,23 @@ function CommissionDefaultEditor() {
         <>
           <div className="card-body">
             <p style={{ marginTop: 0, fontSize: 13 }}>
-              未特殊配置的成交自动套用此方案。规则按角色推导:{' '}
-              <code>归属人</code>=客户归属人、<code>成交负责人</code>=deals.owner_id、
-              <code>指定人</code>=固定成员。总和不能超过 100%。
+              未特殊配置的成交自动套用此方案：<strong>总比例</strong> 决定分红池（税后基数 × 总比例）；
+              内部分配由 <code>成交负责人</code>、<code>客户归属人</code>（这两者总是参与）+ 可选
+              <code>指定人</code> 共同分配，总和不能超过 100%。
             </p>
+            <div className="settings-form">
+              <label>
+                总比例(%)
+                <input
+                  type="number"
+                  min={0}
+                  max={100}
+                  step={0.1}
+                  value={(totalRatio * 100).toFixed(1)}
+                  onChange={(e) => setTotalRatio(Number(e.target.value) / 100 || 0)}
+                />
+              </label>
+            </div>
             <table className="settings-form">
               <thead>
                 <tr>
@@ -124,8 +148,8 @@ function CommissionDefaultEditor() {
                           setRule(i, { source: e.target.value as CommissionDefaultRuleDto["source"] })
                         }
                       >
-                        <option value="owner">归属人</option>
                         <option value="dealOwner">成交负责人</option>
+                        <option value="owner">客户归属人</option>
                         <option value="user">指定人</option>
                       </select>
                     </td>
@@ -193,8 +217,10 @@ export function DealCommissionsPage() {
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
   const [status, setStatus] = useState("");
+  const [payoutStatus, setPayoutStatus] = useState("");
   const [q, setQ] = useState("");
   const [editing, setEditing] = useState<DealCommissionDto | null>(null);
+  const [payoutEditing, setPayoutEditing] = useState<DealCommissionDto | null>(null);
 
   const startMs = dateToEpochMs(startDate) ?? undefined;
   const endMs = dateToEpochMs(endDate);
@@ -207,6 +233,7 @@ export function DealCommissionsPage() {
       page,
       pageSize,
       status,
+      payoutStatus,
       startMs,
       endMsInclusive,
       q,
@@ -217,6 +244,7 @@ export function DealCommissionsPage() {
           page,
           pageSize,
           status,
+          payoutStatus,
           startDate: startMs,
           endDate: endMsInclusive,
           q,
@@ -246,6 +274,33 @@ export function DealCommissionsPage() {
     }
   };
 
+  const savePayouts = async (payouts: { seq: 1 | 2; payoutDate: number; rate: number }[]) => {
+    if (!payoutEditing) return;
+    try {
+      await api.put(`/deals/${payoutEditing.dealId}/payouts`, { payouts });
+      setPayoutEditing(null);
+      await invalidate();
+      showToast("已保存 payout");
+    } catch (err) {
+      showToast(
+        err instanceof ApiError
+          ? err.message
+          : "保存失败，请稍后重试",
+      );
+    }
+  };
+
+  const togglePayoutStatus = async (row: DealCommissionDto, p: DealPayoutDto) => {
+    const next = p.status === "paid" ? "pending" : "paid";
+    try {
+      await api.patch(`/deals/${row.dealId}/payouts/${p.seq}`, { status: next });
+      await invalidate();
+      showToast(next === "paid" ? "已标记为已发" : "已标记为待发");
+    } catch (err) {
+      showToast(err instanceof ApiError ? err.message : "更新失败，请稍后重试");
+    }
+  };
+
   const revert = async (row: DealCommissionDto) => {
     try {
       await api.put(`/deals/${row.dealId}/commissions`, { items: [] });
@@ -256,11 +311,12 @@ export function DealCommissionsPage() {
     }
   };
 
-  // 导出 Excel：跟随当前日期范围/状态/搜索（与列表同一 WHERE），同源 attachment 下载
+  // 导出 Excel：跟随当前日期范围/状态/payout 状态/搜索（与列表同一 WHERE），同源 attachment 下载
   const exportXlsx = () => {
     const href = `/api/v1/deals/commissions/export.xlsx${buildQuery({
       q,
       status,
+      payoutStatus,
       startDate: startMs,
       endDate: endMsInclusive,
     })}`;
@@ -269,6 +325,8 @@ export function DealCommissionsPage() {
     a.download = "";
     a.click();
   };
+
+  const COLUMN_COUNT = canUpdate ? 16 : 15;
 
   return (
     <>
@@ -315,6 +373,18 @@ export function DealCommissionsPage() {
             <option value="default">未配置(默认)</option>
             <option value="custom">已配置</option>
           </select>
+          <select
+            aria-label="payout 状态"
+            value={payoutStatus}
+            onChange={(e) => {
+              setPayoutStatus(e.target.value);
+              setPage(1);
+            }}
+          >
+            <option value="">全部 payout</option>
+            <option value="pending">待发</option>
+            <option value="paid">已发</option>
+          </select>
           <button type="button" onClick={exportXlsx}>
             导出 Excel
           </button>
@@ -330,24 +400,28 @@ export function DealCommissionsPage() {
               <thead>
               <tr>
                 <th>客户</th>
+                <th>客户归属人</th>
                 <th>成交产品</th>
                 <th>成交日期</th>
                 <th>交付日期</th>
                 <th>负责人</th>
                 <th>成交金额</th>
                 <th>税后基数</th>
+                <th>总比例</th>
+                <th>分红池</th>
                 <th>负责人分成</th>
                 <th>其他参与方</th>
-                <th>总比例</th>
+                <th>内部分配</th>
                 <th>总分成</th>
+                <th>payout</th>
                 <th>状态</th>
-                {canUpdate && <th style={{ width: 140 }}>操作</th>}
+                {canUpdate && <th style={{ width: 180 }}>操作</th>}
               </tr>
             </thead>
             <tbody>
               {rows.length === 0 && (
                 <tr>
-                  <td colSpan={canUpdate ? 13 : 12} className="empty-cell">
+                  <td colSpan={COLUMN_COUNT} className="empty-cell">
                     暂无成交数据
                   </td>
                 </tr>
@@ -355,22 +429,53 @@ export function DealCommissionsPage() {
               {rows.map((row) => (
                 <tr key={row.dealId}>
                   <td>{row.customer ? row.customer.nickname : "—"}</td>
+                  <td>{row.customerOwner ? row.customerOwner.nickname : "—"}</td>
                   <td>{row.product ? row.product.name : "—"}</td>
                   <td>{epochMsToDate(row.dealDate)}</td>
                   <td>{row.deliveryDate === null ? "—" : epochMsToDate(row.deliveryDate)}</td>
                   <td>{row.owner ? row.owner.nickname : "—"}</td>
                   <td>{showAmount(row.amountCents)}</td>
                   <td>{showAmount(row.baseAmountCents)}</td>
+                  <td>{percentText(row.totalRatio)}</td>
+                  <td>{showAmount(row.poolAmountCents)}</td>
                   <td>{ownerSplitText(row)}</td>
                   <td>{participantBadges(row.items.filter((it) => it.userId !== row.owner?.id))}</td>
                   <td>{percentText(row.totalPercentage)}</td>
                   <td>{showAmount(row.totalAmountCents)}</td>
+                  <td>
+                    {row.payouts.length === 0 ? (
+                      "—"
+                    ) : (
+                      <span className="inline-badges">
+                        {row.payouts.map((p) => (
+                          <span key={p.seq}>
+                            <span>
+                              {badge(payoutText(p), p.status === "paid" ? "accent" : "muted")}
+                              {canUpdate && (
+                                <button
+                                  type="button"
+                                  className="btn-small"
+                                  aria-label={`切换第 ${p.seq} 期状态`}
+                                  onClick={() => void togglePayoutStatus(row, p)}
+                                >
+                                  {p.status === "paid" ? "置待发" : "置已发"}
+                                </button>
+                              )}
+                            </span>
+                          </span>
+                        ))}
+                      </span>
+                    )}
+                  </td>
                   <td>{badge(row.isCustomized ? "已配置" : "默认", row.isCustomized ? "accent" : "muted")}</td>
                   {canUpdate && (
                     <td>
                       <span className="row-actions">
                         <button type="button" onClick={() => setEditing(row)}>
-                          配置
+                          配置分成
+                        </button>
+                        <button type="button" onClick={() => setPayoutEditing(row)}>
+                          配置 payout
                         </button>
                         {row.isCustomized && (
                           <button type="button" onClick={() => void revert(row)}>
@@ -406,6 +511,15 @@ export function DealCommissionsPage() {
           busy={false}
           onClose={() => setEditing(null)}
           onSubmit={saveCommission}
+        />
+      )}
+      {payoutEditing && (
+        <PayoutFormModal
+          title={`配置 payout：${payoutEditing.customer?.nickname ?? `#${payoutEditing.dealId}`}`}
+          initialPayouts={payoutEditing.payouts}
+          busy={false}
+          onClose={() => setPayoutEditing(null)}
+          onSubmit={savePayouts}
         />
       )}
     </>

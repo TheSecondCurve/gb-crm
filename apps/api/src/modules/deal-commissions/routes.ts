@@ -3,6 +3,8 @@
 import {
   dealCommissionListQuerySchema,
   dealCommissionPutSchema,
+  dealPayoutPatchSchema,
+  dealPayoutUpsertSchema,
 } from "@gb-crm/shared";
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
@@ -11,7 +13,15 @@ import type { Db } from "../../db/client.js";
 import { listMeta } from "../../lib/pagination.js";
 import { requireCan } from "../../plugins/rbac.js";
 import { buildCommissionXlsx } from "./export.js";
-import { exportCommissionResult, getDealCommissionResult, listCommissionResult, setDealCommission } from "./service.js";
+import {
+  exportCommissionResult,
+  getDealCommissionResult,
+  listCommissionResult,
+  listPayoutResult,
+  patchDealPayoutStatus,
+  setDealCommission,
+  setDealPayouts,
+} from "./service.js";
 
 export interface DealCommissionsRoutesOptions {
   db: Db;
@@ -80,6 +90,42 @@ export function dealCommissionsRoutes(app: FastifyInstance, opts: DealCommission
       const { id } = dealIdParamSchema.parse(req.params);
       const body = dealCommissionPutSchema.parse(req.body ?? {});
       return { data: setDealCommission(db, id, body, auditCtx(req)) };
+    },
+  );
+
+  // ---- payout（v2）----
+
+  app.get(
+    "/api/v1/deals/:id/payouts",
+    { preHandler: requireCan("dealCommissions", "read") },
+    async (req) => {
+      const { id } = dealIdParamSchema.parse(req.params);
+      return { data: listPayoutResult(db, id) };
+    },
+  );
+
+  app.put(
+    "/api/v1/deals/:id/payouts",
+    { preHandler: requireCan("dealCommissions", "update") },
+    async (req) => {
+      const { id } = dealIdParamSchema.parse(req.params);
+      const body = dealPayoutUpsertSchema.parse(req.body ?? {});
+      return { data: setDealPayouts(db, id, body, auditCtx(req)) };
+    },
+  );
+
+  const payoutSeqParamSchema = z.object({
+    id: z.coerce.number().int().positive(),
+    seq: z.coerce.number().int().min(1).max(2),
+  });
+
+  app.patch(
+    "/api/v1/deals/:id/payouts/:seq",
+    { preHandler: requireCan("dealCommissions", "update") },
+    async (req) => {
+      const { id, seq } = payoutSeqParamSchema.parse(req.params);
+      const body = dealPayoutPatchSchema.parse(req.body ?? {});
+      return { data: patchDealPayoutStatus(db, id, seq, body, auditCtx(req)) };
     },
   );
 }

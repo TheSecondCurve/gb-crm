@@ -5,10 +5,12 @@
 //   items=[] → 删除配置行（还原默认）；每项 userId 必须 live（软删/不存在 422）；
 //   同一份明细 userId 去重（重复 422）；Σ percentage ≤ 1 否则 422。
 import type {
-  CommissionDefaultRule,
+  CommissionDefaultScheme,
   CommissionItem,
   DealCommissionListQuery,
   DealCommissionPut,
+  DealPayoutPatch,
+  DealPayoutUpsert,
 } from "@gb-crm/shared";
 
 import type { Db } from "../../db/client.js";
@@ -19,22 +21,29 @@ import {
   assembleCommissionRow,
   assembleCommissionRows,
   type DealCommissionDto,
+  type DealPayoutDto,
 } from "./assemble.js";
 import {
   deleteCommissionItems,
   deleteCommissionRowByDealId,
+  deletePayoutsByDealId,
   findLiveUserIds,
   getCommissionJoinRow,
   getCommissionRowByDealId,
+  getPayoutRow,
   insertCommissionItem,
   insertCommissionRow,
   listAllCommissionRows,
   listCommissionRows,
   listItemsByCommissionIds,
   listLiveUserRefs,
+  listPayoutsByDealIds,
   updateCommissionConfig,
+  updatePayoutStatus,
+  upsertPayout,
   type CommissionItemRow,
   type CommissionJoinRow,
+  type PayoutRow,
 } from "./repo.js";
 
 // better-sqlite3 事务是同步的；tx 与 Db 的查询接口同构，收窄类型以复用 repo 函数
@@ -76,7 +85,7 @@ function collectUserRefs(
   db: Db,
   rows: readonly CommissionJoinRow[],
   items: readonly CommissionItemRow[],
-  rules: readonly CommissionDefaultRule[],
+  scheme: CommissionDefaultScheme,
 ): Map<number, { id: number; nickname: string }> {
   const ids = new Set<number>();
   for (const row of rows) {
@@ -84,7 +93,7 @@ function collectUserRefs(
     if (row.customerOwnerId !== null) ids.add(row.customerOwnerId);
   }
   for (const item of items) ids.add(item.userId);
-  for (const rule of rules) if (rule.userId !== undefined) ids.add(rule.userId);
+  for (const rule of scheme.rules) if (rule.userId !== undefined) ids.add(rule.userId);
   return listLiveUserRefs(db, [...ids]);
 }
 
@@ -107,9 +116,13 @@ export function listCommissionResult(
   const { rows, total } = listCommissionRows(db, query);
   const commissionIds = rows.map((r) => r.commissionId).filter((id): id is number => id !== null);
   const items = listItemsByCommissionIds(db, commissionIds);
-  const rules = getCommissionDefault(db);
-  const userRefs = collectUserRefs(db, rows, items, rules);
-  return { data: assembleCommissionRows(rows, itemsByCommission(items), rules, userRefs), total };
+  const scheme = getCommissionDefault(db);
+  const userRefs = collectUserRefs(db, rows, items, scheme);
+  const payouts = payoutsByDeal(db, rows.map((r) => r.dealId));
+  return {
+    data: assembleCommissionRows(rows, itemsByCommission(items), scheme, userRefs, payouts),
+    total,
+  };
 }
 
 /** 导出：与列表同一 WHERE（含日期范围/状态/q），不分页取全部并展开 */
@@ -120,18 +133,20 @@ export function exportCommissionResult(
   const rows = listAllCommissionRows(db, query);
   const commissionIds = rows.map((r) => r.commissionId).filter((id): id is number => id !== null);
   const items = listItemsByCommissionIds(db, commissionIds);
-  const rules = getCommissionDefault(db);
-  const userRefs = collectUserRefs(db, rows, items, rules);
-  return assembleCommissionRows(rows, itemsByCommission(items), rules, userRefs);
+  const scheme = getCommissionDefault(db);
+  const userRefs = collectUserRefs(db, rows, items, scheme);
+  const payouts = payoutsByDeal(db, rows.map((r) => r.dealId));
+  return assembleCommissionRows(rows, itemsByCommission(items), scheme, userRefs, payouts);
 }
 
 export function getDealCommissionResult(db: Db, dealId: number): DealCommissionDto {
   const row = getCommissionJoinRow(db, dealId);
   if (!row || row.dealDeletedAt !== null) throw notFound("成交记录不存在");
   const items = listItemsByCommissionIds(db, row.commissionId === null ? [] : [row.commissionId]);
-  const rules = getCommissionDefault(db);
-  const userRefs = collectUserRefs(db, [row], items, rules);
-  return assembleCommissionRow(row, itemsByCommission(items), rules, userRefs);
+  const scheme = getCommissionDefault(db);
+  const userRefs = collectUserRefs(db, [row], items, scheme);
+  const payouts = payoutsByDeal(db, [dealId]);
+  return assembleCommissionRow(row, itemsByCommission(items), scheme, userRefs, payouts);
 }
 
 /** 配置成交分成：items 非空=覆盖自定义；items=[]=还原默认（删除配置行） */
@@ -187,8 +202,109 @@ export function setDealCommission(
       tx,
       fresh.commissionId === null ? [] : [fresh.commissionId],
     );
-    const rules = getCommissionDefault(tx);
-    const userRefs = collectUserRefs(tx, [fresh], items, rules);
-    return assembleCommissionRow(fresh, itemsByCommission(items), rules, userRefs);
+    const scheme = getCommissionDefault(tx);
+    const userRefs = collectUserRefs(tx, [fresh], items, scheme);
+    const payouts = payoutsByDeal(tx, [dealId]);
+    return assembleCommissionRow(fresh, itemsByCommission(items), scheme, userRefs, payouts);
+  });
+}
+
+// ---- payout（v2）----
+
+function payoutsByDeal(db: Db, dealIds: readonly number[]): Map<number, PayoutRow[]> {
+  const map = new Map<number, PayoutRow[]>();
+  for (const row of listPayoutsByDealIds(db, dealIds)) {
+    const arr = map.get(row.dealId) ?? [];
+    arr.push(row);
+    map.set(row.dealId, arr);
+  }
+  return map;
+}
+
+function toPayoutDto(p: PayoutRow): DealPayoutDto {
+  return {
+    seq: p.seq,
+    payoutDate: p.payoutDate,
+    rate: p.rate,
+    amountCents: p.amountCents,
+    status: p.status as DealPayoutDto["status"],
+    paidAt: p.paidAt,
+  };
+}
+
+/** 该成交的分红池（分）：round(税后基数 × 有效总比例)；任一缺 → null */
+function poolCentsOf(db: Db, row: CommissionJoinRow): number | null {
+  if (row.amountCents === null || row.afterTaxRatio === null) return null;
+  const base = Math.round(row.amountCents * row.afterTaxRatio);
+  const scheme = getCommissionDefault(db);
+  const totalRatio = row.dealCommissionRatio ?? row.productCommissionRatio ?? scheme.totalRatio;
+  return Math.round(base * totalRatio);
+}
+
+export function listPayoutResult(db: Db, dealId: number): DealPayoutDto[] {
+  const row = getCommissionJoinRow(db, dealId);
+  if (!row || row.dealDeletedAt !== null) throw notFound("成交记录不存在");
+  return listPayoutsByDealIds(db, [dealId]).map(toPayoutDto);
+}
+
+/** 整表替换 payout：payouts=[] 清空；金额=round(分红池×rate)，服务端计算 */
+export function setDealPayouts(
+  db: Db,
+  dealId: number,
+  body: DealPayoutUpsert,
+  ctx: AuditContext,
+): DealPayoutDto[] {
+  return inTx(db, (tx) => {
+    const row = getCommissionJoinRow(tx, dealId);
+    if (!row || row.dealDeletedAt !== null) throw notFound("成交记录不存在");
+    if (row.deliveryDate === null) {
+      throw unprocessable("交付日期为空，无法设置 payout（完成交付后才计算分红）", [
+        { path: "payouts", message: "delivery_date 为空" },
+      ]);
+    }
+    const pool = poolCentsOf(tx, row);
+    if (pool === null) {
+      throw unprocessable("成交金额/税后比例缺失，无法计算 payout 金额", [
+        { path: "payouts", message: "amount_cents 或 after_tax_ratio 为空" },
+      ]);
+    }
+
+    const audit = createAudit(ctx);
+    deletePayoutsByDealId(tx, dealId);
+    for (const p of body.payouts) {
+      upsertPayout(tx, {
+        dealId,
+        seq: p.seq,
+        payoutDate: p.payoutDate,
+        rate: p.rate,
+        amountCents: Math.round(pool * p.rate),
+        status: "pending",
+        paidAt: null,
+        ...audit,
+      });
+    }
+    return listPayoutsByDealIds(tx, [dealId]).map(toPayoutDto);
+  });
+}
+
+/** payout 状态流转：pending↔paid（paid 记 paid_at） */
+export function patchDealPayoutStatus(
+  db: Db,
+  dealId: number,
+  seq: number,
+  body: DealPayoutPatch,
+  ctx: AuditContext,
+): DealPayoutDto {
+  return inTx(db, (tx) => {
+    const row = getCommissionJoinRow(tx, dealId);
+    if (!row || row.dealDeletedAt !== null) throw notFound("成交记录不存在");
+    if (!getPayoutRow(tx, dealId, seq)) throw notFound("payout 不存在");
+    updatePayoutStatus(tx, dealId, seq, {
+      status: body.status,
+      paidAt: body.status === "paid" ? ctx.now : null,
+      updatedAt: ctx.now,
+      updatedBy: ctx.userId,
+    });
+    return toPayoutDto(getPayoutRow(tx, dealId, seq)!);
   });
 }
