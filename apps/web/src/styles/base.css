@@ -278,7 +278,9 @@ select:focus, textarea:focus { outline: 1px solid var(--ink); }
 
 /* ---- 资料专区「文件专区」album 格子（MaterialFileAlbum） ---- */
 
-.album-toolbar { padding: 12px 16px 0; }
+.album-toolbar { display: flex; gap: 12px; align-items: flex-start; padding: 12px 16px 0; }
+
+.album-delivery-filter { min-width: 260px; max-width: 360px; }
 
 .album-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 16px; padding: 16px; }
 

@@ -180,6 +180,52 @@ describe("POST /api/v1/materials/upload", () => {
   });
 });
 
+describe("GET /api/v1/materials 搜索命中文件名（original_filename）", () => {
+  it("q 命中 original_filename：≥3 字符 token 与 <3 字符 token 都可按文件名搜到；标题/内容/标签不含该词也能命中；不相关词不命中", async () => {
+    const { cookie } = await loginAsRole("admin");
+    await enableStorage(cookie);
+    const upload = async (title: string, filename: string) => {
+      const mp = multipart({ title }, { name: filename, type: "image/png", body: PNG_1x1 });
+      const res = await app.inject({
+        method: "POST",
+        url: "/api/v1/materials/upload",
+        headers: { cookie, ...mp.headers },
+        payload: mp.payload,
+      });
+      expect(res.statusCode).toBe(201);
+      return res.json().data.id as number;
+    };
+    const a = await upload("第一场照片", "开营合影-20240901.png");
+    await upload("第二场照片", "下午茶现场.png");
+
+    // ≥3 字符 token：FTS(title/content) 不命中，靠 original_filename LIKE 命中
+    const long = await app.inject({
+      method: "GET",
+      url: `/api/v1/materials?kind=file&q=${encodeURIComponent("开营合影")}`,
+      headers: { cookie },
+    });
+    expect(long.json().meta.total).toBe(1);
+    expect(long.json().data[0].id).toBe(a);
+
+    // <3 字符 token：LIKE 分支同样覆盖文件名
+    const short = await app.inject({
+      method: "GET",
+      url: `/api/v1/materials?kind=file&q=${encodeURIComponent("合影")}`,
+      headers: { cookie },
+    });
+    expect(short.json().meta.total).toBe(1);
+    expect(short.json().data[0].id).toBe(a);
+
+    // 不相关词不命中
+    const none = await app.inject({
+      method: "GET",
+      url: `/api/v1/materials?kind=file&q=${encodeURIComponent("合同")}`,
+      headers: { cookie },
+    });
+    expect(none.json().meta.total).toBe(0);
+  });
+});
+
 describe("GET /api/v1/materials/:id/file", () => {
   it("图片 inline；download=1 attachment；非 file 422", async () => {
     const { cookie } = await loginAsRole("admin");
