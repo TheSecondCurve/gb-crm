@@ -316,6 +316,107 @@ describe("GET /api/v1/deals 列表", () => {
   });
 });
 
+describe("GET /api/v1/deals 多维筛选（客户归属人/日期范围/交付日期空否）", () => {
+  const D1 = Date.UTC(2026, 0, 10); // 2026-01-10
+  const D2 = Date.UTC(2026, 2, 15); // 2026-03-15
+  const D3 = Date.UTC(2026, 5, 20); // 2026-06-20
+
+  it("customerOwnerId：只返回归属人为该用户的客户的成交", async () => {
+    const { cookie } = await loginAsRole("admin");
+    const ownerA = await seedUser(tmp.db, { username: "owner-a", systemRole: "operator", nickname: "归属人A" });
+    const ownerB = await seedUser(tmp.db, { username: "owner-b", systemRole: "operator", nickname: "归属人B" });
+    const cA1 = seedCustomer(tmp.db, "A的客户1", { ownerId: ownerA });
+    const cA2 = seedCustomer(tmp.db, "A的客户2", { ownerId: ownerA });
+    const cB = seedCustomer(tmp.db, "B的客户", { ownerId: ownerB });
+    const cNone = seedCustomer(tmp.db, "无归属客户");
+
+    const dA1 = (await post("/api/v1/deals", cookie, { customerId: cA1, dealDate: D1 })).json().data;
+    const dA2 = (await post("/api/v1/deals", cookie, { customerId: cA2, dealDate: D2 })).json().data;
+    await post("/api/v1/deals", cookie, { customerId: cB, dealDate: D1 });
+    await post("/api/v1/deals", cookie, { customerId: cNone, dealDate: D1 });
+
+    const res = await get(`/api/v1/deals?customerOwnerId=${ownerA}`, cookie);
+    expect(res.statusCode).toBe(200);
+    expect(res.json().meta.total).toBe(2);
+    expect(res.json().data.map((x: { id: number }) => x.id).sort()).toEqual([dA1.id, dA2.id].sort());
+
+    const resB = await get(`/api/v1/deals?customerOwnerId=${ownerB}`, cookie);
+    expect(resB.json().meta.total).toBe(1);
+    expect(resB.json().data[0].customer.id).toBe(cB);
+  });
+
+  it("startDate/endDate：成交日期范围，边界含当日", async () => {
+    const { cookie } = await loginAsRole("admin");
+    const c = seedCustomer(tmp.db, "范围客户");
+    const d1 = (await post("/api/v1/deals", cookie, { customerId: c, dealDate: D1 })).json().data;
+    const d2 = (await post("/api/v1/deals", cookie, { customerId: c, dealDate: D2 })).json().data;
+    (await post("/api/v1/deals", cookie, { customerId: c, dealDate: D3 })).json().data;
+
+    const range = await get(`/api/v1/deals?startDate=${D1}&endDate=${D2}`, cookie);
+    expect(range.json().meta.total).toBe(2);
+    expect(range.json().data.map((x: { id: number }) => x.id).sort()).toEqual([d1.id, d2.id].sort());
+
+    const fromOnly = await get(`/api/v1/deals?startDate=${D2}`, cookie);
+    expect(fromOnly.json().meta.total).toBe(2);
+
+    const toOnly = await get(`/api/v1/deals?endDate=${D2}`, cookie);
+    expect(toOnly.json().meta.total).toBe(2);
+  });
+
+  it("deliveryStartDate/deliveryEndDate：交付日期范围；deliveryStatus：空否", async () => {
+    const { cookie } = await loginAsRole("admin");
+    const c = seedCustomer(tmp.db, "交付客户");
+    const d1 = (await post("/api/v1/deals", cookie, { customerId: c, dealDate: D1, deliveryDate: D1 })).json().data;
+    const d2 = (await post("/api/v1/deals", cookie, { customerId: c, dealDate: D1, deliveryDate: D3 })).json().data;
+    const dNull = (await post("/api/v1/deals", cookie, { customerId: c, dealDate: D1 })).json().data;
+
+    const range = await get(`/api/v1/deals?deliveryStartDate=${D2}&deliveryEndDate=${D3}`, cookie);
+    expect(range.json().meta.total).toBe(1);
+    expect(range.json().data[0].id).toBe(d2.id);
+
+    const empty = await get("/api/v1/deals?deliveryStatus=empty", cookie);
+    expect(empty.json().meta.total).toBe(1);
+    expect(empty.json().data[0].id).toBe(dNull.id);
+
+    const notEmpty = await get("/api/v1/deals?deliveryStatus=notEmpty", cookie);
+    expect(notEmpty.json().meta.total).toBe(2);
+    expect(notEmpty.json().data.map((x: { id: number }) => x.id).sort()).toEqual([d1.id, d2.id].sort());
+  });
+
+  it("组合叠加（AND）：customerOwnerId + 成交日期范围 + deliveryStatus", async () => {
+    const { cookie } = await loginAsRole("admin");
+    const ownerA = await seedUser(tmp.db, { username: "combo-owner", systemRole: "operator", nickname: "归属人" });
+    const cA = seedCustomer(tmp.db, "组合A", { ownerId: ownerA });
+    const cB = seedCustomer(tmp.db, "组合B");
+
+    // 命中：A 的客户 + 范围内 + 已填交付日期
+    const hit = (await post("/api/v1/deals", cookie, { customerId: cA, dealDate: D2, deliveryDate: D2 })).json().data;
+    // A 的客户但交付日期为空
+    await post("/api/v1/deals", cookie, { customerId: cA, dealDate: D2 });
+    // A 的客户但成交日期出范围
+    await post("/api/v1/deals", cookie, { customerId: cA, dealDate: D3, deliveryDate: D2 });
+    // 非 A 的客户，其余都满足
+    await post("/api/v1/deals", cookie, { customerId: cB, dealDate: D2, deliveryDate: D2 });
+
+    const res = await get(
+      `/api/v1/deals?customerOwnerId=${ownerA}&startDate=${D1}&endDate=${D2}&deliveryStatus=notEmpty`,
+      cookie,
+    );
+    expect(res.json().meta.total).toBe(1);
+    expect(res.json().data[0].id).toBe(hit.id);
+  });
+
+  it("非法值 → 422 VALIDATION：deliveryStatus 枚举外 / 日期非数字 / customerOwnerId 非正整数", async () => {
+    const { cookie } = await loginAsRole("admin");
+    const res = await get("/api/v1/deals?deliveryStatus=bogus", cookie);
+    expect(res.statusCode).toBe(422);
+    expect(res.json().error.code).toBe("VALIDATION");
+    expect((await get("/api/v1/deals?startDate=abc", cookie)).statusCode).toBe(422);
+    expect((await get("/api/v1/deals?customerOwnerId=1.5", cookie)).statusCode).toBe(422);
+    expect((await get("/api/v1/deals?customerOwnerId=-1", cookie)).statusCode).toBe(422);
+  });
+});
+
 describe("PATCH /api/v1/deals/:id 内核（K24）", () => {
   it("必测1：PATCH orderNo 不碰 paymentRemark", async () => {
     const { cookie, data: d } = await createDealAsAdmin({ paymentRemark: "原始备注" });
