@@ -190,7 +190,7 @@ export function DeliveryDetailPage() {
   return (
     <>
       <div className="page-head">
-        <h1>{delivery.deliveryType?.name ?? `交付 #${delivery.id}`}</h1>
+        <h1>{delivery.name ?? delivery.deliveryType?.name ?? `交付 #${delivery.id}`}</h1>
         <div className="search-bar">
           <button type="button" onClick={() => navigate("/deliveries")}>
             返回列表
@@ -216,6 +216,10 @@ export function DeliveryDetailPage() {
 
       <div className="card">
         <div className="card-body">
+          <div className="detail-row">
+            <span className="detail-label">交付名</span>
+            <span>{delivery.name || "—"}</span>
+          </div>
           <div className="detail-row">
             <span className="detail-label">交付类型</span>
             <span>{delivery.deliveryType?.name ?? "—"}</span>

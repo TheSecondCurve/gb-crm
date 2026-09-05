@@ -30,7 +30,7 @@ export function DeliveryMatrixPage() {
   return (
     <>
       <div className="page-head">
-        <h1>状态矩阵 · {delivery?.deliveryType?.name ?? `交付 #${deliveryId}`}</h1>
+        <h1>状态矩阵 · {delivery?.name ?? delivery?.deliveryType?.name ?? `交付 #${deliveryId}`}</h1>
         <div className="search-bar">
           <button type="button" onClick={() => navigate(`/deliveries/${deliveryId}`)}>
             返回详情

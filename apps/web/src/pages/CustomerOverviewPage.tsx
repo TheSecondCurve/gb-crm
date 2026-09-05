@@ -454,7 +454,7 @@ export function CustomerOverviewPage() {
                   </span>
                 </div>
                 <div className="item-meta">
-                  {m.delivery ? `关联交付：${m.delivery.deliveryType?.name ?? `交付 #${m.delivery.id}`}` : "未关联交付"}
+                  {m.delivery ? `关联交付：${m.delivery.name ?? m.delivery.deliveryType?.name ?? `交付 #${m.delivery.id}`}` : "未关联交付"}
                   {` · 更新于 ${formatDateTime(m.updatedAt)}`}
                 </div>
               </div>
@@ -516,7 +516,7 @@ export function CustomerOverviewPage() {
           {overview.circles.length === 0 && <div className="task-empty">暂无当前有效的交付圈子</div>}
           {overview.circles.map((c) => (
             <div className="detail-row" key={c.id}>
-              <span className="detail-label">{c.deliveryType?.name ?? `圈子 #${c.id}`}</span>
+              <span className="detail-label">{c.name ?? c.deliveryType?.name ?? `圈子 #${c.id}`}</span>
               <span>
                 {epochMsToDate(c.startsAt) || "未排期"} ~ {epochMsToDate(c.endsAt) || "未排期"}
                 <button

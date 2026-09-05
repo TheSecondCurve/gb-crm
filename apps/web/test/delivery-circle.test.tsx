@@ -15,6 +15,7 @@ const delivery: DeliveryDto = {
   id: 1,
   deliveryTypeId: 11,
   deliveryType: { id: 11, name: "圈子全年交付", kind: "circle" },
+  name: null,
   customers: [
     { id: 101, nickname: "张三" },
     { id: 102, nickname: "李四" },

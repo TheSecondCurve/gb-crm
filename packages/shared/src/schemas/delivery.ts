@@ -31,9 +31,11 @@ export const deliveryTypeListQuerySchema = pageQuerySchema.extend({
 });
 export type DeliveryTypeListQuery = z.infer<typeof deliveryTypeListQuerySchema>;
 
-// ---- 交付单（K44：精简 = 类型 + 客户集合 + 备注 + 起止日期；与成交弱关联，客户来源可来自成交 merge）----
+// ---- 交付单（K44：精简 = 名称（可空）+ 类型 + 客户集合 + 备注 + 起止日期；与成交弱关联，客户来源可来自成交 merge）----
 export const deliveryWriteSchema = z.object({
   deliveryTypeId: z.number().int().positive(),
+  // 交付名：可空（老数据/快速创建无名字）；空串前端归一为 null
+  name: nullableText.optional(),
   // 客户集合：创建可不选（空交付单）；起止日期 epoch ms 可空
   customerIds: idArraySchema,
   startsAt: epochMsSchema.nullable().optional(),
@@ -46,6 +48,7 @@ export type DeliveryWrite = z.infer<typeof deliveryWriteSchema>;
 export const deliveryPatchSchema = z
   .object({
     deliveryTypeId: z.number().int().positive().optional(),
+    name: nullableText.optional(),
     customerIds: idArraySchema.optional(),
     startsAt: epochMsSchema.nullable().optional(),
     endsAt: epochMsSchema.nullable().optional(),

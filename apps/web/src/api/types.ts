@@ -266,6 +266,8 @@ export interface CommissionDefaultDto {
 /** K54 交付资料上的交付单 ref（软删交付 → null） */
 export interface MaterialDeliveryRefDto {
   id: number;
+  /** 交付名，可空；展示回退类型名 */
+  name: string | null;
   deliveryType: { id: number; name: string; kind: string } | null;
   startsAt: number | null;
   endsAt: number | null;
@@ -400,12 +402,14 @@ export interface DeliveryTypeDto {
   updatedBy: UserRefDto | null;
 }
 
-/** 交付单（K44：类型 + 客户集合 + 备注 + 起止日期） */
+/** 交付单（K44：名称（可空）+ 类型 + 客户集合 + 备注 + 起止日期） */
 export interface DeliveryDto {
   id: number;
   deliveryTypeId: number;
   /** kind 供圈子工作台入口判断 */
   deliveryType: { id: number; name: string; kind: string } | null;
+  /** 交付名，可空；展示回退 deliveryType.name */
+  name: string | null;
   customers: { id: number; nickname: string }[];
   /** epoch ms（本地时区当天零点），可空 */
   startsAt: number | null;

@@ -42,7 +42,7 @@ export function MaterialFormModal({ title, material, fixedDeliveryId, busy, onCl
   // 编辑模式：把已有交付/客户 id→label 预填进缓存，EntityPicker chips 直接有名字
   if (material?.delivery && !deliveryLabelCache.has(material.delivery.id)) {
     const d = material.delivery;
-    deliveryLabelCache.set(d.id, `${d.deliveryType?.name ?? "交付"} #${d.id}`);
+    deliveryLabelCache.set(d.id, `${d.name ?? d.deliveryType?.name ?? "交付"} #${d.id}`);
   }
   for (const c of material?.customers ?? []) {
     if (!customerLabelCache.has(c.id)) customerLabelCache.set(c.id, c.nickname);

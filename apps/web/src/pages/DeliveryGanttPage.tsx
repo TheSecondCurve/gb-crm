@@ -30,7 +30,7 @@ export function DeliveryGanttPage() {
   return (
     <>
       <div className="page-head">
-        <h1>甘特图 · {delivery?.deliveryType?.name ?? `交付 #${deliveryId}`}</h1>
+        <h1>甘特图 · {delivery?.name ?? delivery?.deliveryType?.name ?? `交付 #${deliveryId}`}</h1>
         <div className="search-bar">
           <button type="button" onClick={() => navigate(`/deliveries/${deliveryId}`)}>
             返回详情
