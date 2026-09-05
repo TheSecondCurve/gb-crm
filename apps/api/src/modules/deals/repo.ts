@@ -1,7 +1,7 @@
 // deals 表 Drizzle 查询（§3：repo 层，路由/服务不写 SQL）。
 // list 排除软删；COUNT 与列表同一 WHERE（§9）。K42：customer/product/owner 单值 FK，
 // 过滤按等值匹配；校验用 findLive*Ids（FK 存在且未软删）。
-import { and, asc, count, desc, eq, inArray, isNull, sql, type SQL } from "drizzle-orm";
+import { and, asc, count, desc, eq, gte, inArray, isNotNull, isNull, lte, sql, type SQL } from "drizzle-orm";
 
 import type { DealListQuery } from "@gb-crm/shared";
 
@@ -39,6 +39,23 @@ function listWhere(query: DealListQuery): SQL | undefined {
   if (query.customerId !== undefined) conditions.push(eq(deals.customerId, query.customerId));
   if (query.productId !== undefined) conditions.push(eq(deals.productId, query.productId));
   if (query.ownerId !== undefined) conditions.push(eq(deals.ownerId, query.ownerId));
+  // 客户归属人：筛「客户当前归属」（customers.owner_id），EXISTS 不改 select 结构（同 productType）
+  if (query.customerOwnerId !== undefined) {
+    conditions.push(
+      sql`EXISTS (
+        SELECT 1 FROM customers c WHERE c.id = deals.customer_id AND c.owner_id = ${query.customerOwnerId}
+      )`,
+    );
+  }
+  // 日期范围（epoch ms）：成交日期 deal_date / 交付日期 delivery_date 各自独立；交付日期空否可叠加
+  if (query.startDate !== undefined) conditions.push(gte(deals.dealDate, query.startDate));
+  if (query.endDate !== undefined) conditions.push(lte(deals.dealDate, query.endDate));
+  if (query.deliveryStartDate !== undefined)
+    conditions.push(gte(deals.deliveryDate, query.deliveryStartDate));
+  if (query.deliveryEndDate !== undefined)
+    conditions.push(lte(deals.deliveryDate, query.deliveryEndDate));
+  if (query.deliveryStatus === "empty") conditions.push(isNull(deals.deliveryDate));
+  else if (query.deliveryStatus === "notEmpty") conditions.push(isNotNull(deals.deliveryDate));
   return and(...conditions);
 }
 

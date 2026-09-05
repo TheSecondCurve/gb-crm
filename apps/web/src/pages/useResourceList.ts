@@ -31,7 +31,7 @@ export interface ResourceList<T extends GridRow> {
 export function useResourceList<T extends GridRow>(
   resource: string,
   filterKey: string,
-  /** 固定过滤参数（如「我的客户」ownerId=当前用户），并入 query 与 queryKey */
+  /** 固定/附加过滤参数（如「我的客户」ownerId=当前用户、成交页多维筛选），并入 query 与 queryKey */
   fixedQuery?: Record<string, string | number | undefined>,
   /** K45：第二个过滤键（如 tagId）；传了才启用 secondFilter */
   secondaryFilterKey?: string,

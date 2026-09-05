@@ -147,6 +147,63 @@ describe("成交记录页", () => {
     await waitFor(() => expect(calls.some((c) => c.url.includes("productId=201"))).toBe(true));
   });
 
+  it("客户/负责人/客户归属人筛选（EntityPicker 单选）触发新 query", async () => {
+    const calls = mockDealsApi(adminMe);
+    renderApp("/deals");
+    await screen.findByText("张三");
+
+    fireEvent.focus(screen.getByLabelText("客户筛选"));
+    fireEvent.mouseDown(await screen.findByRole("option", { name: "李四" }));
+    await waitFor(() => expect(calls.some((c) => c.url.includes("customerId=102"))).toBe(true));
+
+    fireEvent.focus(screen.getByLabelText("负责人筛选"));
+    fireEvent.mouseDown(await screen.findByRole("option", { name: "小李" }));
+    await waitFor(() =>
+      expect(calls.some((c) => c.url.includes("customerId=102") && c.url.includes("ownerId=2"))).toBe(true),
+    );
+
+    fireEvent.focus(screen.getByLabelText("客户归属人筛选"));
+    fireEvent.mouseDown(await screen.findByRole("option", { name: "老王" }));
+    await waitFor(() =>
+      expect(
+        calls.some((c) => c.url.includes("ownerId=2") && c.url.includes("customerOwnerId=1")),
+      ).toBe(true),
+    );
+  });
+
+  it("成交/交付日期范围与交付日期空否触发新 query（epoch ms，end 含当日尾）", async () => {
+    const calls = mockDealsApi(adminMe);
+    renderApp("/deals");
+    await screen.findByText("张三");
+
+    fireEvent.change(screen.getByLabelText("成交日期开始"), { target: { value: "2026-08-01" } });
+    fireEvent.change(screen.getByLabelText("成交日期结束"), { target: { value: "2026-08-31" } });
+    const start = deliveryMs(2026, 8, 1);
+    const end = deliveryMs(2026, 8, 31) + 86399999;
+    await waitFor(() =>
+      expect(
+        calls.some((c) => c.url.includes(`startDate=${start}`) && c.url.includes(`endDate=${end}`)),
+      ).toBe(true),
+    );
+
+    fireEvent.change(screen.getByLabelText("交付日期开始"), { target: { value: "2026-09-01" } });
+    fireEvent.change(screen.getByLabelText("交付日期结束"), { target: { value: "2026-09-30" } });
+    const dStart = deliveryMs(2026, 9, 1);
+    const dEnd = deliveryMs(2026, 9, 30) + 86399999;
+    await waitFor(() =>
+      expect(
+        calls.some(
+          (c) =>
+            c.url.includes(`deliveryStartDate=${dStart}`) &&
+            c.url.includes(`deliveryEndDate=${dEnd}`),
+        ),
+      ).toBe(true),
+    );
+
+    fireEvent.change(screen.getByLabelText("交付日期空否"), { target: { value: "empty" } });
+    await waitFor(() => expect(calls.some((c) => c.url.includes("deliveryStatus=empty"))).toBe(true));
+  });
+
   it("新增：表单必填客户，成交日期 YYYY-MM-DD → POST 为 epoch ms", async () => {
     const calls = mockDealsApi(adminMe);
     renderApp("/deals");
