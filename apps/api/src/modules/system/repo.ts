@@ -4,7 +4,7 @@
 // 资料存储配置 code='materialsS3'（K57：同凭证字段，无 keep）。
 import { eq } from "drizzle-orm";
 
-import type { CommissionDefaultRule, PageAccessConfig, PageKey } from "@gb-crm/shared";
+import type { CommissionDefaultScheme, PageAccessConfig, PageKey } from "@gb-crm/shared";
 import { commissionDefaultGetSchema } from "@gb-crm/shared";
 
 import type { Db } from "../../db/client.js";
@@ -272,27 +272,35 @@ export function upsertMaterialsS3Config(
   );
 }
 
-// ---- 成交分红全局默认方案（code='commissionDefault'，K56）编解码 ----
-// value = { rules: [{ source, percentage, userId? }] }；source ∈ owner/dealOwner/user。
-// 未配置的成交动态套用该方案；解析失败/缺席 → []（默认无分红）。
+// ---- 成交分红全局默认方案（code='commissionDefault'，K56 v2）编解码 ----
+// value = { totalRatio, rules: [{ source, percentage, userId? }] }；source ∈ owner/dealOwner/user。
+// 未配置的成交动态套用该方案；解析失败/缺席 → { totalRatio: 0, rules: [] }（默认无分红）。
 
-export function getCommissionDefault(db: Db): CommissionDefaultRule[] {
+export function getCommissionDefault(db: Db): CommissionDefaultScheme {
   const row = getConfigRow(db, COMMISSION_DEFAULT_CODE);
-  if (!row) return [];
+  if (!row) return { totalRatio: 0, rules: [] };
   try {
     const parsed: unknown = JSON.parse(row.value);
     const result = commissionDefaultGetSchema.safeParse(parsed);
-    return result.success ? result.data.rules : [];
+    return result.success
+      ? { totalRatio: result.data.totalRatio, rules: result.data.rules }
+      : { totalRatio: 0, rules: [] };
   } catch {
-    return [];
+    return { totalRatio: 0, rules: [] };
   }
 }
 
 export function upsertCommissionDefault(
   db: Db,
-  rules: readonly CommissionDefaultRule[],
+  scheme: CommissionDefaultScheme,
   updatedAt: number,
   updatedBy: number | null,
 ): void {
-  upsertConfigRow(db, COMMISSION_DEFAULT_CODE, JSON.stringify({ rules }), updatedAt, updatedBy);
+  upsertConfigRow(
+    db,
+    COMMISSION_DEFAULT_CODE,
+    JSON.stringify({ totalRatio: scheme.totalRatio, rules: scheme.rules }),
+    updatedAt,
+    updatedBy,
+  );
 }

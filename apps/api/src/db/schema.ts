@@ -11,6 +11,7 @@ import {
   real,
   sqliteTable,
   text,
+  unique,
   uniqueIndex,
   type AnySQLiteColumn,
 } from "drizzle-orm/sqlite-core";
@@ -173,6 +174,8 @@ export const products = sqliteTable(
     isPackage: integer("is_package").notNull().default(0),
     status: text("status").notNull().default("on_sale"),
     priceCents: integer("price_cents"),
+    // 成交分成 v2：产品默认分红总比例（0~1，可空；成交未单独覆盖时回退）
+    commissionRatio: real("commission_ratio"),
     createdAt: integer("created_at").notNull(),
     updatedAt: integer("updated_at").notNull(),
     createdBy: integer("created_by").references(() => users.id, { onDelete: "set null" }),
@@ -392,6 +395,8 @@ export const deals = sqliteTable(
     deliveryDate: integer("delivery_date"),
     amountCents: integer("amount_cents"),
     afterTaxRatio: real("after_tax_ratio"),
+    // 成交分成 v2：逐成交分红总比例（0~1，可空；未填回退产品/全局默认）
+    commissionRatio: real("commission_ratio"),
     createdAt: integer("created_at").notNull(),
     updatedAt: integer("updated_at").notNull(),
     createdBy: integer("created_by").references(() => users.id, { onDelete: "set null" }),
@@ -431,6 +436,7 @@ export const dealCommissionItems = sqliteTable(
       .notNull()
       .references(() => dealCommissions.id),
     userId: integer("user_id").notNull().references(() => users.id),
+    // 成交分成 v2：占分红池的内部分配比例（0~1，Σ≤1）
     percentage: real("percentage").notNull(),
     createdAt: integer("created_at").notNull(),
     updatedAt: integer("updated_at").notNull(),
@@ -438,6 +444,29 @@ export const dealCommissionItems = sqliteTable(
     updatedBy: integer("updated_by").references(() => users.id, { onDelete: "set null" }),
   },
   (t) => [index("deal_commission_items_commission_idx").on(t.dealCommissionId)],
+);
+
+// K56 v2 payout：以「成交」为维度，最多 2 个支付期（seq 1|2），金额=round(分红池×rate)，状态 pending|paid。
+export const dealPayouts = sqliteTable(
+  "deal_payouts",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    dealId: integer("deal_id").notNull().references(() => deals.id),
+    seq: integer("seq").notNull(),
+    payoutDate: integer("payout_date").notNull(),
+    rate: real("rate").notNull(),
+    amountCents: integer("amount_cents").notNull(),
+    status: text("status").notNull().default("pending"),
+    paidAt: integer("paid_at"),
+    createdAt: integer("created_at").notNull(),
+    updatedAt: integer("updated_at").notNull(),
+    createdBy: integer("created_by").references(() => users.id, { onDelete: "set null" }),
+    updatedBy: integer("updated_by").references(() => users.id, { onDelete: "set null" }),
+  },
+  (t) => [
+    unique("deal_payouts_deal_seq_uq").on(t.dealId, t.seq),
+    index("deal_payouts_deal_id_idx").on(t.dealId),
+  ],
 );
 
 // K44 交付类型配置表：分类 kind + 状态 status + 默认动作模板（多行文本，创建交付项时预填）。

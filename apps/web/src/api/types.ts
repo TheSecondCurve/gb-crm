@@ -192,16 +192,31 @@ export interface CustomerMaintenanceRecordDto {
 export interface CommissionItemDto {
   userId: number;
   nickname: string | null;
-  /** 占税后基数的比例（0~1） */
+  /** 占分红池的内部分配比例（0~1） */
   percentage: number;
-  /** 该成交人分成金额（分）：round(税后基数 × percentage)；基数不可算 → null */
+  /** 该成交人分成金额（分）：round(分红池 × percentage)；分红池不可算 → null */
   amountCents: number | null;
 }
 
-/** K56 成交分红：一笔成交的最终分成（未配置=套默认方案） */
+/** v2 payout：一笔成交的一个支付期 */
+export interface DealPayoutDto {
+  seq: number;
+  /** 支付期（epoch ms UTC） */
+  payoutDate: number;
+  /** 占分红池比例（0~1） */
+  rate: number;
+  /** 支付金额（分）：round(分红池 × rate) */
+  amountCents: number;
+  status: "pending" | "paid";
+  paidAt: number | null;
+}
+
+/** K56 v2 成交分红：一笔成交的最终分成（未配置=套默认方案） */
 export interface DealCommissionDto {
   dealId: number;
   customer: DealCustomerRefDto | null;
+  /** 客户归属人（软删 → null） */
+  customerOwner: UserRefDto | null;
   /** 成交产品（软删/无产品 → null） */
   product: { id: number; name: string } | null;
   owner: UserRefDto | null;
@@ -214,15 +229,25 @@ export interface DealCommissionDto {
   amountCents: number | null;
   /** 税后金额比例 0~1；null = 未填 */
   afterTaxRatio: number | null;
+  /** 有效总比例（成交覆盖 → 产品默认 → 全局默认） */
+  totalRatio: number;
+  /** 成交单独覆盖的总比例（可空） */
+  dealCommissionRatio: number | null;
+  /** 产品默认总比例（可空） */
+  productCommissionRatio: number | null;
   /** 税后基数（分）：round(amountCents × afterTaxRatio)；缺一 → null */
   baseAmountCents: number | null;
+  /** 分红池（分）：round(税后基数 × totalRatio)；基数不可算 → null */
+  poolAmountCents: number | null;
   /** 是否已被特殊配置（false = 套默认方案） */
   isCustomized: boolean;
   items: CommissionItemDto[];
   /** Σ items.percentage */
   totalPercentage: number;
-  /** Σ items.amountCents；基数不可算 → null */
+  /** Σ items.amountCents；分红池不可算 → null */
   totalAmountCents: number | null;
+  /** v2 payout：最多 2 个支付期 */
+  payouts: DealPayoutDto[];
 }
 
 /** K56 全局默认方案规则（source=user 时 userId 必填） */
@@ -233,6 +258,8 @@ export interface CommissionDefaultRuleDto {
 }
 
 export interface CommissionDefaultDto {
+  /** v2：全局默认分红总比例（0~1） */
+  totalRatio: number;
   rules: CommissionDefaultRuleDto[];
 }
 
@@ -315,11 +342,13 @@ export interface ProductDto {
   updatedBy: UserRefDto | null;
 }
 
-/** deals 客户 ref（K42：带 city 供「客户城市」只读列） */
+/** deals 客户 ref（K42：带 city 供「客户城市」只读列；v2：带归属人） */
 export interface DealCustomerRefDto {
   id: number;
   nickname: string;
   city: string | null;
+  /** 客户归属人（软删 → null） */
+  owner: UserRefDto | null;
 }
 
 export interface DealProductRefDto {
@@ -343,6 +372,8 @@ export interface DealDto {
   amountCents: number | null;
   /** 税后金额比例 0~1（如 0.9306）；null = 未填 */
   afterTaxRatio: number | null;
+  /** v2：分红总比例 0~1；null = 回退产品/全局默认 */
+  commissionRatio: number | null;
   customer: DealCustomerRefDto | null;
   product: DealProductRefDto | null;
   owner: UserRefDto | null;

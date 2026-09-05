@@ -88,6 +88,7 @@ const PATCHABLE_KEYS = new Set([
   "deliveryDate",
   "amountCents",
   "afterTaxRatio",
+  "commissionRatio",
 ]);
 
 export function patchDeal(db: Db, id: number, patch: DealPatch, ctx: AuditContext): DealDto {

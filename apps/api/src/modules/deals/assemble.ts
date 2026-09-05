@@ -13,6 +13,8 @@ export interface CustomerRef {
   id: number;
   nickname: string;
   city: string | null;
+  /** v2：客户归属人（customers.owner_id → UserRef，软删 null） */
+  owner: UserRef | null;
 }
 
 export interface ProductRef {
@@ -36,6 +38,8 @@ export interface DealDto {
   amountCents: number | null;
   /** 税后金额比例 0~1（REAL，如 0.9306）；null = 未填 */
   afterTaxRatio: number | null;
+  /** v2：分红总比例 0~1；null = 回退产品/全局默认 */
+  commissionRatio: number | null;
   customer: CustomerRef | null;
   product: ProductRef | null;
   owner: UserRef | null;
@@ -46,17 +50,25 @@ export interface DealDto {
 }
 
 export function assembleDeals(db: Db, rows: readonly DealRow[]): DealDto[] {
-  // live 客户（customer ref 带 city）
+  // live 客户（customer ref 带 city + 归属人）
   const customerIds = new Set<number>();
   for (const row of rows) customerIds.add(row.customerId);
-  const customerRefs = new Map<number, CustomerRef>();
+  const customerRows = new Map<
+    number,
+    { id: number; nickname: string; city: string | null; ownerId: number | null }
+  >();
   if (customerIds.size > 0) {
     const found = db
-      .select({ id: customers.id, nickname: customers.nickname, city: customers.city })
+      .select({
+        id: customers.id,
+        nickname: customers.nickname,
+        city: customers.city,
+        ownerId: customers.ownerId,
+      })
       .from(customers)
       .where(and(inArray(customers.id, [...customerIds]), isNull(customers.deletedAt)))
       .all();
-    for (const c of found) customerRefs.set(c.id, { id: c.id, nickname: c.nickname, city: c.city });
+    for (const c of found) customerRows.set(c.id, c);
   }
 
   // live 产品
@@ -72,13 +84,14 @@ export function assembleDeals(db: Db, rows: readonly DealRow[]): DealDto[] {
     for (const p of found) productRefs.set(p.id, { id: p.id, name: p.name });
   }
 
-  // live 用户（owner/createdBy/updatedBy 展开，软删不展开 → null）
+  // live 用户（owner/createdBy/updatedBy/客户归属人 展开，软删不展开 → null）
   const userIds = new Set<number>();
   for (const row of rows) {
     if (row.ownerId !== null) userIds.add(row.ownerId);
     if (row.createdBy !== null) userIds.add(row.createdBy);
     if (row.updatedBy !== null) userIds.add(row.updatedBy);
   }
+  for (const c of customerRows.values()) if (c.ownerId !== null) userIds.add(c.ownerId);
   const userRefs = new Map<number, UserRef>();
   if (userIds.size > 0) {
     const found = db
@@ -90,6 +103,17 @@ export function assembleDeals(db: Db, rows: readonly DealRow[]): DealDto[] {
   }
 
   const userRef = (id: number | null): UserRef | null => (id === null ? null : (userRefs.get(id) ?? null));
+
+  // 客户 ref（含归属人）
+  const customerRefs = new Map<number, CustomerRef>();
+  for (const [id, c] of customerRows) {
+    customerRefs.set(id, {
+      id: c.id,
+      nickname: c.nickname,
+      city: c.city,
+      owner: userRef(c.ownerId),
+    });
+  }
 
   return rows.map((row) => ({
     id: row.id,
@@ -103,6 +127,7 @@ export function assembleDeals(db: Db, rows: readonly DealRow[]): DealDto[] {
     deliveryDate: row.deliveryDate,
     amountCents: row.amountCents,
     afterTaxRatio: row.afterTaxRatio,
+    commissionRatio: row.commissionRatio,
     customer: customerRefs.get(row.customerId) ?? null,
     product: row.productId === null ? null : (productRefs.get(row.productId) ?? null),
     owner: userRef(row.ownerId),
