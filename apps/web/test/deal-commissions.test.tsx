@@ -172,8 +172,25 @@ describe("成交分成页", () => {
     renderApp("/deals/commissions");
     await screen.findByText("张三");
 
-    fireEvent.change(screen.getByLabelText("开始日期"), { target: { value: "2026-08-01" } });
+    fireEvent.change(screen.getByLabelText("成交日期开始"), { target: { value: "2026-08-01" } });
     await waitFor(() => expect(calls.some((c) => c.url.includes("startDate="))).toBe(true));
+  });
+
+  it("默认按交付日期不为空过滤；切换交付日期空否触发新 query", async () => {
+    const calls = mockCommissionsApi(adminMe);
+    renderApp("/deals/commissions");
+    await screen.findByText("张三");
+
+    // 默认条件：交付日期不为空
+    expect(calls.some((c) => c.url.includes("deliveryStatus=notEmpty"))).toBe(true);
+
+    // 切到「未填」
+    fireEvent.change(screen.getByLabelText("交付日期空否"), { target: { value: "empty" } });
+    await waitFor(() => expect(calls.some((c) => c.url.includes("deliveryStatus=empty"))).toBe(true));
+
+    // 设置交付日期范围
+    fireEvent.change(screen.getByLabelText("交付日期开始"), { target: { value: "2026-09-01" } });
+    await waitFor(() => expect(calls.some((c) => c.url.includes("deliveryStartDate="))).toBe(true));
   });
 
   it("payout 状态过滤触发新 query", async () => {

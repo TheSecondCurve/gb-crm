@@ -373,6 +373,51 @@ describe("列表：日期范围与搜索", () => {
   });
 });
 
+describe("列表：交付日期筛选（与成交日期范围独立）", () => {
+  it("deliveryStatus=notEmpty 只返回已填交付日期的成交；empty 只返回未填", async () => {
+    const { cookie } = await loginAsRole("admin");
+    await createDealAsAdmin({ deliveryDate: Date.UTC(2026, 6, 1) });
+    await createDealAsAdmin(); // 无交付日期
+    await createDealAsAdmin(); // 无交付日期
+
+    const notEmpty = await get("/api/v1/deals/commissions?deliveryStatus=notEmpty", cookie);
+    expect(notEmpty.json().meta.total).toBe(1);
+
+    const empty = await get("/api/v1/deals/commissions?deliveryStatus=empty", cookie);
+    expect(empty.json().meta.total).toBe(2);
+  });
+
+  it("按交付日期范围筛选，且与成交日期范围叠加独立生效", async () => {
+    const { cookie } = await loginAsRole("admin");
+    const start = Date.UTC(2026, 6, 1);
+    const end = Date.UTC(2026, 6, 30);
+    // A：成交 05-01、交付 06-15；B：成交 05-01、交付 07-15；C：成交默认 05-15、交付 06-15
+    await createDealAsAdmin({ dealDate: Date.UTC(2026, 5, 1), deliveryDate: Date.UTC(2026, 6, 15) });
+    await createDealAsAdmin({ dealDate: Date.UTC(2026, 5, 1), deliveryDate: Date.UTC(2026, 7, 15) });
+    await createDealAsAdmin({ deliveryDate: Date.UTC(2026, 6, 15) });
+
+    const inRange = await get(
+      `/api/v1/deals/commissions?deliveryStartDate=${start}&deliveryEndDate=${end}`,
+      cookie,
+    );
+    expect(inRange.json().meta.total).toBe(2);
+
+    // 成交日期范围（只圈 05-01~05-31）+ 交付日期范围（06-01~06-30）同时命中 A、C
+    const both = await get(
+      `/api/v1/deals/commissions?startDate=${Date.UTC(2026, 5, 1)}&endDate=${Date.UTC(2026, 5, 31)}&deliveryStartDate=${start}&deliveryEndDate=${end}`,
+      cookie,
+    );
+    expect(both.json().meta.total).toBe(2);
+
+    // 交付日期范围 + notEmpty 叠加
+    const ranged = await get(
+      `/api/v1/deals/commissions?deliveryStatus=notEmpty&deliveryStartDate=${start}&deliveryEndDate=${end}`,
+      cookie,
+    );
+    expect(ranged.json().meta.total).toBe(2);
+  });
+});
+
 describe("成交分成 v2：总比例三级回退 + 默认必含双人 + payout", () => {
   it("总比例三级回退：成交覆盖 → 产品默认 → 全局默认", async () => {
     const { cookie } = await loginAsRole("admin");

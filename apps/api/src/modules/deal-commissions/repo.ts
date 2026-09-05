@@ -8,6 +8,7 @@ import {
   desc,
   eq,
   inArray,
+  isNotNull,
   isNull,
   sql,
   type SQL,
@@ -74,6 +75,13 @@ function commissionListWhere(query: DealCommissionListQuery): SQL | undefined {
   if (fuzzy) conditions.push(fuzzy);
   if (query.startDate !== undefined) conditions.push(sql`${DEAL_DATE} >= ${query.startDate}`);
   if (query.endDate !== undefined) conditions.push(sql`${DEAL_DATE} <= ${query.endDate}`);
+  // 交付日期：范围 + 空否，与成交日期范围相互独立（K56 管理页筛选）
+  if (query.deliveryStartDate !== undefined)
+    conditions.push(sql`${deals.deliveryDate} >= ${query.deliveryStartDate}`);
+  if (query.deliveryEndDate !== undefined)
+    conditions.push(sql`${deals.deliveryDate} <= ${query.deliveryEndDate}`);
+  if (query.deliveryStatus === "empty") conditions.push(isNull(deals.deliveryDate));
+  else if (query.deliveryStatus === "notEmpty") conditions.push(isNotNull(deals.deliveryDate));
   if (query.status === "custom") {
     conditions.push(
       sql`EXISTS (SELECT 1 FROM deal_commissions dc WHERE dc.deal_id = ${deals.id})`,
