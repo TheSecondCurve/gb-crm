@@ -185,7 +185,8 @@ describe("GET /api/v1/deals/commissions/export.xlsx", () => {
     expect(cellByHeader(dealWs, dealRow, `分成·昵称-operator#${m2}(元)`)).toBe(3.6);
     // payout 逐周期列：#1 已发 / #2 待发
     const p1Date = cellByHeader(dealWs, dealRow, "payout#1 日期");
-    expect(p1Date instanceof Date && (p1Date as Date).getTime()).toBe(pd1);
+    // 导出日期 = 上海墙钟的伪 UTC：pd1(UTC 08-01 00:00) = 上海 08-01 08:00
+    expect(p1Date instanceof Date && (p1Date as Date).getTime()).toBe(Date.UTC(2026, 7, 1, 8));
     expect(cellByHeader(dealWs, dealRow, "payout#1 比例")).toBe(0.5);
     expect(cellByHeader(dealWs, dealRow, "payout#1 金额(元)")).toBe(45);
     expect(cellByHeader(dealWs, dealRow, "payout#1 状态")).toBe("已发");
@@ -234,7 +235,7 @@ describe("GET /api/v1/deals/commissions/export.xlsx", () => {
     expect(cellByHeader(payoutWs, p1m1, "分配比例")).toBe(0.06);
     expect(cellByHeader(payoutWs, p1m1, "本期金额(元)")).toBe(2.7);
     const p1m1Date = cellByHeader(payoutWs, p1m1, "支付日期");
-    expect(p1m1Date instanceof Date && (p1m1Date as Date).getTime()).toBe(pd1);
+    expect(p1m1Date instanceof Date && (p1m1Date as Date).getTime()).toBe(Date.UTC(2026, 7, 1, 8));
     const p2m2 = payoutRowOf(2, m2);
     expect(cellByHeader(payoutWs, p2m2, "状态")).toBe("待发");
     expect(cellByHeader(payoutWs, p2m2, "分配比例")).toBe(0.04);
