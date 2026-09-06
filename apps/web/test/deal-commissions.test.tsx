@@ -374,6 +374,56 @@ describe("成交分成页", () => {
     await waitFor(() => expect(calls.some((c) => c.url.includes("payoutStatus=pending"))).toBe(true));
   });
 
+  it("常驻日期比较：字段 + ≥/≤ + 日期，恒 AND 叠加在动态条件组之外", async () => {
+    const calls = mockCommissionsApi(adminMe);
+    renderApp("/deals/commissions");
+    await screen.findByText("张三");
+
+    const listCalls = () =>
+      calls.filter((c) => c.method === "GET" && c.url.includes("/api/v1/deals/commissions?"));
+
+    // 默认「不限」：不带任何日期范围参数
+    expect(
+      listCalls().every((c) => !/(startDate|endDate|deliveryStartDate|deliveryEndDate)=/.test(c.url)),
+    ).toBe(true);
+
+    const dayStart = new Date(2026, 7, 1).getTime(); // 2026-08-01 本地零点
+
+    // 成交日期 ≥ → startDate（当天零点）
+    fireEvent.change(screen.getByLabelText("日期比较"), { target: { value: "dealGte" } });
+    fireEvent.change(screen.getByLabelText("比较日期"), { target: { value: "2026-08-01" } });
+    await waitFor(() =>
+      expect(listCalls().some((c) => c.url.includes(`startDate=${dayStart}`))).toBe(true),
+    );
+
+    // 成交日期 ≤ → endDate（含当天：+86399999），startDate 不再带
+    fireEvent.change(screen.getByLabelText("日期比较"), { target: { value: "dealLte" } });
+    await waitFor(() => {
+      const last = listCalls()[listCalls().length - 1]!;
+      expect(last.url.includes(`endDate=${dayStart + 86399999}`)).toBe(true);
+      expect(last.url.includes("startDate=")).toBe(false);
+    });
+
+    // 交付日期 ≥ → deliveryStartDate
+    fireEvent.change(screen.getByLabelText("日期比较"), { target: { value: "deliveryGte" } });
+    await waitFor(() => {
+      const last = listCalls()[listCalls().length - 1]!;
+      expect(last.url.includes(`deliveryStartDate=${dayStart}`)).toBe(true);
+      expect(last.url.includes("endDate=")).toBe(false);
+    });
+
+    // 与动态条件组恒 AND 叠加（filters 与 deliveryStartDate 同时出现）
+    fireEvent.click(screen.getByRole("button", { name: /添加条件/ }));
+    fireEvent.change(screen.getByLabelText("开始日期"), { target: { value: "2026-09-01" } });
+    await waitFor(() => {
+      expect(
+        listCalls().some(
+          (c) => c.url.includes(`deliveryStartDate=${dayStart}`) && c.url.includes("filters="),
+        ),
+      ).toBe(true);
+    });
+  });
+
   it("admin：payout 状态切换 → PATCH /deals/:id/payouts/:seq", async () => {
     const calls = mockCommissionsApi(adminMe);
     renderApp("/deals/commissions");

@@ -12,7 +12,7 @@ import type {
   UserDto,
 } from "../api/types";
 import { useAuth } from "../auth/AuthProvider";
-import { badge, centsToYuan, enumBadge, epochMsToDate, type BadgeTone } from "../columns/common";
+import { badge, centsToYuan, dateToEpochMs, enumBadge, epochMsToDate, type BadgeTone } from "../columns/common";
 import { Pagination } from "../components/DataGrid/DataGrid";
 import { CommissionFormModal } from "../components/CommissionFormModal";
 import {
@@ -218,6 +218,8 @@ function CommissionDefaultEditor() {
   );
 }
 
+const DAY_TAIL_MS = 86399999; // 当日 23:59:59.999（≤ 含当天，与 DealFilterBar 同口径）
+
 export function DealCommissionsPage() {
   const { me } = useAuth();
   const role = me?.systemRole ?? null;
@@ -229,6 +231,8 @@ export function DealCommissionsPage() {
   const [filterBuilder, setFilterBuilder] = useState(defaultCommissionFilters);
   const [deliveryStatus, setDeliveryStatus] = useState("");
   const [dealScope, setDealScope] = useState("effective");
+  const [dateCmp, setDateCmp] = useState("");
+  const [dateCmpValue, setDateCmpValue] = useState("");
   const [status, setStatus] = useState("");
   const [payoutStatus, setPayoutStatus] = useState("");
   const [sort, setSort] = useState("dealDate");
@@ -238,10 +242,28 @@ export function DealCommissionsPage() {
   const [payoutEditing, setPayoutEditing] = useState<DealCommissionDto | null>(null);
 
   // 动态条件组 → filters query（无有效规则 → undefined 不带）；不完整规则在序列化时跳过。
-  // 交付日期空否 + 成交口径（默认「有效」= 已付款且金额>0）是常驻外部条件，无论条件组怎么选都 AND 叠加。
+  // 交付日期空否 + 成交口径（默认「有效」= 已付款且金额>0）+ 日期比较（字段 + ≥/≤ + 日期）是常驻外部条件，
+  // 无论条件组怎么选都 AND 叠加。日期比较映射到列表已有的范围参数：≥=startDate/deliveryStartDate（当天零点），
+  // ≤=endDate/deliveryEndDate（含当天，+DAY_TAIL_MS，与 DealFilterBar 同口径）。
   const filtersParam = serializeCommissionFilters(filterBuilder);
   const scopeParams =
     dealScope === "effective" ? { stage: "paid", minAmountCents: 1 } : { stage: "", minAmountCents: "" };
+  const dateCmpParams = (() => {
+    const dayStart = dateToEpochMs(dateCmpValue);
+    if (dateCmp === "" || dayStart === null) return {};
+    switch (dateCmp) {
+      case "dealGte":
+        return { startDate: dayStart };
+      case "dealLte":
+        return { endDate: dayStart + DAY_TAIL_MS };
+      case "deliveryGte":
+        return { deliveryStartDate: dayStart };
+      case "deliveryLte":
+        return { deliveryEndDate: dayStart + DAY_TAIL_MS };
+      default:
+        return {};
+    }
+  })();
 
   const { data, isLoading } = useQuery({
     queryKey: [
@@ -251,6 +273,8 @@ export function DealCommissionsPage() {
       pageSize,
       deliveryStatus,
       dealScope,
+      dateCmp,
+      dateCmpValue,
       status,
       payoutStatus,
       sort,
@@ -265,6 +289,7 @@ export function DealCommissionsPage() {
           pageSize,
           deliveryStatus,
           ...scopeParams,
+          ...dateCmpParams,
           status,
           payoutStatus,
           sort,
@@ -340,6 +365,7 @@ export function DealCommissionsPage() {
       q,
       deliveryStatus,
       ...scopeParams,
+      ...dateCmpParams,
       status,
       payoutStatus,
       sort,
@@ -391,6 +417,31 @@ export function DealCommissionsPage() {
             <option value="notEmpty">交付日期：已填</option>
             <option value="empty">交付日期：未填</option>
           </select>
+          <select
+            aria-label="日期比较"
+            value={dateCmp}
+            onChange={(e) => {
+              setDateCmp(e.target.value);
+              setPage(1);
+            }}
+          >
+            <option value="">日期比较：不限</option>
+            <option value="dealGte">成交日期 ≥</option>
+            <option value="dealLte">成交日期 ≤</option>
+            <option value="deliveryGte">交付日期 ≥</option>
+            <option value="deliveryLte">交付日期 ≤</option>
+          </select>
+          {dateCmp !== "" && (
+            <input
+              aria-label="比较日期"
+              type="date"
+              value={dateCmpValue}
+              onChange={(e) => {
+                setDateCmpValue(e.target.value);
+                setPage(1);
+              }}
+            />
+          )}
           <CommissionFilterBuilder
             value={filterBuilder}
             onChange={(next) => {
