@@ -10,11 +10,12 @@ import {
   inArray,
   isNotNull,
   isNull,
+  or,
   sql,
   type SQL,
 } from "drizzle-orm";
 
-import type { DealCommissionListQuery } from "@gb-crm/shared";
+import type { CommissionFilterGroup, CommissionFilterRule, DealCommissionListQuery } from "@gb-crm/shared";
 
 import type { Db } from "../../db/client.js";
 import {
@@ -97,7 +98,38 @@ function commissionListWhere(query: DealCommissionListQuery): SQL | undefined {
       sql`EXISTS (SELECT 1 FROM deal_payouts dp WHERE dp.deal_id = ${deals.id} AND dp.status = ${query.payoutStatus})`,
     );
   }
+  // 动态筛选条件组：整体作为一个 AND 子句，组内按 combinator 组合
+  const group = filterGroupWhere(query.filters);
+  if (group) conditions.push(group);
   return and(...conditions);
+}
+
+/** 单条规则 → SQL；between 两边都空 → undefined（no-op 跳过） */
+function filterRuleWhere(rule: CommissionFilterRule): SQL | undefined {
+  switch (rule.field) {
+    case "dealDate":
+    case "deliveryDate": {
+      const col = rule.field === "dealDate" ? DEAL_DATE : deals.deliveryDate;
+      if (rule.op === "empty") return isNull(col);
+      if (rule.op === "notEmpty") return isNotNull(col);
+      const bounds: SQL[] = [];
+      if (rule.from !== undefined) bounds.push(sql`${col} >= ${rule.from}`);
+      if (rule.to !== undefined) bounds.push(sql`${col} <= ${rule.to}`);
+      return bounds.length === 0 ? undefined : and(...bounds);
+    }
+    case "productId":
+      return inArray(deals.productId, rule.ids);
+  }
+}
+
+/** 动态条件组 → 单个 SQL 子句；规则全部 no-op / 未传 → undefined */
+function filterGroupWhere(group?: CommissionFilterGroup): SQL | undefined {
+  if (!group) return undefined;
+  const parts = group.rules
+    .map(filterRuleWhere)
+    .filter((s): s is SQL => s !== undefined);
+  if (parts.length === 0) return undefined;
+  return group.combinator === "or" ? or(...parts) : and(...parts);
 }
 
 const JOIN_SELECT = {

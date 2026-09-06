@@ -20,7 +20,63 @@ export const dealCommissionPutSchema = z.object({
 });
 export type DealCommissionPut = z.infer<typeof dealCommissionPutSchema>;
 
-/** 管理页列表 query：分页 + 成交日期范围（epoch ms）+ 交付日期范围 + 交付日期空否 + 状态（default/custom）+ q + payout 状态 */
+// ---- 动态筛选条件组（成交分成管理页；dealDate/deliveryDate/productId + 全局 AND/OR）----
+
+/** 成交日期范围条件（epoch ms，单边可空；两边都空 = no-op） */
+const dealDateFilterRuleSchema = z.object({
+  field: z.literal("dealDate"),
+  op: z.literal("between"),
+  from: z.number().int().optional(),
+  to: z.number().int().optional(),
+});
+
+/** 交付日期条件：范围 / 空否 */
+const deliveryDateFilterRuleSchema = z.object({
+  field: z.literal("deliveryDate"),
+  op: z.enum(["between", "empty", "notEmpty"]),
+  from: z.number().int().optional(),
+  to: z.number().int().optional(),
+});
+
+/** 产品条件：多选，命中任一 */
+const productIdFilterRuleSchema = z.object({
+  field: z.literal("productId"),
+  op: z.literal("in"),
+  ids: z.array(z.number().int().positive()).min(1).max(100),
+});
+
+export const commissionFilterRuleSchema = z.discriminatedUnion("field", [
+  dealDateFilterRuleSchema,
+  deliveryDateFilterRuleSchema,
+  productIdFilterRuleSchema,
+]);
+export type CommissionFilterRule = z.infer<typeof commissionFilterRuleSchema>;
+
+/** 扁平条件组：rules 之间按 combinator 组合（and=满足全部 / or=满足任一） */
+export const commissionFilterGroupSchema = z.object({
+  combinator: z.enum(["and", "or"]),
+  rules: z.array(commissionFilterRuleSchema).min(1).max(20),
+});
+export type CommissionFilterGroup = z.infer<typeof commissionFilterGroupSchema>;
+
+/** query 参数 filters：JSON 字符串 → 解析 + 校验为条件组；非法 → 422 VALIDATION */
+const filtersQuerySchema = z.string().transform((s, ctx) => {
+  let raw: unknown;
+  try {
+    raw = JSON.parse(s);
+  } catch {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, message: "filters 必须是合法 JSON" });
+    return z.NEVER;
+  }
+  const r = commissionFilterGroupSchema.safeParse(raw);
+  if (!r.success) {
+    for (const issue of r.error.issues) ctx.addIssue(issue);
+    return z.NEVER;
+  }
+  return r.data;
+});
+
+/** 管理页列表 query：分页 + 成交日期范围（epoch ms）+ 交付日期范围 + 交付日期空否 + 状态（default/custom）+ q + payout 状态 + filters 动态条件组 */
 export const dealCommissionListQuerySchema = pageQuerySchema.extend({
   /** 成交日期范围（epoch ms） */
   startDate: z.coerce.number().int().optional(),
@@ -34,6 +90,8 @@ export const dealCommissionListQuerySchema = pageQuerySchema.extend({
   status: z.enum(["default", "custom"]).optional(),
   /** v2：按成交是否存在该状态的 payout 过滤 */
   payoutStatus: z.enum(["pending", "paid"]).optional(),
+  /** 动态筛选条件组（JSON 字符串：{combinator, rules}），与上方 flat 参数 AND 叠加 */
+  filters: filtersQuerySchema.optional(),
 });
 export type DealCommissionListQuery = z.infer<typeof dealCommissionListQuerySchema>;
 
