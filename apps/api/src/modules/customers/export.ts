@@ -7,6 +7,8 @@ import ExcelJS from "exceljs";
 
 import { customerTypeLabels, type CustomerType } from "@gb-crm/shared";
 
+import { excelDate } from "../../lib/excel-date.js";
+
 import type { CustomerDto } from "./assemble.js";
 
 const DATE_FMT = "yyyy-mm-dd hh:mm";
@@ -28,7 +30,8 @@ const dateCol = (key: string, header: string, get: (row: CustomerDto) => number 
   width: 18,
   value: (row) => {
     const ts = get(row);
-    return ts === null ? null : new Date(ts);
+    // exceljs 日期单元格无时区概念（按 UTC 墙钟解读），统一转上海墙钟，与 UI 一致
+    return ts === null ? null : excelDate(ts);
   },
   numFmt: DATE_FMT,
 });
