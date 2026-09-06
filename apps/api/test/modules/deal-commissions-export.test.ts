@@ -1,6 +1,6 @@
 // deal-commissions 导出 Excel（GET /api/v1/deals/commissions/export.xlsx）：
 // 复用 dealCommissions.list 权限与列表同一 WHERE（日期范围/状态/q），全量不分页。
-// 三个 sheet：成交明细（每笔一行）/ 参与方明细（成交×参与方长表）/ 统计（汇总+参与人小计）。
+// 四个 sheet：成交明细（每笔一行）/ 参与方明细（成交×参与方长表）/ Payout 明细（成交×期×参与方，每人每期金额）/ 统计（汇总+参与人小计+按期小计）。
 // exceljs 解析校验：原金额 → 税后基数 → 参与方比例 → 分成金额 的换算链路。
 import ExcelJS from "exceljs";
 import type { FastifyInstance } from "fastify";
@@ -209,6 +209,37 @@ describe("GET /api/v1/deals/commissions/export.xlsx", () => {
     expect(partyByUser.get(m2)!.getCell(15).value).toBe(0.04);
     expect(partyByUser.get(m2)!.getCell(16).value).toBe(3.6);
 
+    // —— Sheet Payout 明细（成交 × 期 × 参与方）：每人每期 = round(期金额 4500 × 分配比例) ——
+    // m1 6% → 270 分（¥2.70）；m2 4% → 180 分（¥1.80）；#1 已发 / #2 待发
+    const payoutWs = await loadSheet(res.rawPayload, "Payout 明细");
+    expect(payoutWs.rowCount).toBe(5); // 表头 + 2 期 × 2 人
+    const payoutRows: ExcelJS.Row[] = [];
+    payoutWs.eachRow((r, n) => {
+      if (n > 1) payoutRows.push(r);
+    });
+    const payoutRowOf = (seq: number, userId: number) => {
+      const row = payoutRows.find(
+        (r) =>
+          cellByHeader(payoutWs, r, "期次") === seq &&
+          cellByHeader(payoutWs, r, "参与人ID") === userId,
+      );
+      expect(row).toBeDefined();
+      return row!;
+    };
+    const p1m1 = payoutRowOf(1, m1);
+    expect(cellByHeader(payoutWs, p1m1, "客户")).toBe("客户甲");
+    expect(cellByHeader(payoutWs, p1m1, "期金额(元)")).toBe(45);
+    expect(cellByHeader(payoutWs, p1m1, "状态")).toBe("已发");
+    expect(cellByHeader(payoutWs, p1m1, "参与人")).toBe("昵称-operator");
+    expect(cellByHeader(payoutWs, p1m1, "分配比例")).toBe(0.06);
+    expect(cellByHeader(payoutWs, p1m1, "本期金额(元)")).toBe(2.7);
+    const p1m1Date = cellByHeader(payoutWs, p1m1, "支付日期");
+    expect(p1m1Date instanceof Date && (p1m1Date as Date).getTime()).toBe(pd1);
+    const p2m2 = payoutRowOf(2, m2);
+    expect(cellByHeader(payoutWs, p2m2, "状态")).toBe("待发");
+    expect(cellByHeader(payoutWs, p2m2, "分配比例")).toBe(0.04);
+    expect(cellByHeader(payoutWs, p2m2, "本期金额(元)")).toBe(1.8);
+
     // —— Sheet3 统计：汇总 + 参与人小计 ——
     const statWs = await loadSheet(res.rawPayload, "统计");
     const statText = Array.from({ length: statWs.rowCount }, (_, i) => statWs.getRow(i + 1))
@@ -227,6 +258,13 @@ describe("GET /api/v1/deals/commissions/export.xlsx", () => {
     expect(statText).toContain("参与人数(去重)\t2");
     expect(statText).toContain("昵称-operator\t1\t5.4\t60.0%");
     expect(statText).toContain("昵称-operator\t1\t3.6\t40.0%");
+    // 按期 × 参与人小计：第 1 期已发、第 2 期待发（每人每期 ¥2.70 / ¥1.80）
+    expect(statText).toContain("第 1 期 Payout 小计");
+    expect(statText).toContain("第 2 期 Payout 小计");
+    expect(statText).toContain("昵称-operator\t0\t2.7\t2.7"); // 第1期 m1：待发0 已发2.7 合计2.7
+    expect(statText).toContain("昵称-operator\t0\t1.8\t1.8"); // 第1期 m2
+    expect(statText).toContain("昵称-operator\t2.7\t0\t2.7"); // 第2期 m1：待发2.7 已发0
+    expect(statText).toContain("昵称-operator\t1.8\t0\t1.8"); // 第2期 m2
   });
 
   it("尊重筛选：日期范围只导出范围内成交；未配置套默认方案（items 空）也能导出", async () => {

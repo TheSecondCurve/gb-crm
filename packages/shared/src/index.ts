@@ -2,6 +2,7 @@ export * from "./enums.js";
 export * from "./labels.js";
 export * from "./acl.js";
 export * from "./pages.js";
+export * from "./payout-split.js";
 export * from "./schemas/common.js";
 export * from "./schemas/auth.js";
 export * from "./schemas/user.js";

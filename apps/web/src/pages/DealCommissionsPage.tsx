@@ -584,6 +584,8 @@ export function DealCommissionsPage() {
         <PayoutFormModal
           title={`配置 payout：${payoutEditing.customer?.nickname ?? `#${payoutEditing.dealId}`}`}
           initialPayouts={payoutEditing.payouts}
+          items={payoutEditing.items}
+          poolAmountCents={payoutEditing.poolAmountCents}
           busy={false}
           onClose={() => setPayoutEditing(null)}
           onSubmit={savePayouts}
