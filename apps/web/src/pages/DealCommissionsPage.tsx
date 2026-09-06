@@ -1,6 +1,6 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { can } from "@gb-crm/shared";
+import { can, dealStageLabels } from "@gb-crm/shared";
 
 import { api, ApiError, buildQuery } from "../api/client";
 import type {
@@ -12,7 +12,7 @@ import type {
   UserDto,
 } from "../api/types";
 import { useAuth } from "../auth/AuthProvider";
-import { badge, centsToYuan, dateToEpochMs, epochMsToDate } from "../columns/common";
+import { badge, centsToYuan, dateToEpochMs, enumBadge, epochMsToDate, type BadgeTone } from "../columns/common";
 import { Pagination } from "../components/DataGrid/DataGrid";
 import { CommissionFormModal } from "../components/CommissionFormModal";
 import { PayoutFormModal } from "../components/PayoutFormModal";
@@ -20,6 +20,13 @@ import { useToast } from "../components/Toast";
 
 function percentText(p: number): string {  return `${(p * 100).toFixed(1)}%`;
 }
+
+const STAGE_TONES: Record<string, BadgeTone> = {
+  paid: "accent",
+  refunded: "muted",
+  closed: "muted",
+};
+const stageBadge = enumBadge(dealStageLabels, STAGE_TONES);
 
 function showAmount(cents: number | null): string {
   return cents === null ? "—" : `¥${centsToYuan(cents)}`;
@@ -341,7 +348,7 @@ export function DealCommissionsPage() {
     a.click();
   };
 
-  const COLUMN_COUNT = canUpdate ? 16 : 15;
+  const COLUMN_COUNT = canUpdate ? 19 : 18;
 
   return (
     <>
@@ -454,6 +461,8 @@ export function DealCommissionsPage() {
                 <th>客户</th>
                 <th>客户归属人</th>
                 <th>成交产品</th>
+                <th>阶段</th>
+                <th>订单号</th>
                 <th>成交日期</th>
                 <th>交付日期</th>
                 <th>负责人</th>
@@ -466,6 +475,7 @@ export function DealCommissionsPage() {
                 <th>内部分配</th>
                 <th>总分成</th>
                 <th>payout</th>
+                <th>支付信息备注</th>
                 <th>状态</th>
                 {canUpdate && <th style={{ width: 180 }}>操作</th>}
               </tr>
@@ -483,6 +493,8 @@ export function DealCommissionsPage() {
                   <td>{row.customer ? row.customer.nickname : "—"}</td>
                   <td>{row.customerOwner ? row.customerOwner.nickname : "—"}</td>
                   <td>{row.product ? row.product.name : "—"}</td>
+                  <td>{stageBadge(row.stage)}</td>
+                  <td>{row.orderNo ?? "—"}</td>
                   <td>{epochMsToDate(row.dealDate)}</td>
                   <td>{row.deliveryDate === null ? "—" : epochMsToDate(row.deliveryDate)}</td>
                   <td>{row.owner ? row.owner.nickname : "—"}</td>
@@ -519,6 +531,7 @@ export function DealCommissionsPage() {
                       </span>
                     )}
                   </td>
+                  <td>{row.paymentRemark ?? "—"}</td>
                   <td>{badge(row.isCustomized ? "已配置" : "默认", row.isCustomized ? "accent" : "muted")}</td>
                   {canUpdate && (
                     <td>

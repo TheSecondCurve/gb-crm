@@ -15,6 +15,7 @@ const defaultRow: DealCommissionDto = {
   owner: { id: 1, nickname: "老王" },
   stage: "paid",
   orderNo: "ORD-001",
+  paymentRemark: "对公转账",
   dealDate: deliveryMs(2026, 8, 22),
   deliveryDate: deliveryMs(2026, 9, 1),
   amountCents: 100000,
