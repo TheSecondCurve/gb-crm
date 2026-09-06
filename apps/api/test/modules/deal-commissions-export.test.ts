@@ -118,6 +118,9 @@ describe("GET /api/v1/deals/commissions/export.xlsx", () => {
       afterTaxRatio: 0.9,
       productId,
       ownerId: m1,
+      stage: "paid",
+      orderNo: "ORD-EXP-1",
+      paymentRemark: "对公转账",
       deliveryDate: Date.UTC(2026, 6, 1),
     });
 
@@ -145,6 +148,9 @@ describe("GET /api/v1/deals/commissions/export.xlsx", () => {
     expect(cellByHeader(dealWs, dealRow, "客户")).toBe("客户甲");
     expect(cellByHeader(dealWs, dealRow, "成交归属人")).toBeNull(); // 该客户未设归属人
     expect(cellByHeader(dealWs, dealRow, "成交产品")).toBe("咨询产品");
+    expect(cellByHeader(dealWs, dealRow, "阶段")).toBe("已付款");
+    expect(cellByHeader(dealWs, dealRow, "订单号")).toBe("ORD-EXP-1");
+    expect(cellByHeader(dealWs, dealRow, "支付信息备注")).toBe("对公转账");
     expect(cellByHeader(dealWs, dealRow, "负责人")).toBe("昵称-operator");
     expect(cellByHeader(dealWs, dealRow, "成交金额(元)")).toBe(1000);
     expect(cellByHeader(dealWs, dealRow, "税后比例")).toBe(0.9);
@@ -161,6 +167,9 @@ describe("GET /api/v1/deals/commissions/export.xlsx", () => {
     const others = String(cellByHeader(dealWs, dealRow, "其他参与方"));
     expect(others).toContain("4.0%");
     expect(others).toContain("¥3.60");
+    // 分成人独立数值列：分成·昵称#id(元)，未参与 → null
+    expect(cellByHeader(dealWs, dealRow, `分成·昵称-operator#${m1}(元)`)).toBe(5.4);
+    expect(cellByHeader(dealWs, dealRow, `分成·昵称-operator#${m2}(元)`)).toBe(3.6);
 
     // —— Sheet2 参与方明细（成交 × 参与方长表）——
     const partyWs = await loadSheet(res.rawPayload, "参与方明细");

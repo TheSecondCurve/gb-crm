@@ -441,6 +441,137 @@ describe("列表：交付日期筛选（与成交日期范围独立）", () => {
   });
 });
 
+describe("列表：动态筛选条件组（filters，AND/OR）", () => {
+  const fp = (g: unknown) => `filters=${encodeURIComponent(JSON.stringify(g))}`;
+
+  it("AND：成交日期范围 + 产品 in 只命中交集", async () => {
+    const { cookie } = await loginAsRole("admin");
+    const p1 = seedProduct(tmp.db, "产品一");
+    const p2 = seedProduct(tmp.db, "产品二");
+    await createDealAsAdmin({ dealDate: Date.UTC(2026, 0, 15), productId: p1 }); // 命中
+    await createDealAsAdmin({ dealDate: Date.UTC(2026, 0, 16), productId: p2 }); // 产品不符
+    await createDealAsAdmin({ dealDate: Date.UTC(2026, 2, 15), productId: p1 }); // 日期不符
+
+    const res = await get(
+      `/api/v1/deals/commissions?${fp({
+        combinator: "and",
+        rules: [
+          { field: "dealDate", op: "between", from: Date.UTC(2026, 0, 1), to: Date.UTC(2026, 0, 31) },
+          { field: "productId", op: "in", ids: [p1] },
+        ],
+      })}`,
+      cookie,
+    );
+    expect(res.statusCode).toBe(200);
+    expect(res.json().meta.total).toBe(1);
+  });
+
+  it("OR：两段成交日期范围命中并集", async () => {
+    const { cookie } = await loginAsRole("admin");
+    await createDealAsAdmin({ dealDate: Date.UTC(2026, 0, 15) }); // 段一
+    await createDealAsAdmin({ dealDate: Date.UTC(2026, 5, 15) }); // 段二
+    await createDealAsAdmin({ dealDate: Date.UTC(2026, 2, 15) }); // 都不在
+
+    const res = await get(
+      `/api/v1/deals/commissions?${fp({
+        combinator: "or",
+        rules: [
+          { field: "dealDate", op: "between", from: Date.UTC(2026, 0, 1), to: Date.UTC(2026, 0, 31) },
+          { field: "dealDate", op: "between", from: Date.UTC(2026, 5, 1), to: Date.UTC(2026, 5, 30) },
+        ],
+      })}`,
+      cookie,
+    );
+    expect(res.statusCode).toBe(200);
+    expect(res.json().meta.total).toBe(2);
+  });
+
+  it("交付日期 empty/notEmpty 规则", async () => {
+    const { cookie } = await loginAsRole("admin");
+    await createDealAsAdmin({ deliveryDate: Date.UTC(2026, 6, 1) });
+    await createDealAsAdmin();
+    await createDealAsAdmin();
+
+    const notEmpty = await get(
+      `/api/v1/deals/commissions?${fp({
+        combinator: "and",
+        rules: [{ field: "deliveryDate", op: "notEmpty" }],
+      })}`,
+      cookie,
+    );
+    expect(notEmpty.json().meta.total).toBe(1);
+
+    const empty = await get(
+      `/api/v1/deals/commissions?${fp({
+        combinator: "and",
+        rules: [{ field: "deliveryDate", op: "empty" }],
+      })}`,
+      cookie,
+    );
+    expect(empty.json().meta.total).toBe(2);
+  });
+
+  it("产品 in 多 id 命中任一；单边日期只生成一边", async () => {
+    const { cookie } = await loginAsRole("admin");
+    const p1 = seedProduct(tmp.db, "产品一");
+    const p2 = seedProduct(tmp.db, "产品二");
+    const p3 = seedProduct(tmp.db, "产品三");
+    await createDealAsAdmin({ productId: p1, dealDate: Date.UTC(2026, 5, 10) });
+    await createDealAsAdmin({ productId: p2, dealDate: Date.UTC(2026, 5, 11) });
+    await createDealAsAdmin({ productId: p3, dealDate: Date.UTC(2026, 5, 12) });
+
+    const multi = await get(
+      `/api/v1/deals/commissions?${fp({
+        combinator: "and",
+        rules: [{ field: "productId", op: "in", ids: [p1, p2] }],
+      })}`,
+      cookie,
+    );
+    expect(multi.json().meta.total).toBe(2);
+
+    const afterOnly = await get(
+      `/api/v1/deals/commissions?${fp({
+        combinator: "and",
+        rules: [{ field: "dealDate", op: "between", from: Date.UTC(2026, 5, 11) }],
+      })}`,
+      cookie,
+    );
+    expect(afterOnly.json().meta.total).toBe(2);
+  });
+
+  it("非法 filters → 422 VALIDATION", async () => {
+    const { cookie } = await loginAsRole("admin");
+    for (const bad of [
+      "not-json",
+      JSON.stringify({ combinator: "and", rules: [{ field: "nope", op: "between" }] }),
+      JSON.stringify({ combinator: "xor", rules: [{ field: "productId", op: "in", ids: [1] }] }),
+      JSON.stringify({ combinator: "and", rules: [] }),
+      JSON.stringify({ combinator: "and", rules: [{ field: "productId", op: "in", ids: [] }] }),
+    ]) {
+      const res = await get(`/api/v1/deals/commissions?filters=${encodeURIComponent(bad)}`, cookie);
+      expect(res.statusCode).toBe(422);
+      expect(res.json().error.code).toBe("VALIDATION");
+    }
+  });
+
+  it("filters 与旧 flat 参数 AND 叠加", async () => {
+    const { cookie } = await loginAsRole("admin");
+    // A：成交 01-15、有交付日期；B：成交 01-16、无交付日期；C：成交 05-15、有交付日期
+    await createDealAsAdmin({ dealDate: Date.UTC(2026, 0, 15), deliveryDate: Date.UTC(2026, 6, 1) });
+    await createDealAsAdmin({ dealDate: Date.UTC(2026, 0, 16) });
+    await createDealAsAdmin({ dealDate: Date.UTC(2026, 5, 15), deliveryDate: Date.UTC(2026, 6, 1) });
+
+    const res = await get(
+      `/api/v1/deals/commissions?startDate=${Date.UTC(2026, 0, 1)}&endDate=${Date.UTC(2026, 0, 31)}&${fp({
+        combinator: "and",
+        rules: [{ field: "deliveryDate", op: "notEmpty" }],
+      })}`,
+      cookie,
+    );
+    expect(res.json().meta.total).toBe(1);
+  });
+});
+
 describe("成交分成 v2：总比例三级回退 + 默认必含双人 + payout", () => {
   it("总比例三级回退：成交覆盖 → 产品默认 → 全局默认", async () => {
     const { cookie } = await loginAsRole("admin");

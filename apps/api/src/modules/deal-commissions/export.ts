@@ -1,10 +1,12 @@
 // deal-commissions 导出 xlsx（K56）：以「成交」为粒度，覆盖 原金额→税后比例→税后基数→参与方比例→分成金额 全链路。
 // 三个 sheet：
-//   1)「成交明细」：每笔成交一行，所有参与方合并进「参与方明细」文本列；
+//   1)「成交明细」：每笔成交一行，固定列 + 每个分成人一列「分成·昵称#id(元)」（未参与留空，便于 SUM/透视）；
 //   2)「参与方明细」：每笔成交 × 每个参与方一行（长表，供 Excel pivot/透视求和）；
 //   3)「统计」：范围内汇总（成交笔数/原金额合计/税后基数合计/总分成合计/去重参与人数）+ 按参与人小计。
 // 金额一律 分 → 元（÷100）；时间戳写 Date 单元格 + numFmt。与 customers/export.ts 同风格（exceljs，零新依赖）。
 import ExcelJS from "exceljs";
+
+import { dealStageLabels } from "@gb-crm/shared";
 
 import type { DealCommissionDto } from "./assemble.js";
 
@@ -71,6 +73,7 @@ const DEAL_COLUMNS: ColumnDef[] = [
   { header: "客户", width: 16, value: (r) => r.customer?.nickname ?? null },
   { header: "成交归属人", width: 12, value: (r) => r.customerOwner?.nickname ?? null },
   { header: "成交产品", width: 16, value: (r) => r.product?.name ?? null },
+  { header: "阶段", width: 8, value: (r) => dealStageLabels[r.stage as keyof typeof dealStageLabels] ?? r.stage },
   dateCol("成交日期", (r) => r.dealDate),
   dateCol("交付日期", (r) => r.deliveryDate),
   { header: "负责人", width: 12, value: (r) => r.owner?.nickname ?? null },
@@ -85,8 +88,23 @@ const DEAL_COLUMNS: ColumnDef[] = [
   { header: "内部分配比例", width: 12, value: (r) => r.totalPercentage },
   { header: "总分成(元)", width: 14, value: (r) => yuan(r.totalAmountCents) },
   { header: "payout", width: 34, value: (r) => payoutsText(r) },
+  { header: "支付信息备注", width: 24, value: (r) => r.paymentRemark },
   { header: "方案", width: 8, value: (r) => (r.isCustomized ? "已配置" : "默认") },
 ];
+
+/** 导出集合内出现过的全部分成人（按 userId 升序，列序稳定）：userId → 昵称（缺 → #id） */
+function collectParticipants(rows: readonly DealCommissionDto[]): Map<number, string> {
+  const map = new Map<number, string>();
+  for (const row of rows) {
+    for (const item of row.items) {
+      if (!map.has(item.userId)) map.set(item.userId, item.nickname ?? `#${item.userId}`);
+    }
+  }
+  return new Map([...map.entries()].sort((a, b) => a[0] - b[0]));
+}
+
+/** 每人一列的表头：分成·昵称#id(元)（带 id 消歧，同人不同 nickname 也不撞列） */
+const participantHeader = (userId: number, nickname: string) => `分成·${nickname}#${userId}(元)`;
 
 const formatEpochDay = (ms: number | null | undefined): string => {
   if (ms == null) return "";
@@ -108,12 +126,23 @@ export async function buildCommissionXlsx(
 ): Promise<Buffer> {
   const workbook = new ExcelJS.Workbook();
 
-  // Sheet1「成交明细」：每笔成交一行
+  // Sheet1「成交明细」：每笔成交一行（固定列 + 每个分成人一列独立数值列，便于 Excel SUM/透视）
+  const participants = collectParticipants(rows);
+  const dealColumns: ColumnDef[] = [
+    ...DEAL_COLUMNS,
+    ...[...participants.entries()].map(
+      ([userId, nickname]): ColumnDef => ({
+        header: participantHeader(userId, nickname),
+        width: 16,
+        value: (r) => yuan(r.items.find((it) => it.userId === userId)?.amountCents ?? null),
+      }),
+    ),
+  ];
   const dealSheet = workbook.addWorksheet("成交明细");
-  dealSheet.columns = DEAL_COLUMNS.map(({ header, width }) => ({ header, width }));
+  dealSheet.columns = dealColumns.map(({ header, width }) => ({ header, width }));
   for (const row of rows) {
-    const excelRow = dealSheet.addRow(DEAL_COLUMNS.map((c) => c.value(row)));
-    DEAL_COLUMNS.forEach((c, i) => {
+    const excelRow = dealSheet.addRow(dealColumns.map((c) => c.value(row)));
+    dealColumns.forEach((c, i) => {
       if (c.numFmt) excelRow.getCell(i + 1).numFmt = c.numFmt;
     });
   }

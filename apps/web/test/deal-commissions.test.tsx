@@ -88,6 +88,18 @@ function mockCommissionsApi(me: typeof adminMe, rows: DealCommissionDto[] = [def
       }
       if (method === "PATCH") return { status: 200, body: { data: JSON.parse(init?.body ?? "{}") } };
     }
+    if (url.startsWith("/api/v1/products") && method === "GET") {
+      return {
+        status: 200,
+        body: {
+          data: [
+            { id: 201, name: "产品A" },
+            { id: 202, name: "产品B" },
+          ],
+          meta: { page: 1, pageSize: 100, total: 2 },
+        },
+      };
+    }
     if (url.startsWith("/api/v1/deals/commissions") && method === "GET") {
       return { status: 200, body: { data: rows, meta: { page: 1, pageSize: 25, total: rows.length } } };
     }
@@ -133,6 +145,15 @@ function mockCommissionsApi(me: typeof adminMe, rows: DealCommissionDto[] = [def
   return calls;
 }
 
+/** 从已发出的 GET /deals/commissions 调用中提取并解析 filters JSON */
+function filtersPayloads(calls: Call[]): { combinator: string; rules: Record<string, unknown>[] }[] {
+  return calls
+    .filter((c) => c.method === "GET" && c.url.includes("/api/v1/deals/commissions?"))
+    .map((c) => new URLSearchParams(c.url.split("?")[1] ?? "").get("filters"))
+    .filter((s): s is string => s !== null)
+    .map((s) => JSON.parse(s));
+}
+
 describe("成交分成页", () => {
   it("admin：渲染列表、默认/已配置徽章、双人/总比例/分红池/分成明细与 payout", async () => {
     mockCommissionsApi(adminMe);
@@ -168,30 +189,113 @@ describe("成交分成页", () => {
     await waitFor(() => expect(calls.some((c) => c.url.includes("status=custom"))).toBe(true));
   });
 
-  it("日期范围筛选触发新 query", async () => {
+  it("动态筛选：默认带交付日期已填；添加成交日期范围条件 → AND 两条规则", async () => {
     const calls = mockCommissionsApi(adminMe);
     renderApp("/deals/commissions");
     await screen.findByText("张三");
 
-    fireEvent.change(screen.getByLabelText("成交日期开始"), { target: { value: "2026-08-01" } });
-    await waitFor(() => expect(calls.some((c) => c.url.includes("startDate="))).toBe(true));
+    // 默认条件：交付日期 notEmpty
+    expect(
+      filtersPayloads(calls).some(
+        (f) =>
+          f.combinator === "and" &&
+          f.rules.length === 1 &&
+          f.rules[0]!.field === "deliveryDate" &&
+          f.rules[0]!.op === "notEmpty",
+      ),
+    ).toBe(true);
+
+    // 添加一条成交日期范围条件并填开始日期
+    fireEvent.click(screen.getByRole("button", { name: /添加条件/ }));
+    fireEvent.change(screen.getByLabelText("开始日期"), { target: { value: "2026-08-01" } });
+    await waitFor(() => {
+      expect(
+        filtersPayloads(calls).some(
+          (f) =>
+            f.combinator === "and" &&
+            f.rules.length === 2 &&
+            f.rules.some(
+              (r) => r.field === "dealDate" && r.op === "between" && typeof r.from === "number" && !("to" in r),
+            ),
+        ),
+      ).toBe(true);
+    });
   });
 
-  it("默认按交付日期不为空过滤；切换交付日期空否触发新 query", async () => {
+  it("动态筛选：切换 OR、产品条件多选、删空条件后不带 filters", async () => {
     const calls = mockCommissionsApi(adminMe);
     renderApp("/deals/commissions");
     await screen.findByText("张三");
 
-    // 默认条件：交付日期不为空
-    expect(calls.some((c) => c.url.includes("deliveryStatus=notEmpty"))).toBe(true);
+    // 切到 OR
+    fireEvent.change(screen.getByLabelText("条件组合"), { target: { value: "or" } });
+    await waitFor(() => {
+      expect(filtersPayloads(calls).some((f) => f.combinator === "or")).toBe(true);
+    });
 
-    // 切到「未填」
-    fireEvent.change(screen.getByLabelText("交付日期空否"), { target: { value: "empty" } });
-    await waitFor(() => expect(calls.some((c) => c.url.includes("deliveryStatus=empty"))).toBe(true));
+    // 添加产品条件，EntityPicker 选两个产品
+    fireEvent.click(screen.getByRole("button", { name: /添加条件/ }));
+    const fieldSelects = screen.getAllByLabelText("条件字段");
+    fireEvent.change(fieldSelects[fieldSelects.length - 1]!, { target: { value: "productId" } });
+    fireEvent.focus(screen.getByLabelText("产品筛选"));
+    const optA = await screen.findByRole("option", { name: "产品A" });
+    fireEvent.mouseDown(optA);
+    fireEvent.mouseDown(await screen.findByRole("option", { name: "产品B" }));
+    await waitFor(() => {
+      expect(
+        filtersPayloads(calls).some(
+          (f) =>
+            f.combinator === "or" &&
+            f.rules.some(
+              (r) =>
+                r.field === "productId" &&
+                Array.isArray(r.ids) &&
+                (r.ids as number[]).length === 2,
+            ),
+        ),
+      ).toBe(true);
+    });
 
-    // 设置交付日期范围
-    fireEvent.change(screen.getByLabelText("交付日期开始"), { target: { value: "2026-09-01" } });
-    await waitFor(() => expect(calls.some((c) => c.url.includes("deliveryStartDate="))).toBe(true));
+    // 删除全部条件 → 请求不带 filters
+    for (const btn of screen.getAllByRole("button", { name: "删除条件" })) fireEvent.click(btn);
+    await waitFor(() => {
+      const listCalls = calls.filter(
+        (c) => c.method === "GET" && c.url.includes("/api/v1/deals/commissions?"),
+      );
+      const last = listCalls[listCalls.length - 1]!;
+      expect(new URLSearchParams(last.url.split("?")[1] ?? "").get("filters")).toBeNull();
+    });
+  });
+
+  it("动态筛选：交付日期条件切换 未填/日期范围", async () => {
+    const calls = mockCommissionsApi(adminMe);
+    renderApp("/deals/commissions");
+    await screen.findByText("张三");
+
+    // 默认规则是交付日期，切到「未填」
+    fireEvent.change(screen.getByLabelText("交付日期条件"), { target: { value: "empty" } });
+    await waitFor(() => {
+      expect(
+        filtersPayloads(calls).some(
+          (f) => f.rules.length === 1 && f.rules[0]!.field === "deliveryDate" && f.rules[0]!.op === "empty",
+        ),
+      ).toBe(true);
+    });
+
+    // 切回「日期范围」并填开始日期 → between + from
+    fireEvent.change(screen.getByLabelText("交付日期条件"), { target: { value: "between" } });
+    fireEvent.change(screen.getByLabelText("开始日期"), { target: { value: "2026-09-01" } });
+    await waitFor(() => {
+      expect(
+        filtersPayloads(calls).some(
+          (f) =>
+            f.rules.length === 1 &&
+            f.rules[0]!.field === "deliveryDate" &&
+            f.rules[0]!.op === "between" &&
+            typeof f.rules[0]!.from === "number",
+        ),
+      ).toBe(true);
+    });
   });
 
   it("payout 状态过滤触发新 query", async () => {
