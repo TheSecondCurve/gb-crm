@@ -1,5 +1,6 @@
 // 成交分成动态筛选器：扁平条件列表 + 全局 AND/OR（不做嵌套分组）。
-// 条件字段：成交日期（范围）/ 交付日期（范围/已填/未填）/ 产品（多选，命中任一）。
+// 条件字段：成交日期（范围）/ 交付日期（范围）/ 产品（多选，命中任一）。
+// 交付日期「已填/未填」是页面级常驻条件（deliveryStatus 平铺参数），不进动态条件组。
 // 纯受控展示组件：不发请求，value 变化即向上抛；serializeCommissionFilters 负责
 // 把 UI 态序列化为 GET /deals/commissions 的 filters query（JSON 字符串），
 // 不完整规则（日期两端都空 / 产品未选）跳过，剩余 0 条 → 不带 filters。
@@ -13,13 +14,10 @@ import { EntityPicker } from "./EntityPicker";
 const DAY_TAIL_MS = 86399999; // 当日 23:59:59.999（end 含当天）
 
 export type FilterField = "dealDate" | "deliveryDate" | "productId";
-export type FilterOp = "between" | "empty" | "notEmpty";
 
 export interface FilterRuleState {
   key: string;
   field: FilterField;
-  /** 日期类条件操作符；productId 恒为 between 占位（不参与序列化） */
-  op: FilterOp;
   /** YYYY-MM-DD 输入框原始值 */
   start: string;
   end: string;
@@ -35,12 +33,12 @@ let keySeq = 0;
 const nextKey = () => `rule-${++keySeq}`;
 
 function emptyRule(field: FilterField = "dealDate"): FilterRuleState {
-  return { key: nextKey(), field, op: "between", start: "", end: "", productIds: [] };
+  return { key: nextKey(), field, start: "", end: "", productIds: [] };
 }
 
-/** 页面初始值：保持原有默认行为——交付日期「已填」 */
+/** 页面初始值：无动态条件 */
 export function defaultCommissionFilters(): CommissionFilterBuilderValue {
-  return { combinator: "and", rules: [{ ...emptyRule("deliveryDate"), op: "notEmpty" }] };
+  return { combinator: "and", rules: [] };
 }
 
 const FIELD_OPTIONS: { value: FilterField; label: string }[] = [
@@ -55,10 +53,6 @@ function serializeRule(rule: FilterRuleState): CommissionFilterRule | null {
     return rule.productIds.length === 0
       ? null
       : { field: "productId", op: "in", ids: [...rule.productIds] };
-  }
-  if (rule.op === "empty" || rule.op === "notEmpty") {
-    // 空否仅交付日期支持（dealDate 恒为 between，UI 不渲染该选项）
-    return rule.field === "deliveryDate" ? { field: "deliveryDate", op: rule.op } : null;
   }
   const from = dateToEpochMs(rule.start);
   const end = dateToEpochMs(rule.end);
@@ -148,34 +142,19 @@ export function CommissionFilterBuilder({ value, onChange }: CommissionFilterBui
             />
           ) : (
             <>
-              {rule.field === "deliveryDate" && (
-                <select
-                  aria-label="交付日期条件"
-                  value={rule.op}
-                  onChange={(e) => setRule(rule.key, { op: e.target.value as FilterOp })}
-                >
-                  <option value="between">日期范围</option>
-                  <option value="notEmpty">已填</option>
-                  <option value="empty">未填</option>
-                </select>
-              )}
-              {rule.op === "between" && (
-                <>
-                  <input
-                    aria-label="开始日期"
-                    type="date"
-                    value={rule.start}
-                    onChange={(e) => setRule(rule.key, { start: e.target.value })}
-                  />
-                  <span>~</span>
-                  <input
-                    aria-label="结束日期"
-                    type="date"
-                    value={rule.end}
-                    onChange={(e) => setRule(rule.key, { end: e.target.value })}
-                  />
-                </>
-              )}
+              <input
+                aria-label="开始日期"
+                type="date"
+                value={rule.start}
+                onChange={(e) => setRule(rule.key, { start: e.target.value })}
+              />
+              <span>~</span>
+              <input
+                aria-label="结束日期"
+                type="date"
+                value={rule.end}
+                onChange={(e) => setRule(rule.key, { end: e.target.value })}
+              />
             </>
           )}
           <button

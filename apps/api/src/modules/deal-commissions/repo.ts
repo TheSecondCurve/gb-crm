@@ -7,6 +7,7 @@ import {
   count,
   desc,
   eq,
+  gte,
   inArray,
   isNotNull,
   isNull,
@@ -83,6 +84,10 @@ function commissionListWhere(query: DealCommissionListQuery): SQL | undefined {
     conditions.push(sql`${deals.deliveryDate} <= ${query.deliveryEndDate}`);
   if (query.deliveryStatus === "empty") conditions.push(isNull(deals.deliveryDate));
   else if (query.deliveryStatus === "notEmpty") conditions.push(isNotNull(deals.deliveryDate));
+  // 阶段等值 + 金额下限（前端「有效成交」常驻条件 = stage=paid & minAmountCents=1）
+  if (query.stage !== undefined) conditions.push(eq(deals.stage, query.stage));
+  if (query.minAmountCents !== undefined)
+    conditions.push(gte(deals.amountCents, query.minAmountCents));
   if (query.status === "custom") {
     conditions.push(
       sql`EXISTS (SELECT 1 FROM deal_commissions dc WHERE dc.deal_id = ${deals.id})`,
