@@ -340,6 +340,31 @@ describe("成交分成页", () => {
     });
   });
 
+  it("排序：默认成交日期倒序；可换字段与方向", async () => {
+    const calls = mockCommissionsApi(adminMe);
+    renderApp("/deals/commissions");
+    await screen.findByText("张三");
+
+    const listCalls = () =>
+      calls.filter((c) => c.method === "GET" && c.url.includes("/api/v1/deals/commissions?"));
+
+    // 默认 sort=dealDate & order=desc
+    await waitFor(() => {
+      expect(
+        listCalls().some((c) => c.url.includes("sort=dealDate") && c.url.includes("order=desc")),
+      ).toBe(true);
+    });
+
+    // 换字段 + 换方向
+    fireEvent.change(screen.getByLabelText("排序字段"), { target: { value: "amountCents" } });
+    fireEvent.change(screen.getByLabelText("排序方向"), { target: { value: "asc" } });
+    await waitFor(() => {
+      expect(
+        listCalls().some((c) => c.url.includes("sort=amountCents") && c.url.includes("order=asc")),
+      ).toBe(true);
+    });
+  });
+
   it("payout 状态过滤触发新 query", async () => {
     const calls = mockCommissionsApi(adminMe);
     renderApp("/deals/commissions");

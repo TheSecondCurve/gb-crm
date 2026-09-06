@@ -38,18 +38,6 @@ function otherParticipantsText(row: DealCommissionDto): string {
   return others.length === 0 ? "—" : others.map(itemText).join("、");
 }
 
-/** payout 文本：「#1 2026-08 50.0%(¥90.00 待发)、…」；空 → — */
-function payoutsText(row: DealCommissionDto): string {
-  return row.payouts.length === 0
-    ? "—"
-    : row.payouts
-        .map(
-          (p) =>
-            `#${p.seq} ${formatEpochDay(p.payoutDate)} ${percentText(p.rate)}(${moneyText(p.amountCents)} ${p.status === "paid" ? "已发" : "待发"})`,
-        )
-        .join("、");
-}
-
 interface ColumnDef {
   header: string;
   width: number;
@@ -66,6 +54,28 @@ const dateCol = (header: string, get: (row: DealCommissionDto) => number | null)
   },
   numFmt: DATE_FMT,
 });
+
+/** payout 逐周期列（seq 固定 1|2）：日期/比例/金额(元)/状态，无该期 → 全 null */
+const payoutCols = (seq: 1 | 2): ColumnDef[] => {
+  const find = (r: DealCommissionDto) => r.payouts.find((p) => p.seq === seq);
+  return [
+    dateCol(`payout#${seq} 日期`, (r) => find(r)?.payoutDate ?? null),
+    { header: `payout#${seq} 比例`, width: 12, value: (r) => find(r)?.rate ?? null },
+    {
+      header: `payout#${seq} 金额(元)`,
+      width: 14,
+      value: (r) => yuan(find(r)?.amountCents ?? null),
+    },
+    {
+      header: `payout#${seq} 状态`,
+      width: 10,
+      value: (r) => {
+        const p = find(r);
+        return p ? (p.status === "paid" ? "已发" : "待发") : null;
+      },
+    },
+  ];
+};
 
 // Sheet1「成交明细」列（每笔成交一行）
 const DEAL_COLUMNS: ColumnDef[] = [
@@ -87,7 +97,8 @@ const DEAL_COLUMNS: ColumnDef[] = [
   { header: "其他参与方", width: 46, value: (r) => otherParticipantsText(r) },
   { header: "内部分配比例", width: 12, value: (r) => r.totalPercentage },
   { header: "总分成(元)", width: 14, value: (r) => yuan(r.totalAmountCents) },
-  { header: "payout", width: 34, value: (r) => payoutsText(r) },
+  ...payoutCols(1),
+  ...payoutCols(2),
   { header: "支付信息备注", width: 24, value: (r) => r.paymentRemark },
   { header: "方案", width: 8, value: (r) => (r.isCustomized ? "已配置" : "默认") },
 ];

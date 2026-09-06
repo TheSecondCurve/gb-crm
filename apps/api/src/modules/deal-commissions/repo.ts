@@ -167,12 +167,21 @@ const JOIN_SELECT = {
   commissionConfiguredAt: dealCommissions.configuredAt,
 };
 
+/** sort 字段 → deals 列（缺省 updatedAt，保持旧行为）；交付日期/金额可空，NULL 在 SQLite 中最小（desc 时排尾） */
+const SORT_COLUMNS = {
+  dealDate: deals.dealDate,
+  deliveryDate: deals.deliveryDate,
+  amountCents: deals.amountCents,
+  updatedAt: deals.updatedAt,
+} as const;
+
 export function listCommissionRows(
   db: Db,
   query: DealCommissionListQuery,
 ): { rows: CommissionJoinRow[]; total: number } {
   const where = commissionListWhere(query);
   const dir = query.order === "asc" ? asc : desc;
+  const sortCol = SORT_COLUMNS[query.sort ?? "updatedAt"];
 
   const rows = db
     .select(JOIN_SELECT)
@@ -182,7 +191,7 @@ export function listCommissionRows(
     .leftJoin(products, eq(products.id, deals.productId))
     .leftJoin(dealCommissions, eq(dealCommissions.dealId, deals.id))
     .where(where)
-    .orderBy(dir(deals.updatedAt), desc(deals.id))
+    .orderBy(dir(sortCol), desc(deals.id))
     .limit(query.pageSize)
     .offset(toOffset(query.page, query.pageSize))
     .all();
@@ -197,6 +206,7 @@ export function listAllCommissionRows(
 ): CommissionJoinRow[] {
   const where = commissionListWhere(query);
   const dir = query.order === "asc" ? asc : desc;
+  const sortCol = SORT_COLUMNS[query.sort ?? "updatedAt"];
   return db
     .select(JOIN_SELECT)
     .from(deals)
@@ -205,7 +215,7 @@ export function listAllCommissionRows(
     .leftJoin(products, eq(products.id, deals.productId))
     .leftJoin(dealCommissions, eq(dealCommissions.dealId, deals.id))
     .where(where)
-    .orderBy(dir(deals.updatedAt), desc(deals.id))
+    .orderBy(dir(sortCol), desc(deals.id))
     .all();
 }
 
