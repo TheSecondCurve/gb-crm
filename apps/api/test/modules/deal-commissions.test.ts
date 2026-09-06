@@ -441,6 +441,37 @@ describe("列表：交付日期筛选（与成交日期范围独立）", () => {
   });
 });
 
+describe("列表：阶段与金额下限筛选", () => {
+  it("stage / minAmountCents 各自生效，叠加只命中已付款且金额>0", async () => {
+    const { cookie } = await loginAsRole("admin");
+    await createDealAsAdmin({ stage: "paid", amountCents: 10000 }); // 命中
+    await createDealAsAdmin({ stage: "paid", amountCents: 0 }); // 金额不符
+    await createDealAsAdmin({ stage: "refunded", amountCents: 5000 }); // 阶段不符
+    await createDealAsAdmin(); // gift 默认、金额 NULL
+
+    const both = await get("/api/v1/deals/commissions?stage=paid&minAmountCents=1", cookie);
+    expect(both.json().meta.total).toBe(1);
+
+    const paidOnly = await get("/api/v1/deals/commissions?stage=paid", cookie);
+    expect(paidOnly.json().meta.total).toBe(2);
+
+    const positiveOnly = await get("/api/v1/deals/commissions?minAmountCents=1", cookie);
+    expect(positiveOnly.json().meta.total).toBe(2);
+
+    // 与动态条件组 AND 叠加
+    const withFilters = await get(
+      `/api/v1/deals/commissions?stage=paid&minAmountCents=1&filters=${encodeURIComponent(
+        JSON.stringify({
+          combinator: "and",
+          rules: [{ field: "dealDate", op: "between", from: Date.UTC(2026, 0, 1) }],
+        }),
+      )}`,
+      cookie,
+    );
+    expect(withFilters.json().meta.total).toBe(1);
+  });
+});
+
 describe("列表：动态筛选条件组（filters，AND/OR）", () => {
   const fp = (g: unknown) => `filters=${encodeURIComponent(JSON.stringify(g))}`;
 

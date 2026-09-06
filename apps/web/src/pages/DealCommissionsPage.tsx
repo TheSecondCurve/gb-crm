@@ -227,14 +227,19 @@ export function DealCommissionsPage() {
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(25);
   const [filterBuilder, setFilterBuilder] = useState(defaultCommissionFilters);
+  const [deliveryStatus, setDeliveryStatus] = useState("");
+  const [dealScope, setDealScope] = useState("effective");
   const [status, setStatus] = useState("");
   const [payoutStatus, setPayoutStatus] = useState("");
   const [q, setQ] = useState("");
   const [editing, setEditing] = useState<DealCommissionDto | null>(null);
   const [payoutEditing, setPayoutEditing] = useState<DealCommissionDto | null>(null);
 
-  // 动态条件组 → filters query（无有效规则 → undefined 不带）；不完整规则在序列化时跳过
+  // 动态条件组 → filters query（无有效规则 → undefined 不带）；不完整规则在序列化时跳过。
+  // 交付日期空否 + 成交口径（默认「有效」= 已付款且金额>0）是常驻外部条件，无论条件组怎么选都 AND 叠加。
   const filtersParam = serializeCommissionFilters(filterBuilder);
+  const scopeParams =
+    dealScope === "effective" ? { stage: "paid", minAmountCents: 1 } : { stage: "", minAmountCents: "" };
 
   const { data, isLoading } = useQuery({
     queryKey: [
@@ -242,6 +247,8 @@ export function DealCommissionsPage() {
       "commissions",
       page,
       pageSize,
+      deliveryStatus,
+      dealScope,
       status,
       payoutStatus,
       filtersParam,
@@ -252,6 +259,8 @@ export function DealCommissionsPage() {
         `/deals/commissions${buildQuery({
           page,
           pageSize,
+          deliveryStatus,
+          ...scopeParams,
           status,
           payoutStatus,
           filters: filtersParam,
@@ -319,10 +328,12 @@ export function DealCommissionsPage() {
     }
   };
 
-  // 导出 Excel：跟随当前动态条件组/状态/payout 状态/搜索（与列表同一 WHERE），同源 attachment 下载
+  // 导出 Excel：跟随当前常驻交付日期/成交口径条件、动态条件组/状态/payout 状态/搜索（与列表同一 WHERE），同源 attachment 下载
   const exportXlsx = () => {
     const href = `/api/v1/deals/commissions/export.xlsx${buildQuery({
       q,
+      deliveryStatus,
+      ...scopeParams,
       status,
       payoutStatus,
       filters: filtersParam,
@@ -349,6 +360,29 @@ export function DealCommissionsPage() {
               setPage(1);
             }}
           />
+          <select
+            aria-label="成交口径"
+            value={dealScope}
+            onChange={(e) => {
+              setDealScope(e.target.value);
+              setPage(1);
+            }}
+          >
+            <option value="effective">成交：已付款·金额&gt;0</option>
+            <option value="">成交：全部</option>
+          </select>
+          <select
+            aria-label="交付日期"
+            value={deliveryStatus}
+            onChange={(e) => {
+              setDeliveryStatus(e.target.value);
+              setPage(1);
+            }}
+          >
+            <option value="">交付日期：全部</option>
+            <option value="notEmpty">交付日期：已填</option>
+            <option value="empty">交付日期：未填</option>
+          </select>
           <CommissionFilterBuilder
             value={filterBuilder}
             onChange={(next) => {

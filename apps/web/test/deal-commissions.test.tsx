@@ -189,21 +189,13 @@ describe("成交分成页", () => {
     await waitFor(() => expect(calls.some((c) => c.url.includes("status=custom"))).toBe(true));
   });
 
-  it("动态筛选：默认带交付日期已填；添加成交日期范围条件 → AND 两条规则", async () => {
+  it("动态筛选：默认无条件不带 filters；添加成交日期范围条件 → AND 一条规则", async () => {
     const calls = mockCommissionsApi(adminMe);
     renderApp("/deals/commissions");
     await screen.findByText("张三");
 
-    // 默认条件：交付日期 notEmpty
-    expect(
-      filtersPayloads(calls).some(
-        (f) =>
-          f.combinator === "and" &&
-          f.rules.length === 1 &&
-          f.rules[0]!.field === "deliveryDate" &&
-          f.rules[0]!.op === "notEmpty",
-      ),
-    ).toBe(true);
+    // 默认无动态条件：请求不带 filters
+    expect(filtersPayloads(calls).length).toBe(0);
 
     // 添加一条成交日期范围条件并填开始日期
     fireEvent.click(screen.getByRole("button", { name: /添加条件/ }));
@@ -213,7 +205,7 @@ describe("成交分成页", () => {
         filtersPayloads(calls).some(
           (f) =>
             f.combinator === "and" &&
-            f.rules.length === 2 &&
+            f.rules.length === 1 &&
             f.rules.some(
               (r) => r.field === "dealDate" && r.op === "between" && typeof r.from === "number" && !("to" in r),
             ),
@@ -226,6 +218,10 @@ describe("成交分成页", () => {
     const calls = mockCommissionsApi(adminMe);
     renderApp("/deals/commissions");
     await screen.findByText("张三");
+
+    // 先加一条条件（无规则时序列化为空，combinator 不会出现在请求里）
+    fireEvent.click(screen.getByRole("button", { name: /添加条件/ }));
+    fireEvent.change(screen.getByLabelText("开始日期"), { target: { value: "2026-08-01" } });
 
     // 切到 OR
     fireEvent.change(screen.getByLabelText("条件组合"), { target: { value: "or" } });
@@ -267,32 +263,78 @@ describe("成交分成页", () => {
     });
   });
 
-  it("动态筛选：交付日期条件切换 未填/日期范围", async () => {
+  it("常驻交付日期条件：默认全部；已填/未填与动态条件组恒叠加", async () => {
     const calls = mockCommissionsApi(adminMe);
     renderApp("/deals/commissions");
     await screen.findByText("张三");
 
-    // 默认规则是交付日期，切到「未填」
-    fireEvent.change(screen.getByLabelText("交付日期条件"), { target: { value: "empty" } });
+    const listCalls = () =>
+      calls.filter((c) => c.method === "GET" && c.url.includes("/api/v1/deals/commissions?"));
+
+    // 默认「全部」：不带 deliveryStatus
+    expect(listCalls().every((c) => !c.url.includes("deliveryStatus="))).toBe(true);
+
+    // 选「未填」→ deliveryStatus=empty
+    fireEvent.change(screen.getByLabelText("交付日期"), { target: { value: "empty" } });
+    await waitFor(() => {
+      expect(listCalls().some((c) => c.url.includes("deliveryStatus=empty"))).toBe(true);
+    });
+
+    // 加一条动态条件后，deliveryStatus 仍与 filters 同时出现在请求里（恒 AND 叠加）
+    fireEvent.click(screen.getByRole("button", { name: /添加条件/ }));
+    fireEvent.change(screen.getByLabelText("开始日期"), { target: { value: "2026-09-01" } });
     await waitFor(() => {
       expect(
-        filtersPayloads(calls).some(
-          (f) => f.rules.length === 1 && f.rules[0]!.field === "deliveryDate" && f.rules[0]!.op === "empty",
+        listCalls().some(
+          (c) => c.url.includes("deliveryStatus=empty") && c.url.includes("filters="),
         ),
       ).toBe(true);
     });
 
-    // 切回「日期范围」并填开始日期 → between + from
-    fireEvent.change(screen.getByLabelText("交付日期条件"), { target: { value: "between" } });
-    fireEvent.change(screen.getByLabelText("开始日期"), { target: { value: "2026-09-01" } });
+    // 选「已填」→ deliveryStatus=notEmpty
+    fireEvent.change(screen.getByLabelText("交付日期"), { target: { value: "notEmpty" } });
     await waitFor(() => {
       expect(
-        filtersPayloads(calls).some(
-          (f) =>
-            f.rules.length === 1 &&
-            f.rules[0]!.field === "deliveryDate" &&
-            f.rules[0]!.op === "between" &&
-            typeof f.rules[0]!.from === "number",
+        listCalls().some(
+          (c) => c.url.includes("deliveryStatus=notEmpty") && c.url.includes("filters="),
+        ),
+      ).toBe(true);
+    });
+  });
+
+  it("常驻成交口径：默认已付款·金额>0；切全部后不带参数；与其它条件叠加", async () => {
+    const calls = mockCommissionsApi(adminMe);
+    renderApp("/deals/commissions");
+    await screen.findByText("张三");
+
+    const listCalls = () =>
+      calls.filter((c) => c.method === "GET" && c.url.includes("/api/v1/deals/commissions?"));
+
+    // 默认「有效成交」：stage=paid & minAmountCents=1
+    await waitFor(() => {
+      expect(
+        listCalls().some((c) => c.url.includes("stage=paid") && c.url.includes("minAmountCents=1")),
+      ).toBe(true);
+    });
+
+    // 切「全部」→ 不再带 stage/minAmountCents
+    fireEvent.change(screen.getByLabelText("成交口径"), { target: { value: "" } });
+    await waitFor(() => {
+      const last = listCalls()[listCalls().length - 1]!;
+      expect(last.url.includes("stage=")).toBe(false);
+      expect(last.url.includes("minAmountCents=")).toBe(false);
+    });
+
+    // 切回「有效」并选交付日期「未填」→ 三类条件同时出现在请求里（恒 AND 叠加）
+    fireEvent.change(screen.getByLabelText("成交口径"), { target: { value: "effective" } });
+    fireEvent.change(screen.getByLabelText("交付日期"), { target: { value: "empty" } });
+    await waitFor(() => {
+      expect(
+        listCalls().some(
+          (c) =>
+            c.url.includes("stage=paid") &&
+            c.url.includes("minAmountCents=1") &&
+            c.url.includes("deliveryStatus=empty"),
         ),
       ).toBe(true);
     });

@@ -1,5 +1,6 @@
 import { z } from "zod";
 
+import { dealStageSchema } from "../enums.js";
 import { pageQuerySchema } from "./common.js";
 
 // K56 v2 成交分成：以「成交」为粒度的财务配置（三级：税后基数 → 总比例 → 内部分配）。
@@ -76,7 +77,7 @@ const filtersQuerySchema = z.string().transform((s, ctx) => {
   return r.data;
 });
 
-/** 管理页列表 query：分页 + 成交日期范围（epoch ms）+ 交付日期范围 + 交付日期空否 + 状态（default/custom）+ q + payout 状态 + filters 动态条件组 */
+/** 管理页列表 query：分页 + 成交日期范围（epoch ms）+ 交付日期范围 + 交付日期空否 + 阶段 + 金额下限 + 状态（default/custom）+ q + payout 状态 + filters 动态条件组 */
 export const dealCommissionListQuerySchema = pageQuerySchema.extend({
   /** 成交日期范围（epoch ms） */
   startDate: z.coerce.number().int().optional(),
@@ -86,6 +87,10 @@ export const dealCommissionListQuerySchema = pageQuerySchema.extend({
   deliveryEndDate: z.coerce.number().int().optional(),
   /** 交付日期是否为空：empty=未填；notEmpty=已填（与交付日期范围叠加） */
   deliveryStatus: z.enum(["empty", "notEmpty"]).optional(),
+  /** 成交阶段等值过滤（gift/paid/refunded/closed） */
+  stage: dealStageSchema.optional(),
+  /** 成交金额下限（分）：amount_cents >= minAmountCents（「金额>0」传 1） */
+  minAmountCents: z.coerce.number().int().optional(),
   /** default=未配置（套默认方案）；custom=已配置 */
   status: z.enum(["default", "custom"]).optional(),
   /** v2：按成交是否存在该状态的 payout 过滤 */
