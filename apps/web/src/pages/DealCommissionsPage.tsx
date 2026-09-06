@@ -349,6 +349,16 @@ export function DealCommissionsPage() {
     }
   };
 
+  const refreshPayouts = async (row: DealCommissionDto) => {
+    try {
+      await api.post(`/deals/${row.dealId}/payouts/refresh`, {});
+      await invalidate();
+      showToast("已按当前分红池刷新待发 payout 金额");
+    } catch (err) {
+      showToast(err instanceof ApiError ? err.message : "刷新失败，请稍后重试");
+    }
+  };
+
   const revert = async (row: DealCommissionDto) => {
     try {
       await api.put(`/deals/${row.dealId}/commissions`, { items: [] });
@@ -595,6 +605,11 @@ export function DealCommissionsPage() {
                         <button type="button" onClick={() => setPayoutEditing(row)}>
                           配置 payout
                         </button>
+                        {row.payouts.some((p) => p.status === "pending") && (
+                          <button type="button" onClick={() => void refreshPayouts(row)}>
+                            刷新 payout
+                          </button>
+                        )}
                         {row.isCustomized && (
                           <button type="button" onClick={() => void revert(row)}>
                             还原

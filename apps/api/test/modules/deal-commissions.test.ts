@@ -756,4 +756,50 @@ describe("成交分成 v2：总比例三级回退 + 默认必含双人 + payout"
     const paid = await get("/api/v1/deals/commissions?payoutStatus=paid", cookie);
     expect(paid.json().meta.total).toBe(0);
   });
+
+  it("payout 刷新：POST /deals/:id/payouts/refresh 按当前分红池只重算待发期", async () => {
+    const { cookie } = await loginAsRole("admin");
+    const { data: d } = await createDealAsAdmin({
+      amountCents: 100000,
+      afterTaxRatio: 0.9,
+      deliveryDate: Date.UTC(2026, 6, 1),
+    });
+    const patched = await patch(`/api/v1/deals/${d.id}`, cookie, {
+      commissionRatio: 0.1,
+      updatedAt: d.updatedAt,
+    });
+    expect(patched.statusCode).toBe(200);
+    await put(`/api/v1/deals/${d.id}/payouts`, cookie, {
+      payouts: [
+        { seq: 1, payoutDate: Date.UTC(2026, 6, 1), rate: 0.5 },
+        { seq: 2, payoutDate: Date.UTC(2026, 9, 1), rate: 0.5 },
+      ],
+    });
+    await patch(`/api/v1/deals/${d.id}/payouts/1`, cookie, { status: "paid" });
+
+    // 修改成交金额 → 分红池变 18000；payout 金额是物化的，不刷新不变
+    const after = await patch(`/api/v1/deals/${d.id}`, cookie, {
+      amountCents: 200000,
+      updatedAt: patched.json().data.updatedAt,
+    });
+    expect(after.statusCode).toBe(200);
+
+    const res = await post(`/api/v1/deals/${d.id}/payouts/refresh`, cookie);
+    expect(res.statusCode).toBe(200);
+    const payouts = res.json().data;
+    // paid 期保留历史金额；pending 期重算为 round(18000 × 0.5) = 9000
+    expect(payouts[0]).toMatchObject({ seq: 1, amountCents: 4500, status: "paid" });
+    expect(payouts[1]).toMatchObject({ seq: 2, amountCents: 9000, status: "pending" });
+
+    // assistant 无 dealCommissions.update → 403
+    const { cookie: asst } = await loginAsRole("assistant");
+    expect((await post(`/api/v1/deals/${d.id}/payouts/refresh`, asst)).statusCode).toBe(403);
+
+    // 无 payout 的成交 → 200 空数组；不存在的成交 → 404
+    const { cookie: c2, data: d2 } = await createDealAsAdmin({ deliveryDate: Date.UTC(2026, 6, 1) });
+    const empty = await post(`/api/v1/deals/${d2.id}/payouts/refresh`, c2);
+    expect(empty.statusCode).toBe(200);
+    expect(empty.json().data).toEqual([]);
+    expect((await post("/api/v1/deals/99999/payouts/refresh", cookie)).statusCode).toBe(404);
+  });
 });

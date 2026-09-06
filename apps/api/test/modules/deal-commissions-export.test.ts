@@ -159,12 +159,12 @@ describe("GET /api/v1/deals/commissions/export.xlsx", () => {
     expect(dealWs.rowCount).toBe(2); // 表头 + 1
     const dealRow = dealWs.getRow(2);
     expect(cellByHeader(dealWs, dealRow, "客户")).toBe("客户甲");
-    expect(cellByHeader(dealWs, dealRow, "成交归属人")).toBeNull(); // 该客户未设归属人
+    expect(cellByHeader(dealWs, dealRow, "客户归属人")).toBeNull(); // 该客户未设归属人
     expect(cellByHeader(dealWs, dealRow, "成交产品")).toBe("咨询产品");
     expect(cellByHeader(dealWs, dealRow, "阶段")).toBe("已付款");
     expect(cellByHeader(dealWs, dealRow, "订单号")).toBe("ORD-EXP-1");
     expect(cellByHeader(dealWs, dealRow, "支付信息备注")).toBe("对公转账");
-    expect(cellByHeader(dealWs, dealRow, "负责人")).toBe("昵称-operator");
+    expect(cellByHeader(dealWs, dealRow, "成交人")).toBe("昵称-operator");
     expect(cellByHeader(dealWs, dealRow, "成交金额(元)")).toBe(1000);
     expect(cellByHeader(dealWs, dealRow, "税后比例")).toBe(0.9);
     expect(cellByHeader(dealWs, dealRow, "税后基数(元)")).toBe(900);
