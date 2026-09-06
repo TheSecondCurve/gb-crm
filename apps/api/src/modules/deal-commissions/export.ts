@@ -10,6 +10,8 @@ import ExcelJS from "exceljs";
 
 import { dealStageLabels, splitPayoutAmount } from "@gb-crm/shared";
 
+import { excelDate, excelDayText } from "../../lib/excel-date.js";
+
 import type { DealCommissionDto } from "./assemble.js";
 
 const DATE_FMT = "yyyy-mm-dd hh:mm";
@@ -52,7 +54,8 @@ const dateCol = (header: string, get: (row: DealCommissionDto) => number | null)
   width: 18,
   value: (row) => {
     const ts = get(row);
-    return ts === null ? null : new Date(ts);
+    // exceljs 日期单元格无时区概念（按 UTC 墙钟解读），统一转上海墙钟，与 UI 一致
+    return ts === null ? null : excelDate(ts);
   },
   numFmt: DATE_FMT,
 });
@@ -119,12 +122,8 @@ function collectParticipants(rows: readonly DealCommissionDto[]): Map<number, st
 /** 每人一列的表头：分成·昵称#id(元)（带 id 消歧，同人不同 nickname 也不撞列） */
 const participantHeader = (userId: number, nickname: string) => `分成·${nickname}#${userId}(元)`;
 
-const formatEpochDay = (ms: number | null | undefined): string => {
-  if (ms == null) return "";
-  const d = new Date(ms);
-  const pad = (n: number) => String(n).padStart(2, "0");
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
-};
+const formatEpochDay = (ms: number | null | undefined): string =>
+  ms == null ? "" : excelDayText(ms);
 
 function rangeText(start?: number | null, end?: number | null): string {
   if (start == null && end == null) return "全部";
@@ -189,8 +188,8 @@ export async function buildCommissionXlsx(
         row.customer?.nickname ?? null,
         row.customerOwner?.nickname ?? null,
         row.product?.name ?? null,
-        new Date(row.dealDate),
-        row.deliveryDate === null ? null : new Date(row.deliveryDate),
+        excelDate(row.dealDate),
+        row.deliveryDate === null ? null : excelDate(row.deliveryDate),
         row.owner?.nickname ?? null,
         row.orderNo,
         yuan(row.amountCents),
@@ -233,9 +232,9 @@ export async function buildCommissionXlsx(
           row.dealId,
           row.customer?.nickname ?? null,
           row.product?.name ?? null,
-          new Date(row.dealDate),
+          excelDate(row.dealDate),
           p.seq,
-          new Date(p.payoutDate),
+          excelDate(p.payoutDate),
           p.rate,
           yuan(p.amountCents),
           p.status === "paid" ? "已发" : "待发",
