@@ -472,6 +472,31 @@ describe("列表：阶段与金额下限筛选", () => {
   });
 });
 
+describe("列表：排序（sort/order）", () => {
+  it("sort=dealDate 倒序/正序；sort=amountCents 倒序 NULL 排尾；缺省按 updatedAt 倒序", async () => {
+    const { cookie } = await loginAsRole("admin");
+    const a = await createDealAsAdmin({ dealDate: Date.UTC(2026, 0, 1), amountCents: 100 });
+    const b = await createDealAsAdmin({ dealDate: Date.UTC(2026, 2, 1), amountCents: null });
+    const c = await createDealAsAdmin({ dealDate: Date.UTC(2026, 1, 1), amountCents: 300 });
+    const ids = (res: { json: () => { data: { dealId: number }[] } }) =>
+      res.json().data.map((r) => r.dealId);
+
+    const descRes = await get("/api/v1/deals/commissions?sort=dealDate&order=desc", cookie);
+    expect(ids(descRes)).toEqual([b.data.id, c.data.id, a.data.id]);
+
+    const ascRes = await get("/api/v1/deals/commissions?sort=dealDate&order=asc", cookie);
+    expect(ids(ascRes)).toEqual([a.data.id, c.data.id, b.data.id]);
+
+    // 金额倒序：NULL（未填）在 SQLite 中最小 → 排尾
+    const amt = await get("/api/v1/deals/commissions?sort=amountCents&order=desc", cookie);
+    expect(ids(amt)).toEqual([c.data.id, a.data.id, b.data.id]);
+
+    // 缺省保持旧行为：updatedAt 倒序（同刻按 id 倒序 → 后建在前）
+    const dflt = await get("/api/v1/deals/commissions", cookie);
+    expect(ids(dflt)).toEqual([c.data.id, b.data.id, a.data.id]);
+  });
+});
+
 describe("列表：动态筛选条件组（filters，AND/OR）", () => {
   const fp = (g: unknown) => `filters=${encodeURIComponent(JSON.stringify(g))}`;
 

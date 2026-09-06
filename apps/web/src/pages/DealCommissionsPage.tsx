@@ -231,6 +231,8 @@ export function DealCommissionsPage() {
   const [dealScope, setDealScope] = useState("effective");
   const [status, setStatus] = useState("");
   const [payoutStatus, setPayoutStatus] = useState("");
+  const [sort, setSort] = useState("dealDate");
+  const [order, setOrder] = useState<"asc" | "desc">("desc");
   const [q, setQ] = useState("");
   const [editing, setEditing] = useState<DealCommissionDto | null>(null);
   const [payoutEditing, setPayoutEditing] = useState<DealCommissionDto | null>(null);
@@ -251,6 +253,8 @@ export function DealCommissionsPage() {
       dealScope,
       status,
       payoutStatus,
+      sort,
+      order,
       filtersParam,
       q,
     ],
@@ -263,6 +267,8 @@ export function DealCommissionsPage() {
           ...scopeParams,
           status,
           payoutStatus,
+          sort,
+          order,
           filters: filtersParam,
           q,
         })}`,
@@ -336,6 +342,8 @@ export function DealCommissionsPage() {
       ...scopeParams,
       status,
       payoutStatus,
+      sort,
+      order,
       filters: filtersParam,
     })}`;
     const a = document.createElement("a");
@@ -413,6 +421,30 @@ export function DealCommissionsPage() {
             <option value="">全部 payout</option>
             <option value="pending">待发</option>
             <option value="paid">已发</option>
+          </select>
+          <select
+            aria-label="排序字段"
+            value={sort}
+            onChange={(e) => {
+              setSort(e.target.value);
+              setPage(1);
+            }}
+          >
+            <option value="dealDate">按成交日期</option>
+            <option value="deliveryDate">按交付日期</option>
+            <option value="amountCents">按成交金额</option>
+            <option value="updatedAt">按更新时间</option>
+          </select>
+          <select
+            aria-label="排序方向"
+            value={order}
+            onChange={(e) => {
+              setOrder(e.target.value as "asc" | "desc");
+              setPage(1);
+            }}
+          >
+            <option value="desc">倒序</option>
+            <option value="asc">正序</option>
           </select>
           <button type="button" onClick={exportXlsx}>
             导出 Excel

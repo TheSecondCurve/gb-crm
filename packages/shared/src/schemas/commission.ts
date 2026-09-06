@@ -23,6 +23,10 @@ export type DealCommissionPut = z.infer<typeof dealCommissionPutSchema>;
 
 // ---- 动态筛选条件组（成交分成管理页；dealDate/deliveryDate/productId + 全局 AND/OR）----
 
+/** 列表可排序字段（映射 deals 列，repo 层解析）；方向用 pageQuerySchema 的 order */
+export const commissionSortSchema = z.enum(["dealDate", "deliveryDate", "amountCents", "updatedAt"]);
+export type CommissionSort = z.infer<typeof commissionSortSchema>;
+
 /** 成交日期范围条件（epoch ms，单边可空；两边都空 = no-op） */
 const dealDateFilterRuleSchema = z.object({
   field: z.literal("dealDate"),
@@ -77,8 +81,10 @@ const filtersQuerySchema = z.string().transform((s, ctx) => {
   return r.data;
 });
 
-/** 管理页列表 query：分页 + 成交日期范围（epoch ms）+ 交付日期范围 + 交付日期空否 + 阶段 + 金额下限 + 状态（default/custom）+ q + payout 状态 + filters 动态条件组 */
+/** 管理页列表 query：分页 + 排序（sort/order，缺省 updatedAt）+ 成交日期范围（epoch ms）+ 交付日期范围 + 交付日期空否 + 阶段 + 金额下限 + 状态（default/custom）+ q + payout 状态 + filters 动态条件组 */
 export const dealCommissionListQuerySchema = pageQuerySchema.extend({
+  /** 排序字段（方向用 order=asc|desc，缺省 desc） */
+  sort: commissionSortSchema.optional(),
   /** 成交日期范围（epoch ms） */
   startDate: z.coerce.number().int().optional(),
   endDate: z.coerce.number().int().optional(),

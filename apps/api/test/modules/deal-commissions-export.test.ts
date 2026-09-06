@@ -135,6 +135,19 @@ describe("GET /api/v1/deals/commissions/export.xlsx", () => {
     });
     expect(cfg.statusCode).toBe(200);
 
+    // payout 两期：#1 标记已发、#2 待发（金额 = 分红池 9000 × 0.5 = 4500 分）
+    const pd1 = Date.UTC(2026, 7, 1);
+    const pd2 = Date.UTC(2026, 8, 1);
+    const pv = await put(`/api/v1/deals/${d.id}/payouts`, cookie, {
+      payouts: [
+        { seq: 1, payoutDate: pd1, rate: 0.5 },
+        { seq: 2, payoutDate: pd2, rate: 0.5 },
+      ],
+    });
+    expect(pv.statusCode).toBe(200);
+    const paid1 = await patch(`/api/v1/deals/${d.id}/payouts/1`, cookie, { status: "paid" });
+    expect(paid1.statusCode).toBe(200);
+
     const res = await get(XLSX_URL, cookie);
     expect(res.statusCode).toBe(200);
     expect(res.headers["content-type"]).toContain(XLSX_MIME);
@@ -170,6 +183,16 @@ describe("GET /api/v1/deals/commissions/export.xlsx", () => {
     // 分成人独立数值列：分成·昵称#id(元)，未参与 → null
     expect(cellByHeader(dealWs, dealRow, `分成·昵称-operator#${m1}(元)`)).toBe(5.4);
     expect(cellByHeader(dealWs, dealRow, `分成·昵称-operator#${m2}(元)`)).toBe(3.6);
+    // payout 逐周期列：#1 已发 / #2 待发
+    const p1Date = cellByHeader(dealWs, dealRow, "payout#1 日期");
+    expect(p1Date instanceof Date && (p1Date as Date).getTime()).toBe(pd1);
+    expect(cellByHeader(dealWs, dealRow, "payout#1 比例")).toBe(0.5);
+    expect(cellByHeader(dealWs, dealRow, "payout#1 金额(元)")).toBe(45);
+    expect(cellByHeader(dealWs, dealRow, "payout#1 状态")).toBe("已发");
+    expect(cellByHeader(dealWs, dealRow, "payout#2 日期") instanceof Date).toBe(true);
+    expect(cellByHeader(dealWs, dealRow, "payout#2 比例")).toBe(0.5);
+    expect(cellByHeader(dealWs, dealRow, "payout#2 金额(元)")).toBe(45);
+    expect(cellByHeader(dealWs, dealRow, "payout#2 状态")).toBe("待发");
 
     // —— Sheet2 参与方明细（成交 × 参与方长表）——
     const partyWs = await loadSheet(res.rawPayload, "参与方明细");
