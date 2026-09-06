@@ -38,6 +38,8 @@ export interface DealCommissionDto {
   owner: UserRef | null;
   stage: string;
   orderNo: string | null;
+  /** 支付信息备注（同 deals） */
+  paymentRemark: string | null;
   dealDate: number;
   /** 交付日期（可空） */
   deliveryDate: number | null;
@@ -160,6 +162,7 @@ export function assembleCommissionRows(
           : (userRefs.get(row.ownerId) ?? { id: row.ownerId, nickname: row.ownerNickname ?? "" }),
       stage: row.stage,
       orderNo: row.orderNo,
+      paymentRemark: row.paymentRemark,
       dealDate: row.dealDate,
       deliveryDate: row.deliveryDate,
       amountCents: row.amountCents,
