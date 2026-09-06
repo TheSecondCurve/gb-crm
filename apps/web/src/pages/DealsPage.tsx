@@ -6,7 +6,7 @@ import { api, ApiError } from "../api/client";
 import type { DealDto, ProductDto } from "../api/types";
 import { useAuth } from "../auth/AuthProvider";
 import { optionsOf } from "../columns/common";
-import { convertDealBody, dealColumns } from "../columns/deals";
+import { convertDealBody, DEAL_POOL_KEYS, dealColumns } from "../columns/deals";
 import { DataGrid, Pagination } from "../components/DataGrid/DataGrid";
 import { ConfirmDialog } from "../components/ConfirmDialog";
 import {
@@ -54,7 +54,12 @@ export function DealsPage() {
 
   /** POST/PATCH body 转换唯一实现见 columns/deals.convertDealBody（行内编辑 / 弹窗共用） */
   const patchRow = useCallback(async (id: number, body: Record<string, unknown>) => {
-    const res = await api.patch<{ data: DealDto }>(`/deals/${id}`, convertDealBody(body));
+    const converted = convertDealBody(body);
+    const res = await api.patch<{ data: DealDto }>(`/deals/${id}`, converted);
+    // payout 金额是物化的：分红池相关字段变更后静默刷新待发期（无待发期 no-op；失败不打断编辑）
+    if (DEAL_POOL_KEYS.some((k) => k in converted)) {
+      void api.post(`/deals/${id}/payouts/refresh`, {}).catch(() => {});
+    }
     return res!.data;
   }, []);
 

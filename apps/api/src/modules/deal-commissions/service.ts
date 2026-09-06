@@ -39,6 +39,7 @@ import {
   listLiveUserRefs,
   listPayoutsByDealIds,
   updateCommissionConfig,
+  updatePayoutAmount,
   updatePayoutStatus,
   upsertPayout,
   type CommissionItemRow,
@@ -281,6 +282,31 @@ export function setDealPayouts(
         status: "pending",
         paidAt: null,
         ...audit,
+      });
+    }
+    return listPayoutsByDealIds(tx, [dealId]).map(toPayoutDto);
+  });
+}
+
+/** 刷新 payout：待发期按当前分红池重算金额（已发期保留历史金额不动）；日期/比例/状态不变 */
+export function refreshDealPayouts(db: Db, dealId: number, ctx: AuditContext): DealPayoutDto[] {
+  return inTx(db, (tx) => {
+    const row = getCommissionJoinRow(tx, dealId);
+    if (!row || row.dealDeletedAt !== null) throw notFound("成交记录不存在");
+    const payouts = listPayoutsByDealIds(tx, [dealId]);
+    const pending = payouts.filter((p) => p.status === "pending");
+    if (pending.length === 0) return payouts.map(toPayoutDto);
+    const pool = poolCentsOf(tx, row);
+    if (pool === null) {
+      throw unprocessable("成交金额/税后比例缺失，无法刷新 payout 金额", [
+        { path: "payouts", message: "amount_cents 或 after_tax_ratio 为空" },
+      ]);
+    }
+    for (const p of pending) {
+      updatePayoutAmount(tx, dealId, p.seq, {
+        amountCents: Math.round(pool * p.rate),
+        updatedAt: ctx.now,
+        updatedBy: ctx.userId,
       });
     }
     return listPayoutsByDealIds(tx, [dealId]).map(toPayoutDto);

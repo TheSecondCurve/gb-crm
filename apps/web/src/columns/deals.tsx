@@ -89,6 +89,9 @@ export function convertDealBody(body: Record<string, unknown>): Record<string, u
   return next;
 }
 
+/** 分红池联动键：PATCH 携带这些键（键存在=SET）后，需联动刷新该成交的待发 payout 金额 */
+export const DEAL_POOL_KEYS = ["amountCents", "afterTaxRatio", "commissionRatio"] as const;
+
 const STAGE_TONES: Record<string, BadgeTone> = {
   paid: "accent",
   refunded: "muted",

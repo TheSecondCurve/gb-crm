@@ -269,6 +269,31 @@ describe("成交记录页", () => {
     });
   });
 
+  it("分红池字段（金额/税后比例/分成比例）变更后自动刷新待发 payout；其它字段不触发", async () => {
+    const calls = mockDealsApi(adminMe);
+    renderApp("/deals");
+    await screen.findByText("398.00");
+    const refreshCalls = () =>
+      calls.filter((c) => c.method === "POST" && c.url === "/api/v1/deals/1/payouts/refresh");
+
+    // 金额变更 → PATCH 成功后联动 POST payouts/refresh
+    fireEvent.doubleClick(cell(1, "amountCents"));
+    const amountInput = cell(1, "amountCents").querySelector("input")!;
+    fireEvent.change(amountInput, { target: { value: "500" } });
+    fireEvent.keyDown(amountInput, { key: "Tab" });
+    await waitFor(() => expect(refreshCalls()).toHaveLength(1));
+
+    // 非分红池字段（订单号）→ 不再触发刷新
+    fireEvent.doubleClick(cell(1, "orderNo"));
+    const orderInput = cell(1, "orderNo").querySelector("input")!;
+    fireEvent.change(orderInput, { target: { value: "ORD-002" } });
+    fireEvent.keyDown(orderInput, { key: "Tab" });
+    await waitFor(() => {
+      expect(calls.filter((c) => c.method === "PATCH" && c.url === "/api/v1/deals/1")).toHaveLength(2);
+    });
+    expect(refreshCalls()).toHaveLength(1);
+  });
+
   it("金额非法输入：toast 报错且不发 PATCH（不静默清库）", async () => {
     const calls = mockDealsApi(adminMe);
     renderApp("/deals");
