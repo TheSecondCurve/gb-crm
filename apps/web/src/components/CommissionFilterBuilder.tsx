@@ -57,17 +57,19 @@ function serializeRule(rule: FilterRuleState): CommissionFilterRule | null {
       : { field: "productId", op: "in", ids: [...rule.productIds] };
   }
   if (rule.op === "empty" || rule.op === "notEmpty") {
-    return { field: rule.field, op: rule.op };
+    // 空否仅交付日期支持（dealDate 恒为 between，UI 不渲染该选项）
+    return rule.field === "deliveryDate" ? { field: "deliveryDate", op: rule.op } : null;
   }
   const from = dateToEpochMs(rule.start);
   const end = dateToEpochMs(rule.end);
   if (from === null && end === null) return null;
-  return {
-    field: rule.field,
-    op: "between",
+  const range = {
     ...(from === null ? {} : { from }),
     ...(end === null ? {} : { to: end + DAY_TAIL_MS }),
   };
+  return rule.field === "dealDate"
+    ? { field: "dealDate", op: "between", ...range }
+    : { field: "deliveryDate", op: "between", ...range };
 }
 
 /** UI 态 → filters query 字符串；无有效规则 → undefined */
