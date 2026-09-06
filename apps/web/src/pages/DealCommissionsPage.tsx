@@ -12,9 +12,14 @@ import type {
   UserDto,
 } from "../api/types";
 import { useAuth } from "../auth/AuthProvider";
-import { badge, centsToYuan, dateToEpochMs, enumBadge, epochMsToDate, type BadgeTone } from "../columns/common";
+import { badge, centsToYuan, enumBadge, epochMsToDate, type BadgeTone } from "../columns/common";
 import { Pagination } from "../components/DataGrid/DataGrid";
 import { CommissionFormModal } from "../components/CommissionFormModal";
+import {
+  CommissionFilterBuilder,
+  defaultCommissionFilters,
+  serializeCommissionFilters,
+} from "../components/CommissionFilterBuilder";
 import { PayoutFormModal } from "../components/PayoutFormModal";
 import { useToast } from "../components/Toast";
 
@@ -221,23 +226,15 @@ export function DealCommissionsPage() {
   const queryClient = useQueryClient();
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(25);
-  const [startDate, setStartDate] = useState("");
-  const [endDate, setEndDate] = useState("");
-  const [deliveryStartDate, setDeliveryStartDate] = useState("");
-  const [deliveryEndDate, setDeliveryEndDate] = useState("");
-  const [deliveryStatus, setDeliveryStatus] = useState("notEmpty");
+  const [filterBuilder, setFilterBuilder] = useState(defaultCommissionFilters);
   const [status, setStatus] = useState("");
   const [payoutStatus, setPayoutStatus] = useState("");
   const [q, setQ] = useState("");
   const [editing, setEditing] = useState<DealCommissionDto | null>(null);
   const [payoutEditing, setPayoutEditing] = useState<DealCommissionDto | null>(null);
 
-  const startMs = dateToEpochMs(startDate) ?? undefined;
-  const endMs = dateToEpochMs(endDate);
-  const endMsInclusive = endMs === null ? undefined : endMs + 86399999;
-  const deliveryStartMs = dateToEpochMs(deliveryStartDate) ?? undefined;
-  const deliveryEndMs = dateToEpochMs(deliveryEndDate);
-  const deliveryEndMsInclusive = deliveryEndMs === null ? undefined : deliveryEndMs + 86399999;
+  // 动态条件组 → filters query（无有效规则 → undefined 不带）；不完整规则在序列化时跳过
+  const filtersParam = serializeCommissionFilters(filterBuilder);
 
   const { data, isLoading } = useQuery({
     queryKey: [
@@ -247,11 +244,7 @@ export function DealCommissionsPage() {
       pageSize,
       status,
       payoutStatus,
-      startMs,
-      endMsInclusive,
-      deliveryStartMs,
-      deliveryEndMsInclusive,
-      deliveryStatus,
+      filtersParam,
       q,
     ],
     queryFn: async () =>
@@ -261,11 +254,7 @@ export function DealCommissionsPage() {
           pageSize,
           status,
           payoutStatus,
-          startDate: startMs,
-          endDate: endMsInclusive,
-          deliveryStartDate: deliveryStartMs,
-          deliveryEndDate: deliveryEndMsInclusive,
-          deliveryStatus,
+          filters: filtersParam,
           q,
         })}`,
       )) ?? { data: [], meta: { total: 0 } },
@@ -330,17 +319,13 @@ export function DealCommissionsPage() {
     }
   };
 
-  // 导出 Excel：跟随当前日期范围/状态/payout 状态/搜索（与列表同一 WHERE），同源 attachment 下载
+  // 导出 Excel：跟随当前动态条件组/状态/payout 状态/搜索（与列表同一 WHERE），同源 attachment 下载
   const exportXlsx = () => {
     const href = `/api/v1/deals/commissions/export.xlsx${buildQuery({
       q,
       status,
       payoutStatus,
-      startDate: startMs,
-      endDate: endMsInclusive,
-      deliveryStartDate: deliveryStartMs,
-      deliveryEndDate: deliveryEndMsInclusive,
-      deliveryStatus,
+      filters: filtersParam,
     })}`;
     const a = document.createElement("a");
     a.href = href;
@@ -364,62 +349,13 @@ export function DealCommissionsPage() {
               setPage(1);
             }}
           />
-          <span className="filter-group">
-            <label>成交日期</label>
-            <input
-              aria-label="成交日期开始"
-              type="date"
-              value={startDate}
-              onChange={(e) => {
-                setStartDate(e.target.value);
-                setPage(1);
-              }}
-            />
-            <span>~</span>
-            <input
-              aria-label="成交日期结束"
-              type="date"
-              value={endDate}
-              onChange={(e) => {
-                setEndDate(e.target.value);
-                setPage(1);
-              }}
-            />
-          </span>
-          <span className="filter-group">
-            <label>交付日期</label>
-            <select
-              aria-label="交付日期空否"
-              value={deliveryStatus}
-              onChange={(e) => {
-                setDeliveryStatus(e.target.value);
-                setPage(1);
-              }}
-            >
-              <option value="notEmpty">已填</option>
-              <option value="empty">未填</option>
-              <option value="">全部</option>
-            </select>
-            <input
-              aria-label="交付日期开始"
-              type="date"
-              value={deliveryStartDate}
-              onChange={(e) => {
-                setDeliveryStartDate(e.target.value);
-                setPage(1);
-              }}
-            />
-            <span>~</span>
-            <input
-              aria-label="交付日期结束"
-              type="date"
-              value={deliveryEndDate}
-              onChange={(e) => {
-                setDeliveryEndDate(e.target.value);
-                setPage(1);
-              }}
-            />
-          </span>
+          <CommissionFilterBuilder
+            value={filterBuilder}
+            onChange={(next) => {
+              setFilterBuilder(next);
+              setPage(1);
+            }}
+          />
           <select
             aria-label="分成状态"
             value={status}
