@@ -375,6 +375,19 @@ export function updatePayoutStatus(
     .run();
 }
 
+/** 重算 payout 金额（刷新）：只更新 amount_cents + 审计字段，日期/比例/状态不动 */
+export function updatePayoutAmount(
+  db: Db,
+  dealId: number,
+  seq: number,
+  set: { amountCents: number; updatedAt: number; updatedBy: number | null },
+): void {
+  db.update(dealPayouts)
+    .set(set)
+    .where(and(eq(dealPayouts.dealId, dealId), eq(dealPayouts.seq, seq)))
+    .run();
+}
+
 /** upsert 一条 payout（deal_id+seq 唯一） */
 export function upsertPayout(
   db: Db,

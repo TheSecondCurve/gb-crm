@@ -19,6 +19,7 @@ import {
   listCommissionResult,
   listPayoutResult,
   patchDealPayoutStatus,
+  refreshDealPayouts,
   setDealCommission,
   setDealPayouts,
 } from "./service.js";
@@ -118,6 +119,16 @@ export function dealCommissionsRoutes(app: FastifyInstance, opts: DealCommission
     id: z.coerce.number().int().positive(),
     seq: z.coerce.number().int().min(1).max(2),
   });
+
+  // 刷新 payout：待发期按当前分红池重算金额（已发期不动），日期/比例/状态不变
+  app.post(
+    "/api/v1/deals/:id/payouts/refresh",
+    { preHandler: requireCan("dealCommissions", "update") },
+    async (req) => {
+      const { id } = dealIdParamSchema.parse(req.params);
+      return { data: refreshDealPayouts(db, id, auditCtx(req)) };
+    },
+  );
 
   app.patch(
     "/api/v1/deals/:id/payouts/:seq",
