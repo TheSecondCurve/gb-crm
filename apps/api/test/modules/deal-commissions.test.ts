@@ -104,6 +104,29 @@ describe("RBAC（dealCommissions 资源，K56）", () => {
   });
 });
 
+describe("DTO 展示字段", () => {
+  it("列表/单条 DTO 携带成交阶段/订单号/支付信息备注", async () => {
+    const { cookie } = await loginAsRole("admin");
+    const { data: d } = await createDealAsAdmin({
+      stage: "paid",
+      orderNo: "ORD-DISPLAY",
+      paymentRemark: "对公转账",
+    });
+    const one = await get(`/api/v1/deals/${d.id}/commissions`, cookie);
+    expect(one.statusCode).toBe(200);
+    expect(one.json().data.stage).toBe("paid");
+    expect(one.json().data.orderNo).toBe("ORD-DISPLAY");
+    expect(one.json().data.paymentRemark).toBe("对公转账");
+
+    const list = await get(`/api/v1/deals/commissions?q=ORD-DISPLAY`, cookie);
+    expect(list.statusCode).toBe(200);
+    const row = list.json().data[0];
+    expect(row.stage).toBe("paid");
+    expect(row.orderNo).toBe("ORD-DISPLAY");
+    expect(row.paymentRemark).toBe("对公转账");
+  });
+});
+
 describe("默认方案（system_configs commissionDefault）", () => {
   it("无默认方案 → 未配置成交 items 为空、total 0、isCustomized=false", async () => {
     const { cookie } = await loginAsRole("admin");

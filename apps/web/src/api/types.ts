@@ -222,6 +222,8 @@ export interface DealCommissionDto {
   owner: UserRefDto | null;
   stage: string;
   orderNo: string | null;
+  /** 支付信息备注（同 deals） */
+  paymentRemark: string | null;
   dealDate: number;
   /** 交付日期（可空） */
   deliveryDate: number | null;
