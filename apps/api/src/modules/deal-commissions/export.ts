@@ -1,12 +1,14 @@
 // deal-commissions 导出 xlsx（K56）：以「成交」为粒度，覆盖 原金额→税后比例→税后基数→参与方比例→分成金额 全链路。
-// 三个 sheet：
+// 四个 sheet：
 //   1)「成交明细」：每笔成交一行，固定列 + 每个分成人一列「分成·昵称#id(元)」（未参与留空，便于 SUM/透视）；
 //   2)「参与方明细」：每笔成交 × 每个参与方一行（长表，供 Excel pivot/透视求和）；
-//   3)「统计」：范围内汇总（成交笔数/原金额合计/税后基数合计/总分成合计/去重参与人数）+ 按参与人小计。
+//   3)「Payout 明细」：每笔成交 × 每个 payout 期 × 每个参与方一行——每人每期金额 = splitPayoutAmount(期金额, 参与方)
+//      （round(期金额×分配比例)，尾差兜底最大份额人；与 Web payout 编辑器预览同一推导）；
+//   4)「统计」：范围内汇总 + 按参与人小计 + 按期×参与人小计（待发/已发/合计）。
 // 金额一律 分 → 元（÷100）；时间戳写 Date 单元格 + numFmt。与 customers/export.ts 同风格（exceljs，零新依赖）。
 import ExcelJS from "exceljs";
 
-import { dealStageLabels } from "@gb-crm/shared";
+import { dealStageLabels, splitPayoutAmount } from "@gb-crm/shared";
 
 import type { DealCommissionDto } from "./assemble.js";
 
@@ -207,7 +209,50 @@ export async function buildCommissionXlsx(
   partySheet.getRow(1).font = { bold: true };
   partySheet.views = [{ state: "frozen", ySplit: 1 }];
 
-  // Sheet3「统计」：范围内汇总 + 按参与人小计
+  // Sheet3「Payout 明细」：成交 × payout 期 × 参与方（每人每期金额，长表，供按支付日期/参与人透视）
+  const payoutSheet = workbook.addWorksheet("Payout 明细");
+  payoutSheet.columns = [
+    { header: "成交ID", width: 8 },
+    { header: "客户", width: 16 },
+    { header: "成交产品", width: 16 },
+    { header: "成交日期", width: 18 },
+    { header: "期次", width: 6 },
+    { header: "支付日期", width: 18 },
+    { header: "期比例", width: 10 },
+    { header: "期金额(元)", width: 12 },
+    { header: "状态", width: 8 },
+    { header: "参与人ID", width: 10 },
+    { header: "参与人", width: 14 },
+    { header: "分配比例", width: 10 },
+    { header: "本期金额(元)", width: 14 },
+  ];
+  for (const row of rows) {
+    for (const p of row.payouts) {
+      for (const share of splitPayoutAmount(p.amountCents, row.items)) {
+        const excelRow = payoutSheet.addRow([
+          row.dealId,
+          row.customer?.nickname ?? null,
+          row.product?.name ?? null,
+          new Date(row.dealDate),
+          p.seq,
+          new Date(p.payoutDate),
+          p.rate,
+          yuan(p.amountCents),
+          p.status === "paid" ? "已发" : "待发",
+          share.userId,
+          row.items.find((it) => it.userId === share.userId)?.nickname ?? `#${share.userId}`,
+          share.percentage,
+          yuan(share.amountCents),
+        ]);
+        excelRow.getCell(4).numFmt = DATE_FMT;
+        excelRow.getCell(6).numFmt = DATE_FMT;
+      }
+    }
+  }
+  payoutSheet.getRow(1).font = { bold: true };
+  payoutSheet.views = [{ state: "frozen", ySplit: 1 }];
+
+  // Sheet4「统计」：范围内汇总 + 按参与人小计
   const statSheet = workbook.addWorksheet("统计");
   const dealCount = rows.length;
   const withCommissions = rows.filter((r) => r.items.length > 0).length;
@@ -252,6 +297,38 @@ export async function buildCommissionXlsx(
       yuan(p.amount),
       sumTotal === null || sumTotal === 0 ? "—" : `${((p.amount / sumTotal) * 100).toFixed(1)}%`,
     ]);
+  }
+
+  // 按期 × 参与人小计：回答「第 N 期分别给每人多少钱」（待发/已发/合计）
+  const seqs = [...new Set(rows.flatMap((r) => r.payouts.map((p) => p.seq)))].sort(
+    (a, b) => a - b,
+  );
+  for (const seq of seqs) {
+    const bySeqUser = new Map<number, { name: string; pending: number; paid: number }>();
+    for (const row of rows) {
+      const payout = row.payouts.find((p) => p.seq === seq);
+      if (!payout) continue;
+      for (const share of splitPayoutAmount(payout.amountCents, row.items)) {
+        const entry = bySeqUser.get(share.userId) ?? {
+          name: row.items.find((it) => it.userId === share.userId)?.nickname ?? `#${share.userId}`,
+          pending: 0,
+          paid: 0,
+        };
+        entry[payout.status] += share.amountCents;
+        bySeqUser.set(share.userId, entry);
+      }
+    }
+    if (bySeqUser.size === 0) continue;
+    statSheet.addRow([]);
+    statSheet.addRow([`第 ${seq} 期 Payout 小计`]);
+    statSheet.getRow(statSheet.rowCount).font = { bold: true };
+    statSheet.addRow(["参与人", "待发(元)", "已发(元)", "合计(元)"]);
+    const seqRows = [...bySeqUser.values()].sort(
+      (a, b) => b.pending + b.paid - (a.pending + a.paid),
+    );
+    for (const e of seqRows) {
+      statSheet.addRow([e.name, yuan(e.pending), yuan(e.paid), yuan(e.pending + e.paid)]);
+    }
   }
 
   const out = await workbook.xlsx.writeBuffer();

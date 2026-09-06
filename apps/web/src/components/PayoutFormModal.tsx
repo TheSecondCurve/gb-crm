@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react";
 
-import type { DealPayoutDto } from "../api/types";
+import { splitPayoutAmount } from "@gb-crm/shared";
+
+import type { CommissionItemDto, DealPayoutDto } from "../api/types";
 import { epochMsToDate, dateToEpochMs } from "../columns/common";
 import { Modal } from "./Modal";
 
@@ -16,6 +18,10 @@ interface PayoutFormModalProps {
   title: string;
   /** 已有 payout（可为空） */
   initialPayouts: DealPayoutDto[];
+  /** 分成人明细（每人每期预览用） */
+  items: CommissionItemDto[];
+  /** 分红池（分）；null = 不可算，预览显示占位 */
+  poolAmountCents: number | null;
   busy: boolean;
   onClose: () => void;
   onSubmit: (payouts: { seq: 1 | 2; payoutDate: number; rate: number }[]) => Promise<void>;
@@ -24,6 +30,8 @@ interface PayoutFormModalProps {
 export function PayoutFormModal({
   title,
   initialPayouts,
+  items,
+  poolAmountCents,
   busy,
   onClose,
   onSubmit,
@@ -116,6 +124,43 @@ export function PayoutFormModal({
           ))}
         </tbody>
       </table>
+      {items.length > 0 && slots.length > 0 && (
+        <>
+          <p style={{ fontSize: 13, marginBottom: 4 }}>每人每期金额预览</p>
+          {poolAmountCents === null ? (
+            <p style={{ fontSize: 13 }}>分红池不可算（成交金额/税后比例缺失），保存后金额将由服务端计算。</p>
+          ) : (
+            <table className="settings-form">
+              <thead>
+                <tr>
+                  <th style={{ textAlign: "left" }}>参与人</th>
+                  <th style={{ textAlign: "left" }}>比例</th>
+                  {slots.map((s) => (
+                    <th key={s.seq} style={{ textAlign: "left" }}>
+                      第 {s.seq} 期
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {items.map((it) => (
+                  <tr key={it.userId}>
+                    <td>{it.nickname ?? `#${it.userId}`}</td>
+                    <td>{(it.percentage * 100).toFixed(1)}%</td>
+                    {slots.map((s) => {
+                      const slotAmount = Math.round(poolAmountCents * (s.rate / 100));
+                      const share = splitPayoutAmount(slotAmount, items).find(
+                        (x) => x.userId === it.userId,
+                      );
+                      return <td key={s.seq}>¥{((share?.amountCents ?? 0) / 100).toFixed(2)}</td>;
+                    })}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </>
+      )}
       <div className="card-footer" style={{ marginTop: 12 }}>
         <button type="button" onClick={() => addSlot(1)} disabled={slots.some((s) => s.seq === 1)}>
           加第 1 期

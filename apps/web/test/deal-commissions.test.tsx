@@ -394,6 +394,13 @@ describe("成交分成页", () => {
 
     fireEvent.click(screen.getAllByRole("button", { name: "配置 payout" })[1]!);
     const dialog = await screen.findByRole("dialog", { name: /配置 payout/ });
+    // 每人每期预览：分红池 ¥90 × 50% = ¥45/期；老王 6% → ¥2.70、小李 4% → ¥1.80
+    expect(within(dialog).getByText("每人每期金额预览")).toBeTruthy();
+    const wangRow = within(dialog).getByText("老王").closest("tr")!;
+    expect(within(wangRow).getByText("6.0%")).toBeTruthy();
+    expect(within(wangRow).getByText("¥2.70")).toBeTruthy();
+    const liRow = within(dialog).getByText("小李").closest("tr")!;
+    expect(within(liRow).getByText("¥1.80")).toBeTruthy();
     fireEvent.click(within(dialog).getByRole("button", { name: "保存" }));
     await waitFor(() => {
       const put = calls.find((c) => c.method === "PUT" && c.url === "/api/v1/deals/2/payouts");
