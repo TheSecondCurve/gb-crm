@@ -42,27 +42,18 @@ function itemText(it: CommissionItemDto): string {
   return `${it.nickname ?? `#${it.userId}`} ${percentText(it.percentage)}(${showAmount(it.amountCents)})`;
 }
 
-/** 参与方徽章列表（空 → —） */
-function participantBadges(items: CommissionItemDto[]): ReactNode {
+/** 参与方徽章列表（含成交负责人，负责人徽章 accent 高亮；空 → —） */
+function participantBadges(items: CommissionItemDto[], ownerId: number | undefined): ReactNode {
   if (items.length === 0) return "—";
   return (
     <span className="inline-badges">
       {items.map((it) => (
-        <span key={it.userId}>{badge(itemText(it), "plain")}</span>
+        <span key={it.userId} title={it.userId === ownerId ? "成交负责人" : undefined}>
+          {badge(itemText(it), it.userId === ownerId ? "accent" : "plain")}
+        </span>
       ))}
     </span>
   );
-}
-
-/** 负责人分成：按 deals.owner_id 在明细里找到对应人的比例+金额；负责人未参与 → — */
-function ownerSplitText(row: DealCommissionDto): string {
-  const item = row.items.find((it) => it.userId === row.owner?.id);
-  return item ? `${percentText(item.percentage)}(${showAmount(item.amountCents)})` : "—";
-}
-
-/** payout 徽章文本：日期 比例(金额 状态) */
-function payoutText(p: DealPayoutDto): string {
-  return `${epochMsToDate(p.payoutDate)} ${percentText(p.rate)}(${showAmount(p.amountCents)} ${p.status === "paid" ? "已发" : "待发"})`;
 }
 
 function CommissionDefaultEditor() {
@@ -388,7 +379,7 @@ export function DealCommissionsPage() {
     a.click();
   };
 
-  const COLUMN_COUNT = canUpdate ? 19 : 18;
+  const COLUMN_COUNT = canUpdate ? 14 : 13;
 
   return (
     <>
@@ -518,7 +509,7 @@ export function DealCommissionsPage() {
       <div className="card">
         <div className="card-body-flush">
           <div className="data-grid-scroll">
-            <table className="data-table" aria-busy={isLoading}>
+            <table className="data-table data-grid-table" aria-busy={isLoading}>
               <thead>
               <tr>
                 <th>客户</th>
@@ -530,16 +521,10 @@ export function DealCommissionsPage() {
                 <th>交付日期</th>
                 <th>负责人</th>
                 <th>成交金额</th>
-                <th>税后基数</th>
-                <th>总比例</th>
                 <th>分红池</th>
-                <th>负责人分成</th>
-                <th>其他参与方</th>
-                <th>内部分配</th>
-                <th>总分成</th>
+                <th>分成明细</th>
                 <th>payout</th>
                 <th>支付信息备注</th>
-                <th>状态</th>
                 {canUpdate && <th style={{ width: 180 }}>操作</th>}
               </tr>
             </thead>
@@ -562,40 +547,51 @@ export function DealCommissionsPage() {
                   <td>{row.deliveryDate === null ? "—" : epochMsToDate(row.deliveryDate)}</td>
                   <td>{row.owner ? row.owner.nickname : "—"}</td>
                   <td>{showAmount(row.amountCents)}</td>
-                  <td>{showAmount(row.baseAmountCents)}</td>
-                  <td>{percentText(row.totalRatio)}</td>
-                  <td>{showAmount(row.poolAmountCents)}</td>
-                  <td>{ownerSplitText(row)}</td>
-                  <td>{participantBadges(row.items.filter((it) => it.userId !== row.owner?.id))}</td>
-                  <td>{percentText(row.totalPercentage)}</td>
-                  <td>{showAmount(row.totalAmountCents)}</td>
+                  <td>
+                    <span className="cell-stack">
+                      <span>{showAmount(row.poolAmountCents)}</span>
+                      <span className="cell-sub">
+                        {showAmount(row.baseAmountCents)} × {percentText(row.totalRatio)}
+                      </span>
+                    </span>
+                  </td>
+                  <td>
+                    <span className="cell-stack">
+                      {participantBadges(row.items, row.owner?.id)}
+                      <span className="cell-sub">
+                        合计 {percentText(row.totalPercentage)} = {showAmount(row.totalAmountCents)}{" "}
+                        {badge(row.isCustomized ? "已配置" : "默认", row.isCustomized ? "accent" : "muted")}
+                      </span>
+                    </span>
+                  </td>
                   <td>
                     {row.payouts.length === 0 ? (
                       "—"
                     ) : (
-                      <span className="inline-badges">
+                      <span className="cell-stack">
                         {row.payouts.map((p) => (
-                          <span key={p.seq}>
+                          <span key={p.seq} className="payout-line">
                             <span>
-                              {badge(payoutText(p), p.status === "paid" ? "accent" : "muted")}
-                              {canUpdate && (
-                                <button
-                                  type="button"
-                                  className="btn-small"
-                                  aria-label={`切换第 ${p.seq} 期状态`}
-                                  onClick={() => void togglePayoutStatus(row, p)}
-                                >
-                                  {p.status === "paid" ? "置待发" : "置已发"}
-                                </button>
-                              )}
+                              {p.seq}期 {epochMsToDate(p.payoutDate)} {percentText(p.rate)}{" "}
+                              {showAmount(p.amountCents)}
                             </span>
+                            {badge(p.status === "paid" ? "已发" : "待发", p.status === "paid" ? "accent" : "muted")}
+                            {canUpdate && (
+                              <button
+                                type="button"
+                                className="btn-small"
+                                aria-label={`切换第 ${p.seq} 期状态`}
+                                onClick={() => void togglePayoutStatus(row, p)}
+                              >
+                                {p.status === "paid" ? "置待发" : "置已发"}
+                              </button>
+                            )}
                           </span>
                         ))}
                       </span>
                     )}
                   </td>
                   <td>{row.paymentRemark ?? "—"}</td>
-                  <td>{badge(row.isCustomized ? "已配置" : "默认", row.isCustomized ? "accent" : "muted")}</td>
                   {canUpdate && (
                     <td>
                       <span className="row-actions">

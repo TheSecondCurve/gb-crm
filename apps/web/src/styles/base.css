@@ -140,6 +140,20 @@ button:disabled { color: var(--text-3); cursor: not-allowed; }
 /* K51：失败/部分失败状态（冷漆红加粗） */
 .badge-danger { border-color: var(--accent); color: var(--accent); font-weight: 600; }
 
+/* 格内横排徽章列表（成交分成页参与方） */
+.inline-badges { display: inline-flex; flex-wrap: wrap; gap: 4px; align-items: center; }
+
+/* 格内双行排版（成交分成页：主行 + 次级说明行） */
+.cell-stack { display: inline-flex; flex-direction: column; gap: 2px; }
+
+.cell-sub { font-size: 12px; color: var(--text-3); }
+
+/* payout 每期一行：日期比例金额 + 状态徽章 + 小按钮 */
+.payout-line { display: flex; align-items: center; gap: 6px; }
+
+/* 格内小按钮（payout 置已发/置待发） */
+.btn-small { padding: 1px 8px; font-size: 12px; border-radius: 999px; white-space: nowrap; }
+
 /* K51：后台任务进度条 */
 .progress-track { height: 8px; border-radius: 999px; background: var(--hairline); overflow: hidden; min-width: 80px; }
 .progress-fill { height: 100%; background: var(--accent); border-radius: 999px; transition: width 0.3s; }
@@ -222,7 +236,7 @@ button:disabled { color: var(--text-3); cursor: not-allowed; }
 
 .row-disabled td { color: var(--text-3); background: var(--bg); }
 
-.row-actions { display: flex; gap: 8px; align-items: center; }
+.row-actions { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
 
 .row-actions button { padding: 5px 10px; font-size: 13px; }
 
@@ -319,8 +333,8 @@ select:focus, textarea:focus { outline: 1px solid var(--ink); }
 
 /* ---- PR 9 DataGrid：Excel 式表格（快照无此组件） ---- */
 
-/* 覆盖快照的行点击语义（design.md §7.1）：单击只选中，不进入编辑 */
-.data-grid tbody tr { cursor: default; }
+/* 覆盖快照的行点击语义（design.md §7.1）：单击只选中，不进入编辑；裸用 data-grid-table 的页面（成交分成）行同样不可点 */
+.data-grid tbody tr, .data-grid-scroll tbody tr { cursor: default; }
 
 /* 全部列默认展示，超出宽度时底部横向滚动；同时成为竖向滚动容器，配合表头吸顶 */
 .data-grid-scroll { overflow: auto; max-height: calc(100dvh - 210px); }
