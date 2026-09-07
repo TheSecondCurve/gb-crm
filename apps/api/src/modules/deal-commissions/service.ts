@@ -258,11 +258,6 @@ export function setDealPayouts(
   return inTx(db, (tx) => {
     const row = getCommissionJoinRow(tx, dealId);
     if (!row || row.dealDeletedAt !== null) throw notFound("成交记录不存在");
-    if (row.deliveryDate === null) {
-      throw unprocessable("交付日期为空，无法设置 payout（完成交付后才计算分红）", [
-        { path: "payouts", message: "delivery_date 为空" },
-      ]);
-    }
     const pool = poolCentsOf(tx, row);
     if (pool === null) {
       throw unprocessable("成交金额/税后比例缺失，无法计算 payout 金额", [
