@@ -165,17 +165,19 @@ describe("成交分成页", () => {
     expect(screen.getAllByText("2026-09-01").length).toBeGreaterThan(0);
     expect(screen.getAllByText("老王").length).toBeGreaterThan(0);
     expect(screen.getAllByText("小李").length).toBeGreaterThan(0); // 客户归属人 + 参与方
-    // 总比例 / 分红池 / 税后基数（两行相同）
-    expect(screen.getAllByText("10.0%").length).toBeGreaterThan(0);
+    // 分红池列：主行分红池金额 + 次级行（税后基数 × 总比例），两行相同
     expect(screen.getAllByText("¥90.00").length).toBeGreaterThan(0); // 分红池
-    expect(screen.getAllByText("¥900.00").length).toBeGreaterThan(0); // 税后基数
-    // 未配置行：默认 badge + 负责人分成 + 其他参与方
-    expect(screen.getByText("默认")).toBeTruthy();
-    expect(screen.getAllByText("6.0%(¥5.40)").length).toBeGreaterThan(0); // 负责人分成
+    expect(screen.getAllByText("¥900.00 × 10.0%").length).toBeGreaterThan(0); // 税后基数 × 总比例
+    // 分成明细列：负责人徽章（accent 高亮）+ 其他参与方 + 合计/状态次级行
+    expect(screen.getAllByText("老王 6.0%(¥5.40)").length).toBeGreaterThan(0); // 负责人
     expect(screen.getAllByText("小李 4.0%(¥3.60)").length).toBeGreaterThan(0); // 其他参与方
-    // 已配置行：payout 显示（金额=分红池×rate=¥45.00 待发）
+    expect(screen.getAllByText(/合计 10\.0% = ¥9\.00/).length).toBeGreaterThan(0); // 内部分配合计 = 总分成
+    // 未配置行：默认 badge（分成明细次级行内）
+    expect(screen.getByText("默认")).toBeTruthy();
+    // 已配置行：已配置 badge + payout 每期一行（金额=分红池×rate=¥45.00 待发）
     expect(screen.getAllByText("已配置").length).toBeGreaterThan(0);
-    expect(screen.getByText(/2026-09-01 50\.0%\(¥45\.00 待发\)/)).toBeTruthy();
+    expect(screen.getByText(/1期 2026-09-01 50\.0% ¥45\.00/)).toBeTruthy();
+    expect(screen.getAllByText("待发").length).toBeGreaterThan(0);
     // admin 可见默认方案编辑器
     expect(screen.getByText("默认分成方案")).toBeTruthy();
   });

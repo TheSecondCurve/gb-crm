@@ -682,7 +682,7 @@ describe("成交分成 v2：总比例三级回退 + 默认必含双人 + payout"
     expect(ownerItem.amountCents).toBe(0);
   });
 
-  it("payout PUT：金额=round(分红池×rate)、交付日期为空 → 422、[] 清空", async () => {
+  it("payout PUT：金额=round(分红池×rate)、交付日期为空也可设置、[] 清空", async () => {
     const { cookie } = await loginAsRole("admin");
     const { data: d } = await createDealAsAdmin({
       amountCents: 100000,
@@ -703,14 +703,22 @@ describe("成交分成 v2：总比例三级回退 + 默认必含双人 + payout"
     expect(payouts[0]).toMatchObject({ seq: 1, rate: 0.5, amountCents: 4500, status: "pending" });
     expect(payouts[1]).toMatchObject({ seq: 2, rate: 0.5, amountCents: 4500, status: "pending" });
 
-    // 交付日期为空 → 422
+    // 交付日期为空也可设置（K56 调整：不再要求交付日期非空）
     const d2 = (
-      await post("/api/v1/deals", cookie, { customerId: seedCustomer(tmp.db, "无交付"), dealDate: clock.t })
+      await post("/api/v1/deals", cookie, {
+        customerId: seedCustomer(tmp.db, "无交付"),
+        amountCents: 100000,
+        afterTaxRatio: 0.9,
+        dealDate: clock.t,
+      })
     ).json().data;
-    expect(
-      (await put(`/api/v1/deals/${d2.id}/payouts`, cookie, { payouts: [{ seq: 1, payoutDate: clock.t, rate: 1 }] }))
-        .statusCode,
-    ).toBe(422);
+    expect(d2.deliveryDate).toBeNull();
+    await patch(`/api/v1/deals/${d2.id}`, cookie, { commissionRatio: 0.1, updatedAt: d2.updatedAt });
+    const noDelivery = await put(`/api/v1/deals/${d2.id}/payouts`, cookie, {
+      payouts: [{ seq: 1, payoutDate: clock.t, rate: 1 }],
+    });
+    expect(noDelivery.statusCode).toBe(200);
+    expect(noDelivery.json().data[0]).toMatchObject({ seq: 1, rate: 1, amountCents: 9000 });
 
     // [] 清空
     const clear = await put(`/api/v1/deals/${d.id}/payouts`, cookie, { payouts: [] });
