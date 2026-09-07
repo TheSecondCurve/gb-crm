@@ -81,7 +81,7 @@ export function PayoutFormModal({
     <Modal title={title} wide onClose={onClose}>
       <p style={{ marginTop: 0, fontSize: 13 }}>
         每笔成交最多两个支付期（圈子类产品通常分开始月/结束月各 50%，其他产品交付月 100%）。
-        金额按 <strong>分红池 × 比例</strong> 由服务端计算；比例总和≤100%，交付日期为空时无法设置。
+        金额按 <strong>分红池 × 比例</strong> 由服务端计算；比例总和≤100%。
       </p>
       <table className="settings-form">
         <thead>
