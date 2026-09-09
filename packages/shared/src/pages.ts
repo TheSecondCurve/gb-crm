@@ -40,6 +40,8 @@ export const PAGE_REGISTRY: readonly PageDef[] = [
   { key: "products", path: "/products", label: "产品目录", group: "主数据", order: 3, menu: true, required: { resource: "products", action: "list" } },
   { key: "deals", path: "/deals", label: "成交记录", group: "主数据", order: 4, menu: true, required: { resource: "deals", action: "list" } },
   { key: "deal-commissions", path: "/deals/commissions", label: "成交分成", group: "主数据", order: 5, menu: true, required: { resource: "dealCommissions", action: "list" } },
+  { key: "deal-payout-batches", path: "/deals/payout-batches", label: "分成发放", group: "主数据", order: 6, menu: true, required: { resource: "dealCommissions", action: "list" } },
+  { key: "deal-payout-batch-detail", path: "/deals/payout-batches/:id", label: "批次详情", group: "主数据", order: 7, menu: false, parent: "deal-payout-batches", required: { resource: "dealCommissions", action: "read" } },
   // ── 运营流程 ──
   { key: "deliveries", path: "/deliveries", label: "交付管理", group: "运营流程", order: 0, menu: true, required: { resource: "deliveries", action: "list" } },
   { key: "delivery-detail", path: "/deliveries/:id", label: "交付详情", group: "运营流程", order: 1, menu: false, parent: "deliveries", required: { resource: "deliveries", action: "read" } },

@@ -16,6 +16,8 @@ import { MyCustomersPage } from "./pages/MyCustomersPage";
 import { MyDealsPage } from "./pages/MyDealsPage";
 import { DealsPage } from "./pages/DealsPage";
 import { DealCommissionsPage } from "./pages/DealCommissionsPage";
+import { PayoutBatchesPage } from "./pages/PayoutBatchesPage";
+import { PayoutBatchDetailPage } from "./pages/PayoutBatchDetailPage";
 import { DeliveriesPage } from "./pages/DeliveriesPage";
 import { DeliveryDetailPage } from "./pages/DeliveryDetailPage";
 import { DeliveryGanttPage } from "./pages/DeliveryGanttPage";
@@ -132,6 +134,22 @@ export default function App() {
           element={
             <PageGuard pageKey="deal-commissions">
               <DealCommissionsPage />
+            </PageGuard>
+          }
+        />
+        <Route
+          path="/deals/payout-batches"
+          element={
+            <PageGuard pageKey="deal-payout-batches">
+              <PayoutBatchesPage />
+            </PageGuard>
+          }
+        />
+        <Route
+          path="/deals/payout-batches/:id"
+          element={
+            <PageGuard pageKey="deal-payout-batch-detail">
+              <PayoutBatchDetailPage />
             </PageGuard>
           }
         />

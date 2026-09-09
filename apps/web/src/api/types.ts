@@ -265,6 +265,76 @@ export interface CommissionDefaultDto {
   rules: CommissionDefaultRuleDto[];
 }
 
+/** K59 payout 结算批次：列表行（金额整数分，时间 epoch ms） */
+export interface PayoutBatchRowDto {
+  id: number;
+  name: string;
+  rangeStart: number;
+  rangeEnd: number;
+  status: "draft" | "locked" | "paid";
+  itemCount: number;
+  totalAmountCents: number;
+  lockedAt: number | null;
+  paidAt: number | null;
+  createdAt: number;
+  updatedAt: number;
+  createdBy: UserRefDto | null;
+}
+
+/** K59 批次明细的人均分摊（locked/paid 为快照） */
+export interface PayoutBatchShareDto {
+  userId: number;
+  nickname: string | null;
+  amountCents: number;
+}
+
+/** K59 批次明细行：按 (dealId, seq) 引用 deal_payouts */
+export interface PayoutBatchItemDto {
+  id: number;
+  dealId: number;
+  seq: number;
+  customer: { id: number; nickname: string } | null;
+  product: { id: number; name: string } | null;
+  owner: UserRefDto | null;
+  customerOwner: UserRefDto | null;
+  dealDate: number;
+  /** 成交月份（上海时区 YYYY-MM） */
+  dealMonth: string;
+  dealAmountCents: number | null;
+  payoutDate: number;
+  /** 占分红池比例（0~1） */
+  rate: number;
+  /** 期金额（分） */
+  payoutAmountCents: number;
+  /** 底层 payout 状态：missing = 被 PUT 冲掉 */
+  payoutStatus: "pending" | "paid" | "missing";
+  /** 底层 payout 已变化（行被冲掉或已 paid），draft 展示实时值时为 true */
+  stale: boolean;
+  shares: PayoutBatchShareDto[];
+}
+
+/** K59 批次人员汇总：按参与人聚合（按 totalAmountCents 降序） */
+export interface PayoutBatchSummaryEntryDto {
+  userId: number;
+  nickname: string | null;
+  totalAmountCents: number;
+  byMonth: { month: string; amountCents: number }[];
+  byProduct: { productId: number | null; productName: string | null; amountCents: number }[];
+}
+
+/** K59 批次详情 */
+export interface PayoutBatchDetailDto {
+  batch: PayoutBatchRowDto;
+  items: PayoutBatchItemDto[];
+  summary: PayoutBatchSummaryEntryDto[];
+}
+
+/** K59 待发 payout 候选（Item 字段 + 活跃批次占用标注；无批次明细 id） */
+export type PayoutBatchCandidateDto = Omit<PayoutBatchItemDto, "id"> & {
+  activeBatchId: number | null;
+  activeBatchName: string | null;
+};
+
 /** K54 交付资料上的交付单 ref（软删交付 → null） */
 export interface MaterialDeliveryRefDto {
   id: number;

@@ -469,6 +469,68 @@ export const dealPayouts = sqliteTable(
   ],
 );
 
+// K59 Payout 结算批次：按 payout 日期范围归集待发 payout；状态机 draft→locked→paid（locked 可 unlock 回 draft）。
+export const payoutBatches = sqliteTable(
+  "payout_batches",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    name: text("name").notNull(),
+    // 创建时筛选口径（epoch ms UTC，展示/查账用）
+    rangeStart: integer("range_start").notNull(),
+    rangeEnd: integer("range_end").notNull(),
+    status: text("status").notNull().default("draft"),
+    lockedAt: integer("locked_at"),
+    paidAt: integer("paid_at"),
+    createdAt: integer("created_at").notNull(),
+    updatedAt: integer("updated_at").notNull(),
+    createdBy: integer("created_by").references(() => users.id, { onDelete: "set null" }),
+    updatedBy: integer("updated_by").references(() => users.id, { onDelete: "set null" }),
+  },
+  () => [check("payout_batches_status_check", sql`"status" IN ('draft','locked','paid')`)],
+);
+
+// 批次明细：按 (deal_id, seq) 引用 deal_payouts（PUT payouts 整表替换会换行 id，不引用行 id）。
+// amount_cents/payout_date/rate 为锁定时的快照（draft 为 NULL，展示走实时计算）。
+export const payoutBatchItems = sqliteTable(
+  "payout_batch_items",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    batchId: integer("batch_id")
+      .notNull()
+      .references(() => payoutBatches.id, { onDelete: "cascade" }),
+    dealId: integer("deal_id").notNull().references(() => deals.id),
+    seq: integer("seq").notNull(),
+    amountCents: integer("amount_cents"),
+    payoutDate: integer("payout_date"),
+    rate: real("rate"),
+    createdAt: integer("created_at").notNull(),
+    updatedAt: integer("updated_at").notNull(),
+    createdBy: integer("created_by").references(() => users.id, { onDelete: "set null" }),
+    updatedBy: integer("updated_by").references(() => users.id, { onDelete: "set null" }),
+  },
+  (t) => [
+    unique("payout_batch_items_batch_deal_seq_uq").on(t.batchId, t.dealId, t.seq),
+    index("payout_batch_items_deal_seq_idx").on(t.dealId, t.seq),
+  ],
+);
+
+// 锁定时物化的人均分摊快照（shared splitPayoutAmount 推导结果，财务查账基准；unlock 清空）。
+export const payoutBatchItemShares = sqliteTable(
+  "payout_batch_item_shares",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    itemId: integer("item_id")
+      .notNull()
+      .references(() => payoutBatchItems.id, { onDelete: "cascade" }),
+    userId: integer("user_id").notNull().references(() => users.id),
+    amountCents: integer("amount_cents").notNull(),
+  },
+  (t) => [
+    unique("payout_batch_item_shares_item_user_uq").on(t.itemId, t.userId),
+    index("payout_batch_item_shares_item_idx").on(t.itemId),
+  ],
+);
+
 // K44 交付类型配置表：分类 kind + 状态 status + 默认动作模板（多行文本，创建交付项时预填）。
 export const deliveryTypes = sqliteTable(
   "delivery_types",
