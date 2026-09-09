@@ -81,6 +81,42 @@ function totalRatioOf(row: CommissionJoinRow, defaultScheme: CommissionDefaultSc
   return row.dealCommissionRatio ?? row.productCommissionRatio ?? defaultScheme.totalRatio;
 }
 
+/** 成交的「参与人 × 内部分配比例」解析输入（deal-commissions 与 payout-batches 共用，K59 提炼） */
+export interface ParticipantResolutionRow {
+  commissionId: number | null;
+  ownerId: number | null;
+  customerOwnerId: number | null;
+}
+
+/**
+ * 该成交的参与人列表（未配置 → 从默认方案推导；已配置 → 取明细行）。
+ * 默认方案：总是包含 成交负责人 + 客户归属人（规则缺席也以 0 占位），再叠加 user 规则；同人合并比例。
+ */
+export function resolveParticipantSplits(
+  row: ParticipantResolutionRow,
+  itemsByCommission: Map<number, CommissionItemRow[]>,
+  defaultScheme: CommissionDefaultScheme,
+): { userId: number; percentage: number }[] {
+  if (row.commissionId !== null) {
+    return (itemsByCommission.get(row.commissionId) ?? []).map((i) => ({
+      userId: i.userId,
+      percentage: i.percentage,
+    }));
+  }
+  const acc = new Map<number, number>();
+  const add = (uid: number | null, pct: number) => {
+    if (uid === null) return;
+    acc.set(uid, (acc.get(uid) ?? 0) + pct);
+  };
+  const ruleOf = (source: string) => defaultScheme.rules.find((r) => r.source === source);
+  add(row.ownerId, ruleOf("dealOwner")?.percentage ?? 0);
+  add(row.customerOwnerId, ruleOf("owner")?.percentage ?? 0);
+  for (const rule of defaultScheme.rules) {
+    if (rule.source === "user") add(rule.userId ?? null, rule.percentage);
+  }
+  return [...acc.entries()].map(([userId, percentage]) => ({ userId, percentage }));
+}
+
 /** 该成交的分成明细（未配置 → 从默认方案推导；已配置 → 取明细行） */
 function resolveItems(
   row: CommissionJoinRow,
@@ -89,27 +125,7 @@ function resolveItems(
   userRefs: Map<number, UserRef>,
   pool: number | null,
 ): CommissionItemDto[] {
-  let raw: { userId: number; percentage: number }[];
-  if (row.commissionId !== null) {
-    raw = (itemsByCommission.get(row.commissionId) ?? []).map((i) => ({
-      userId: i.userId,
-      percentage: i.percentage,
-    }));
-  } else {
-    // 默认方案：总是包含 成交负责人 + 客户归属人（规则缺席也以 0 占位），再叠加 user 规则；同人合并比例
-    const acc = new Map<number, number>();
-    const add = (uid: number | null, pct: number) => {
-      if (uid === null) return;
-      acc.set(uid, (acc.get(uid) ?? 0) + pct);
-    };
-    const ruleOf = (source: string) => defaultScheme.rules.find((r) => r.source === source);
-    add(row.ownerId, ruleOf("dealOwner")?.percentage ?? 0);
-    add(row.customerOwnerId, ruleOf("owner")?.percentage ?? 0);
-    for (const rule of defaultScheme.rules) {
-      if (rule.source === "user") add(rule.userId ?? null, rule.percentage);
-    }
-    raw = [...acc.entries()].map(([userId, percentage]) => ({ userId, percentage }));
-  }
+  const raw = resolveParticipantSplits(row, itemsByCommission, defaultScheme);
 
   return raw.map((item) => ({
     userId: item.userId,

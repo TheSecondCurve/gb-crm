@@ -14,6 +14,7 @@ export * from "./schemas/delivery.js";
 export * from "./schemas/tag.js";
 export * from "./schemas/material.js";
 export * from "./schemas/commission.js";
+export * from "./schemas/payout-batch.js";
 export * from "./schemas/followUp.js";
 export * from "./schemas/system.js";
 export * from "./schemas/job.js";
