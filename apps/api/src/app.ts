@@ -23,6 +23,7 @@ import { productsRoutes } from "./modules/products/routes.js";
 import { jobsRoutes } from "./modules/jobs/routes.js";
 import { jobSchedulesRoutes } from "./modules/jobs/schedule-routes.js";
 import { materialsRoutes } from "./modules/materials/routes.js";
+import { payoutBatchesRoutes } from "./modules/payout-batches/routes.js";
 import { systemRoutes } from "./modules/system/routes.js";
 import { tagsRoutes } from "./modules/tags/routes.js";
 import { usersRoutes, type UsersRoutesOptions } from "./modules/users/routes.js";
@@ -90,6 +91,7 @@ export function buildApp(options: BuildAppOptions): FastifyInstance {
     customerRecordsRoutes(instance, { db, now: clock });
     // K56：先注册 /deals/commissions（静态），避免被 /deals/:id 捕获（find-my-way 静态优先，双保险）
     dealCommissionsRoutes(instance, { db, now: clock });
+    payoutBatchesRoutes(instance, { db, now: clock });
     dealsRoutes(instance, { db, now: clock });
     deliveriesRoutes(instance, { db, now: clock });
     tagsRoutes(instance, { db, now: clock });

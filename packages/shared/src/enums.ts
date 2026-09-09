@@ -141,3 +141,7 @@ export const maintenanceKindSchema = z.enum([
   "other",
 ]);
 export type MaintenanceKind = z.infer<typeof maintenanceKindSchema>;
+
+/** payout 结算批次状态（K59：草稿可增删明细 → 锁定快照确认 → 已发放；locked 可 unlock 回 draft） */
+export const payoutBatchStatusSchema = z.enum(["draft", "locked", "paid"]);
+export type PayoutBatchStatus = z.infer<typeof payoutBatchStatusSchema>;

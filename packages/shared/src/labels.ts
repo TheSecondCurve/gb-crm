@@ -13,6 +13,7 @@ import type {
   MaintenanceKind,
   MaterialKind,
   Platform,
+  PayoutBatchStatus,
   ProductStatus,
   ProductType,
   SocialPlatform,
@@ -172,6 +173,13 @@ export const maintenanceKindLabels: Record<MaintenanceKind, string> = {
   lead: "线索意向",
   note: "一般备注",
   other: "其他",
+};
+
+/** payout 结算批次状态（K59） */
+export const payoutBatchStatusLabels: Record<PayoutBatchStatus, string> = {
+  draft: "草稿",
+  locked: "已锁定",
+  paid: "已发放",
 };
 
 /** Agent PAT 令牌范围（K35）：read = 只读；write = 走 REST，仍受 can() 约束 */

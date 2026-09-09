@@ -26,6 +26,8 @@ import {
   maintenanceKindSchema,
   platformLabels,
   platformSchema,
+  payoutBatchStatusLabels,
+  payoutBatchStatusSchema,
   productStatusLabels,
   productStatusSchema,
   productTypeLabels,
@@ -60,11 +62,12 @@ const ALL: [name: string, schema: z.ZodEnum<[string, ...string[]]>, labels: Reco
     ["tagDomain", tagDomainSchema, tagDomainLabels],
     ["materialKind", materialKindSchema, materialKindLabels],
     ["maintenanceKind", maintenanceKindSchema, maintenanceKindLabels],
+    ["payoutBatchStatus", payoutBatchStatusSchema, payoutBatchStatusLabels],
   ];
 
 describe("枚举与 labels 完整性（Appendix A.5 全量）", () => {
-  it("18 个枚举都在", () => {
-    expect(ALL).toHaveLength(18);
+  it("19 个枚举都在", () => {
+    expect(ALL).toHaveLength(19);
   });
 
   for (const [name, schema, labels] of ALL) {
