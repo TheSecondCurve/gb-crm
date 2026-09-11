@@ -112,6 +112,62 @@ describe("PATCH /api/v1/system/ai-config", () => {
   });
 });
 
+describe("文案工作台 system prompt（GET/PATCH /api/v1/system/copywriting-prompts）", () => {
+  const URL = "/api/v1/system/copywriting-prompts";
+
+  it("未配置 → 内置默认（含女商红线，customized=false，updatedAt=null）；未登录 401；operator/assistant 403", async () => {
+    expect((await app.inject({ method: "GET", url: URL })).statusCode).toBe(401);
+    for (const role of ["operator", "assistant"] as const) {
+      const cookie = await loginAsRole(role);
+      expect((await get(URL, cookie)).statusCode).toBe(403);
+      expect((await patch(URL, cookie, { generateSystemPrompt: "x" })).statusCode).toBe(403);
+    }
+
+    const cookie = await loginAsRole("admin");
+    const res = await get(URL, cookie);
+    expect(res.statusCode).toBe(200);
+    const data = res.json().data;
+    expect(data.generateSystemPrompt).toContain("闪光少女斯斯");
+    expect(data.generateSystemPrompt).toContain("待核");
+    expect(data.auditSystemPrompt).toContain("审计");
+    expect(data.customized).toBe(false);
+    expect(data.updatedAt).toBeNull();
+    expect(data.updatedBy).toBeNull();
+  });
+
+  it("PATCH 自定义 → GET 回自定义且记审计；PATCH null 单项恢复默认、另一项保留", async () => {
+    const cookie = await loginAsRole("admin");
+    const r1 = await patch(URL, cookie, {
+      generateSystemPrompt: "自定义生成提示词",
+      auditSystemPrompt: "自定义审计提示词",
+    });
+    expect(r1.statusCode).toBe(200);
+    expect(r1.json().data.generateSystemPrompt).toBe("自定义生成提示词");
+    expect(r1.json().data.auditSystemPrompt).toBe("自定义审计提示词");
+    expect(r1.json().data.customized).toBe(true);
+    expect(r1.json().data.updatedAt).toBe(clock.t);
+    expect(typeof r1.json().data.updatedBy).toBe("number");
+
+    const r2 = await patch(URL, cookie, { generateSystemPrompt: null });
+    expect(r2.json().data.generateSystemPrompt).toContain("闪光少女斯斯"); // 恢复内置默认
+    expect(r2.json().data.auditSystemPrompt).toBe("自定义审计提示词"); // 另一项保留
+    expect(r2.json().data.customized).toBe(true);
+
+    const r3 = await patch(URL, cookie, { auditSystemPrompt: null });
+    expect(r3.json().data.customized).toBe(false);
+  });
+
+  it("空串/纯空白视为恢复默认；超长或非字符串 → 422", async () => {
+    const cookie = await loginAsRole("admin");
+    await patch(URL, cookie, { generateSystemPrompt: "临时" });
+    const blank = await patch(URL, cookie, { generateSystemPrompt: "   " });
+    expect(blank.json().data.generateSystemPrompt).toContain("闪光少女斯斯");
+
+    expect((await patch(URL, cookie, { generateSystemPrompt: "a".repeat(4001) })).statusCode).toBe(422);
+    expect((await patch(URL, cookie, { auditSystemPrompt: 123 })).statusCode).toBe(422);
+  });
+});
+
 describe("角色→页面权限（GET/PATCH /api/v1/system/page-access）", () => {
   it("未登录 401；operator/assistant → 403（仅 admin，K46 同 system）", async () => {
     expect((await app.inject({ method: "GET", url: "/api/v1/system/page-access" })).statusCode).toBe(401);
