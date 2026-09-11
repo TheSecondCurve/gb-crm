@@ -65,6 +65,15 @@ export interface AiConfigDto {
   apiKeyMasked: string | null;
 }
 
+/** K60+ 文案工作台 system prompt（未配置回退内置默认，customized=false 表示全默认） */
+export interface CopywritingPromptsDto {
+  generateSystemPrompt: string;
+  auditSystemPrompt: string;
+  customized: boolean;
+  updatedAt: number | null;
+  updatedBy: number | null;
+}
+
 /** K53 S3 兼容对象存储远程备份配置（secretAccessKey 只回掩码） */
 export interface S3ConfigDto {
   enabled: boolean;

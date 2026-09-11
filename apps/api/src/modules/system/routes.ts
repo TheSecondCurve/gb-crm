@@ -3,6 +3,7 @@
 import {
   aiConfigPatchSchema,
   commissionDefaultPatchSchema,
+  copywritingPromptsPatchSchema,
   materialsS3ConfigPatchSchema,
   pageAccessPatchSchema,
   s3ConfigPatchSchema,
@@ -14,11 +15,13 @@ import { requireCan } from "../../plugins/rbac.js";
 import {
   getAiConfigResult,
   getCommissionDefaultResult,
+  getCopywritingPromptsResult,
   getMaterialsS3ConfigResult,
   getPageAccessMatrix,
   getS3ConfigResult,
   patchAiConfig,
   patchCommissionDefault,
+  patchCopywritingPrompts,
   patchMaterialsS3Config,
   patchPageAccess,
   patchS3Config,
@@ -130,5 +133,21 @@ export function systemRoutes(app: FastifyInstance, opts: SystemRoutesOptions): v
     "/api/v1/system/materials-s3-config/test",
     { preHandler: requireCan("system", "update") },
     async () => ({ data: await testMaterialsS3Connection(db, { fetchFn: s3Fetch }) }),
+  );
+
+  // 文案工作台 system prompt（K60+；仅 admin）。非密钥不掩码；未配置回退内置默认。
+  app.get(
+    "/api/v1/system/copywriting-prompts",
+    { preHandler: requireCan("system", "read") },
+    async () => ({ data: getCopywritingPromptsResult(db) }),
+  );
+
+  app.patch(
+    "/api/v1/system/copywriting-prompts",
+    { preHandler: requireCan("system", "update") },
+    async (req) => {
+      const patch = copywritingPromptsPatchSchema.parse(req.body ?? {});
+      return { data: patchCopywritingPrompts(db, patch, auditCtx(req)) };
+    },
   );
 }

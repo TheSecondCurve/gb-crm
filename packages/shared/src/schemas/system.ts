@@ -123,3 +123,26 @@ export const pageAccessGetSchema = z.object({
   }),
 });
 export type PageAccessGet = z.infer<typeof pageAccessGetSchema>;
+
+// ── 文案工作台 system prompt（K60+；system_configs code='copywritingPrompts'）──
+// GET 返回生效值：已配置用配置，未配置/空串回退内置默认（女商红线版，见 api prompts.ts）。
+// PATCH：键存在才生效；传 null/空串恢复该项为内置默认；有意不做 OCC（同 ai-config 单管理员）。
+
+export const COPYWRITING_PROMPT_MAX = 4000;
+
+export const copywritingPromptsGetSchema = z.object({
+  generateSystemPrompt: z.string(),
+  auditSystemPrompt: z.string(),
+  /** 是否有自定义项（false = 全部走内置默认） */
+  customized: z.boolean(),
+  updatedAt: z.number().nullable(),
+  updatedBy: z.number().nullable(),
+});
+export type CopywritingPromptsGet = z.infer<typeof copywritingPromptsGetSchema>;
+
+export const copywritingPromptsPatchSchema = z.object({
+  /** 传非空串设置；null/纯空白恢复内置默认；缺席不动（service 侧把空串归一为 null） */
+  generateSystemPrompt: z.string().trim().max(COPYWRITING_PROMPT_MAX).nullable().optional(),
+  auditSystemPrompt: z.string().trim().max(COPYWRITING_PROMPT_MAX).nullable().optional(),
+});
+export type CopywritingPromptsPatch = z.infer<typeof copywritingPromptsPatchSchema>;

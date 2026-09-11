@@ -21,7 +21,7 @@ import { createAudit, updateAudit, type AuditContext } from "../../lib/audit.js"
 import { chatJson, LlmError } from "../../lib/llm.js";
 import { applyScalarPatch } from "../../lib/patch-kernel.js";
 import { conflict, llmError, notFound, unprocessable } from "../../plugins/error-handler.js";
-import { getAiConfig } from "../system/repo.js";
+import { getAiConfig, getCopywritingPromptsConfig } from "../system/repo.js";
 import {
   assembleCopyItem,
   assembleCopyItems,
@@ -30,6 +30,7 @@ import {
   type CopyItemDto,
   type CopyTemplateDto,
 } from "./assemble.js";
+import { DEFAULT_AUDIT_SYSTEM_PROMPT, DEFAULT_GENERATE_SYSTEM_PROMPT } from "./prompts.js";
 import {
   getItemRowAny,
   getLiveTemplateByName,
@@ -242,6 +243,13 @@ function requireLlmSettings(db: Db): { baseUrl: string; apiKey: string; model: s
   return { baseUrl: cfg.baseUrl, apiKey: cfg.apiKey, model: cfg.model };
 }
 
+/** 生效 system prompt：配置缺失/字段空串 → 内置默认（女商红线版） */
+function effectiveSystemPrompt(db: Db, kind: "generate" | "audit"): string {
+  const cfg = getCopywritingPromptsConfig(db);
+  if (kind === "generate") return cfg?.generateSystemPrompt ?? DEFAULT_GENERATE_SYSTEM_PROMPT;
+  return cfg?.auditSystemPrompt ?? DEFAULT_AUDIT_SYSTEM_PROMPT;
+}
+
 /** 生成文案：六段文本 → prompt → {"content":"..."}；temperature 0.7（创作） */
 export async function generateCopy(
   db: Db,
@@ -258,9 +266,7 @@ export async function generateCopy(
       messages: [
         {
           role: "system",
-          content:
-            "你是资深私域运营文案专家，擅长根据业务背景、目标客群、主题与目的创作私域运营文案。" +
-            '只输出一个 JSON 对象 {"content":"..."}，不要输出任何其它内容。',
+          content: effectiveSystemPrompt(db, "generate"),
         },
         { role: "user", content: buildDimensionText(body) },
       ],
@@ -294,13 +300,7 @@ export async function auditCopy(
       messages: [
         {
           role: "system",
-          content:
-            "你是私域内容的用户视角审计员。站在目标客群的角度模拟阅读这段文案，评估：" +
-            "①能否达到预期目的；②是否有引起不适、反感或信任损耗的表达；" +
-            "③是否有不清晰或缺失的信息会提高用户理解成本。" +
-            '只输出一个 JSON 对象：{"verdict":"pass|warn|fail","summary":"一句话总评",' +
-            '"issues":[{"aspect":"问题方面","detail":"具体问题","suggestion":"改进建议"}]}，' +
-            "无问题时 issues 为空数组，不要输出任何其它内容。",
+          content: effectiveSystemPrompt(db, "audit"),
         },
         { role: "user", content: userContent },
       ],

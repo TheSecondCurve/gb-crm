@@ -7,6 +7,8 @@ import type {
   AiConfigPatch,
   CommissionDefaultGet,
   CommissionDefaultPatch,
+  CopywritingPromptsGet,
+  CopywritingPromptsPatch,
   MaterialsS3ConfigGet,
   MaterialsS3ConfigPatch,
   S3ConfigGet,
@@ -28,14 +30,20 @@ import { ApiError, s3Error, unprocessable } from "../../plugins/error-handler.js
 import type { Db } from "../../db/client.js";
 import { findLiveUserIds } from "../deal-commissions/repo.js";
 import {
+  DEFAULT_AUDIT_SYSTEM_PROMPT,
+  DEFAULT_GENERATE_SYSTEM_PROMPT,
+} from "../copywriting/prompts.js";
+import {
   getAiConfig,
   getCommissionDefault,
+  getCopywritingPromptsConfig,
   getMaterialsS3Config,
   getPageAccessConfig,
   getS3Config,
   isS3RemoteReady,
   upsertAiConfig,
   upsertCommissionDefault,
+  upsertCopywritingPromptsConfig,
   upsertMaterialsS3Config,
   upsertPageAccessConfig,
   upsertS3Config,
@@ -316,4 +324,41 @@ function validateCommissionDefault(
       { path: "rules", message: `无效 user_id: ${missing.join(",")}` },
     ]);
   }
+}
+
+// ---- 文案工作台 system prompt（code='copywritingPrompts'，K60+；仅 admin 经 requireCan("system")）----
+// GET 返回生效值：配置缺失/字段为空串 → 回退内置默认（女商红线版，prompts.ts 为最后真相）；
+// PATCH：键存在才生效，null/空串恢复该项默认，另一项保留；同 ai-config 单管理员不做 OCC。
+
+export function getCopywritingPromptsResult(db: Db): CopywritingPromptsGet {
+  const row = getCopywritingPromptsConfig(db);
+  return {
+    generateSystemPrompt: row?.generateSystemPrompt ?? DEFAULT_GENERATE_SYSTEM_PROMPT,
+    auditSystemPrompt: row?.auditSystemPrompt ?? DEFAULT_AUDIT_SYSTEM_PROMPT,
+    customized: row !== undefined && (row.generateSystemPrompt !== null || row.auditSystemPrompt !== null),
+    updatedAt: row?.updatedAt ?? null,
+    updatedBy: row?.updatedBy ?? null,
+  };
+}
+
+export function patchCopywritingPrompts(
+  db: Db,
+  patch: CopywritingPromptsPatch,
+  ctx: { now: number; userId: number },
+): CopywritingPromptsGet {
+  const current = getCopywritingPromptsConfig(db);
+  const next = {
+    generateSystemPrompt:
+      patch.generateSystemPrompt !== undefined
+        ? patch.generateSystemPrompt || null // 空串（Zod 已 trim）→ 恢复默认
+        : (current?.generateSystemPrompt ?? null),
+    auditSystemPrompt:
+      patch.auditSystemPrompt !== undefined
+        ? patch.auditSystemPrompt || null
+        : (current?.auditSystemPrompt ?? null),
+    updatedAt: ctx.now,
+    updatedBy: ctx.userId,
+  };
+  upsertCopywritingPromptsConfig(db, next);
+  return getCopywritingPromptsResult(db);
 }

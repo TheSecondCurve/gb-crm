@@ -19,6 +19,8 @@ export const S3_CONFIG_CODE = "s3";
 export const MATERIALS_S3_CONFIG_CODE = "materialsS3";
 /** K56 成交分成的全局默认方案 */
 export const COMMISSION_DEFAULT_CODE = "commissionDefault";
+/** 文案工作台 system prompt（K60+）：value = { generateSystemPrompt, auditSystemPrompt }，null 字段走内置默认 */
+export const COPYWRITING_PROMPTS_CODE = "copywritingPrompts";
 
 export interface SystemConfigRow {
   code: string;
@@ -302,5 +304,59 @@ export function upsertCommissionDefault(
     JSON.stringify({ totalRatio: scheme.totalRatio, rules: scheme.rules }),
     updatedAt,
     updatedBy,
+  );
+}
+
+// ---- 文案工作台 system prompt（code='copywritingPrompts'，K60+）编解码 ----
+// value = { generateSystemPrompt, auditSystemPrompt }；空串/缺键/类型不对 → null（回退内置默认）。
+
+export interface CopywritingPromptsValue {
+  generateSystemPrompt: string | null;
+  auditSystemPrompt: string | null;
+}
+
+export interface CopywritingPromptsRow extends CopywritingPromptsValue {
+  updatedAt: number;
+  updatedBy: number | null;
+}
+
+export function parseCopywritingPromptsValue(json: string): CopywritingPromptsValue | undefined {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(json);
+  } catch {
+    return undefined;
+  }
+  if (typeof parsed !== "object" || parsed === null) return undefined;
+  const obj = parsed as Record<string, unknown>;
+  return {
+    generateSystemPrompt: strOrNull(obj.generateSystemPrompt),
+    auditSystemPrompt: strOrNull(obj.auditSystemPrompt),
+  };
+}
+
+export function getCopywritingPromptsConfig(db: Db): CopywritingPromptsRow | undefined {
+  const row = getConfigRow(db, COPYWRITING_PROMPTS_CODE);
+  if (!row) return undefined;
+  const value = parseCopywritingPromptsValue(row.value) ?? {
+    generateSystemPrompt: null,
+    auditSystemPrompt: null,
+  };
+  return { ...value, updatedAt: row.updatedAt, updatedBy: row.updatedBy };
+}
+
+export function upsertCopywritingPromptsConfig(
+  db: Db,
+  values: CopywritingPromptsValue & { updatedAt: number; updatedBy: number | null },
+): void {
+  upsertConfigRow(
+    db,
+    COPYWRITING_PROMPTS_CODE,
+    JSON.stringify({
+      generateSystemPrompt: values.generateSystemPrompt,
+      auditSystemPrompt: values.auditSystemPrompt,
+    }),
+    values.updatedAt,
+    values.updatedBy,
   );
 }
