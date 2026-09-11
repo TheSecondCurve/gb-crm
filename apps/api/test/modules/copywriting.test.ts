@@ -170,24 +170,30 @@ describe("模板 CRUD", () => {
     expect(other.statusCode).toBe(201);
   });
 
-  it("列表：dimension/enabled 过滤；sort asc 排序；meta 不分页", async () => {
+  it("列表：dimension/enabled 过滤；sort asc 排序；meta 不分页（基线含种子模板）", async () => {
     const { cookie } = await loginAsRole("admin");
-    await post(TEMPLATES, cookie, { dimension: "topic", name: "T2", content: "x", sort: 2 });
-    await post(TEMPLATES, cookie, { dimension: "topic", name: "T1", content: "x", sort: 1 });
+    // 种子模板（0031 migration）已在词表：断言用前后差值，不依赖种子数量
+    const base = (await get(TEMPLATES, cookie)).json().meta.total;
+    const baseTopic = (await get(`${TEMPLATES}?dimension=topic`, cookie)).json().meta.total;
+
+    await post(TEMPLATES, cookie, { dimension: "topic", name: "T2", content: "x", sort: 22 });
+    await post(TEMPLATES, cookie, { dimension: "topic", name: "T1", content: "x", sort: 21 });
     await post(TEMPLATES, cookie, { dimension: "polish", name: "P1", content: "x" });
-    await post(TEMPLATES, cookie, { dimension: "topic", name: "T0", content: "x", enabled: false });
+    await post(TEMPLATES, cookie, { dimension: "topic", name: "T0", content: "x", sort: 20, enabled: false });
 
     const all = await get(TEMPLATES, cookie);
     expect(all.statusCode).toBe(200);
-    expect(all.json().meta.total).toBe(4);
-    expect(all.json().meta).toEqual({ page: 1, pageSize: 4, total: 4 });
+    expect(all.json().meta.total).toBe(base + 4);
+    expect(all.json().meta.pageSize).toBe(base + 4);
 
     const topic = await get(`${TEMPLATES}?dimension=topic`, cookie);
-    expect(topic.json().meta.total).toBe(3);
-    expect(topic.json().data.map((t: { name: string }) => t.name)).toEqual(["T0", "T1", "T2"]);
+    expect(topic.json().meta.total).toBe(baseTopic + 3);
+    const topicNames = topic.json().data.map((t: { name: string }) => t.name);
+    const createdIdx = ["T0", "T1", "T2"].map((n) => topicNames.indexOf(n));
+    expect(createdIdx).toEqual([...createdIdx].sort((a, b) => a - b)); // 创建的三条按 sort asc 相对有序
 
     const enabled = await get(`${TEMPLATES}?dimension=topic&enabled=true`, cookie);
-    expect(enabled.json().meta.total).toBe(2);
+    expect(enabled.json().meta.total).toBe(baseTopic + 2);
     const disabled = await get(`${TEMPLATES}?enabled=false`, cookie);
     expect(disabled.json().meta.total).toBe(1);
     expect(disabled.json().data[0].name).toBe("T0");
@@ -466,5 +472,113 @@ describe("文案 CRUD", () => {
       (await patch(`${ITEMS}/${item.id}`, cookie, { title: "x", updatedAt: item.updatedAt })).statusCode,
     ).toBe(403);
     expect((await del(`${ITEMS}/${item.id}`, cookie)).statusCode).toBe(403);
+  });
+});
+
+// system prompt 可维护（K60+）：generate/audit 的 system prompt 走 system_configs
+// code='copywritingPrompts'，未配置/字段为空串 → 回退内置默认（女商红线版）。
+function seedCopyPromptsRow(value: Record<string, unknown>): void {
+  tmp.db
+    .insert(systemConfigs)
+    .values({
+      code: "copywritingPrompts",
+      value: JSON.stringify(value),
+      updatedAt: clock.t,
+      updatedBy: null,
+    })
+    .onConflictDoNothing()
+    .run();
+}
+
+/** 捕获发往 LLM 的 messages（mock 固定正常返回） */
+function llmCapture(reply: unknown = { content: "ok" }): {
+  fetchFn: typeof fetch;
+  systems: string[];
+  users: string[];
+} {
+  const systems: string[] = [];
+  const users: string[] = [];
+  const fetchFn = vi.fn(async (_url: unknown, init?: RequestInit) => {
+    const body = JSON.parse(String(init?.body)) as { messages: { role: string; content: string }[] };
+    systems.push(body.messages.find((m) => m.role === "system")?.content ?? "");
+    users.push(body.messages.find((m) => m.role === "user")?.content ?? "");
+    return new Response(JSON.stringify({ choices: [{ message: { content: JSON.stringify(reply) } }] }), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    });
+  }) as unknown as typeof fetch;
+  return { fetchFn, systems, users };
+}
+
+describe("system prompt 走配置（/system/copywriting-prompts）", () => {
+  const PROMPTS = "/api/v1/system/copywriting-prompts";
+
+  it("未配置 → generate/audit 用内置默认（女商红线）", async () => {
+    seedAiConfigRow();
+    const { cookie } = await loginAsRole("admin");
+    const cap = llmCapture();
+    const app2 = appWithLlm(cap.fetchFn);
+    try {
+      const gen = await app2.inject({ method: "POST", url: GENERATE, headers: { cookie }, payload: { topic: "周年庆" } });
+      expect(gen.statusCode).toBe(200);
+      expect(cap.systems[0]).toContain("闪光少女斯斯");
+      expect(cap.systems[0]).toContain("待核");
+
+      const audit = await app2.inject({ method: "POST", url: AUDIT, headers: { cookie }, payload: { content: "x" } });
+      expect(audit.statusCode).toBe(200);
+      expect(cap.systems[1]).toContain("审计");
+    } finally {
+      await app2.close();
+    }
+  });
+
+  it("PATCH 配置后 generate/audit 使用自定义 system prompt；维度文本仍进 user 消息", async () => {
+    seedAiConfigRow();
+    const { cookie } = await loginAsRole("admin");
+    const saved = await patch(PROMPTS, cookie, {
+      generateSystemPrompt: "自定义生成 SYSTEM",
+      auditSystemPrompt: "自定义审计 SYSTEM",
+    });
+    expect(saved.statusCode).toBe(200);
+
+    const cap = llmCapture({ content: "ok", verdict: "pass", summary: "s", issues: [] });
+    const app2 = appWithLlm(cap.fetchFn);
+    try {
+      const gen = await app2.inject({
+        method: "POST",
+        url: GENERATE,
+        headers: { cookie },
+        payload: { topic: "主题内容", goal: "拉新" },
+      });
+      expect(gen.statusCode).toBe(200);
+      expect(cap.systems[0]).toBe("自定义生成 SYSTEM");
+      expect(cap.users[0]).toContain("主题内容：主题内容");
+      expect(cap.users[0]).toContain("预期目的：拉新");
+
+      const audit = await app2.inject({ method: "POST", url: AUDIT, headers: { cookie }, payload: { content: "正文" } });
+      expect(audit.statusCode).toBe(200);
+      expect(cap.systems[1]).toBe("自定义审计 SYSTEM");
+    } finally {
+      await app2.close();
+    }
+  });
+
+  it("配置字段为空串 → 该项回退内置默认，另一项保留", async () => {
+    seedAiConfigRow();
+    seedCopyPromptsRow({ generateSystemPrompt: "", auditSystemPrompt: "仅审计自定义" });
+    const { cookie } = await loginAsRole("admin");
+    const cap = llmCapture();
+    const app2 = appWithLlm(cap.fetchFn);
+    try {
+      const gen = await app2.inject({ method: "POST", url: GENERATE, headers: { cookie }, payload: { topic: "t" } });
+      expect(gen.statusCode).toBe(200);
+      expect(cap.systems[0]).toContain("闪光少女斯斯");
+
+      const audit = await app2.inject({ method: "POST", url: AUDIT, headers: { cookie }, payload: { content: "x" } });
+      expect(audit.statusCode).toBe(200);
+      expect(cap.systems[1]).toBe("仅审计自定义");
+    } finally {
+      await app2.close();
+    }
   });
 });

@@ -69,6 +69,30 @@ describe("migration", () => {
   });
 });
 
+describe("copy_templates 种子模板（0031）", () => {
+  it("迁移后种入 21 条 live 模板、六个维度齐全、名字唯一；重复迁移不重复种", () => {
+    const rows = tmp.sqlite
+      .prepare("SELECT dimension, name FROM copy_templates WHERE deleted_at IS NULL")
+      .all() as { dimension: string; name: string }[];
+    expect(rows).toHaveLength(21);
+    expect([...new Set(rows.map((r) => r.dimension))].sort()).toEqual([
+      "audience",
+      "background",
+      "goal",
+      "outputType",
+      "polish",
+      "topic",
+    ]);
+    expect(new Set(rows.map((r) => `${r.dimension}:${r.name}`)).size).toBe(21);
+
+    expect(migrateDb(tmp.sqlite)).toEqual([]); // 已应用，重跑不报错也不重种
+    const count = tmp.sqlite
+      .prepare("SELECT COUNT(*) AS c FROM copy_templates WHERE deleted_at IS NULL")
+      .get() as { c: number };
+    expect(count.c).toBe(21);
+  });
+});
+
 describe("connection", () => {
   it("applies PRAGMA journal_mode=WAL and foreign_keys=ON", () => {
     const journal = tmp.sqlite.pragma("journal_mode", { simple: true });
