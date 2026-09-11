@@ -1,6 +1,7 @@
-// 文案工作台（K60）：三个 tab——「生成与审计」（六段维度提示词 + LLM 生成 + 用户视角审计 + 保存）、
-// 「已保存文案」（搜索/分页/查看/编辑/删除）、「模板管理」（六维度词表卡片 CRUD）。
-// 「选模板」是前端行为（把模板 content 填入输入框），generate/audit/save 只收最终文本快照。
+// 文案工作台（K60）：三个 tab——「生成与审计」（六段维度提示词 + LLM 生成 + 逆向检查（第二轮审修）+
+// 用户视角审计 + 行内保存）、「已保存文案」（搜索/分页/查看/编辑/删除）、「模板管理」（六维度词表卡片 CRUD）。
+// 「选模板」是前端行为（把模板 content 填入输入框），generate/review/audit 只收最终文本快照。
+// 三类 system prompt（生成/逆向检查/审计）的内置默认不可修改，覆盖配置在「系统设置 → 文案工作台」（admin）。
 import { useMemo, useState, type CSSProperties, type FormEvent } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useSearchParams } from "react-router-dom";
@@ -110,9 +111,17 @@ export function CopywritingPage() {
   );
 }
 
+/** 生成结果：标题（LLM 产出、可编辑、保存必填）+ 正文（可编辑）；original = 逆向检查前的原始稿 */
+interface GenResult {
+  title: string;
+  content: string;
+  original: string | null;
+}
+
 /** Tab 1：生成与审计 */
 function GenerateTab({ canCreate }: { canCreate: boolean }) {
   const showToast = useToast();
+  const queryClient = useQueryClient();
   const [texts, setTexts] = useState<DimensionTexts>(emptyTexts);
   /** 每个维度当前选中的模板 id（"" = 自定义） */
   const [selected, setSelected] = useState<Record<CopyDimension, string>>({
@@ -123,9 +132,11 @@ function GenerateTab({ canCreate }: { canCreate: boolean }) {
     outputType: "",
     polish: "",
   });
-  const [content, setContent] = useState<string | null>(null);
+  const [autoReview, setAutoReview] = useState(true);
+  const [result, setResult] = useState<GenResult | null>(null);
   const [report, setReport] = useState<CopyAuditReport | null>(null);
   const [generating, setGenerating] = useState(false);
+  const [reviewing, setReviewing] = useState(false);
   const [auditing, setAuditing] = useState(false);
   const [saving, setSaving] = useState(false);
 
@@ -164,18 +175,52 @@ function GenerateTab({ canCreate }: { canCreate: boolean }) {
 
   const topicEmpty = texts.topic.trim() === "";
 
+  /** 内容被编辑/重审后旧审计报告失效 */
+  const touchResult = (next: GenResult) => {
+    setResult(next);
+    setReport(null);
+  };
+
   const generate = async () => {
     if (topicEmpty) {
       showToast("请先填写主题内容");
       return;
     }
     setGenerating(true);
+    const dims = dimensionBody(texts);
     try {
-      const res = await api.post<{ data: { content: string } }>("/copywriting/generate", {
-        ...dimensionBody(texts),
+      const gen = await api.post<{ data: { title: string; content: string } }>("/copywriting/generate", {
+        ...dims,
         topic: texts.topic.trim(),
       });
-      setContent(res?.data.content ?? "");
+      const draft: GenResult = {
+        title: gen?.data.title ?? "",
+        content: gen?.data.content ?? "",
+        original: null,
+      };
+      if (autoReview) {
+        // 逆向检查：单独第二次 LLM 调用，修订稿才是产出；失败保留原始稿
+        try {
+          const rev = await api.post<{ data: { title: string; content: string } }>("/copywriting/review", {
+            ...dims,
+            title: draft.title,
+            content: draft.content,
+          });
+          setResult({
+            title: rev?.data.title || draft.title,
+            content: rev?.data.content || draft.content,
+            original: draft.content,
+          });
+          showToast("已生成并完成逆向检查修订");
+        } catch (err) {
+          setResult(draft);
+          showToast(
+            err instanceof ApiError ? `${err.message}（已保留原始稿）` : "逆向检查失败，已保留原始稿",
+          );
+        }
+      } else {
+        setResult(draft);
+      }
       setReport(null);
     } catch (err) {
       toastError(err, "生成失败，请稍后重试");
@@ -184,13 +229,36 @@ function GenerateTab({ canCreate }: { canCreate: boolean }) {
     }
   };
 
+  /** 手动对当前结果再跑一轮逆向检查修订 */
+  const reviewNow = async () => {
+    if (!result || reviewing) return;
+    setReviewing(true);
+    try {
+      const rev = await api.post<{ data: { title: string; content: string } }>("/copywriting/review", {
+        ...dimensionBody(texts),
+        title: result.title,
+        content: result.content,
+      });
+      touchResult({
+        title: rev?.data.title || result.title,
+        content: rev?.data.content || result.content,
+        original: result.content,
+      });
+      showToast("已完成逆向检查修订");
+    } catch (err) {
+      toastError(err, "逆向检查失败，请稍后重试");
+    } finally {
+      setReviewing(false);
+    }
+  };
+
   const audit = async () => {
-    if (!content) return;
+    if (!result) return;
     setAuditing(true);
     try {
       const res = await api.post<{ data: CopyAuditReport }>("/copywriting/audit", {
         ...dimensionBody(texts),
-        content,
+        content: result.content,
       });
       if (res?.data) setReport(res.data);
     } catch (err) {
@@ -201,12 +269,37 @@ function GenerateTab({ canCreate }: { canCreate: boolean }) {
   };
 
   const copyContent = async () => {
-    if (!content) return;
+    if (!result) return;
     try {
-      await navigator.clipboard.writeText(content);
+      await navigator.clipboard.writeText(result.content);
       showToast("已复制");
     } catch {
       showToast("复制失败，请手动选择文本复制");
+    }
+  };
+
+  /** 行内保存：标题（保存必填，LLM 已预填）+ 当前正文 + 六段快照 + 审计快照 */
+  const save = async () => {
+    if (!result) return;
+    const title = result.title.trim();
+    if (!title) {
+      showToast("请填写标题后再保存");
+      return;
+    }
+    setSaving(true);
+    try {
+      await api.post("/copywriting/items", {
+        title,
+        ...dimensionBody(texts),
+        content: result.content,
+        auditReport: report ? JSON.stringify(report) : null,
+      });
+      showToast("已保存");
+      void queryClient.invalidateQueries({ queryKey: ["copywriting", "items"] });
+    } catch (err) {
+      toastError(err, "保存失败，请稍后重试");
+    } finally {
+      setSaving(false);
     }
   };
 
@@ -215,6 +308,9 @@ function GenerateTab({ canCreate }: { canCreate: boolean }) {
       <div className="card">
         <div className="card-head">
           <h2>提示词</h2>
+          <span className="muted-text" style={{ fontSize: 12 }}>
+            生成/逆向检查/审计的 system prompt 内置默认不可修改，覆盖配置在「系统设置 → 文案工作台」
+          </span>
         </div>
         <div className="card-body form-grid">
           {DIMENSIONS.map((dim) => (
@@ -245,7 +341,19 @@ function GenerateTab({ canCreate }: { canCreate: boolean }) {
             </div>
           ))}
         </div>
-        <div className="card-body" style={{ paddingTop: 0 }}>
+        <div
+          className="card-body"
+          style={{ paddingTop: 0, display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, flexWrap: "wrap" }}
+        >
+          <label className="inline-field">
+            <input
+              type="checkbox"
+              aria-label="生成后自动逆向检查"
+              checked={autoReview}
+              onChange={(e) => setAutoReview(e.target.checked)}
+            />
+            生成后自动逆向检查（第二轮 LLM 审修）
+          </label>
           <button
             type="button"
             className="btn-primary"
@@ -258,26 +366,59 @@ function GenerateTab({ canCreate }: { canCreate: boolean }) {
         </div>
       </div>
 
-      {content !== null && (
+      {result && (
         <div className="card">
           <div className="card-head">
             <h2>生成结果</h2>
             <div className="row-actions">
-              <button type="button" onClick={() => void copyContent()}>
-                复制
+              <button type="button" disabled={reviewing || generating} onClick={() => void reviewNow()}>
+                {reviewing ? "检查中…" : "逆向检查修订"}
               </button>
               <button type="button" disabled={auditing} onClick={() => void audit()}>
                 {auditing ? "审计中…" : "AI 审计"}
               </button>
+              <button type="button" onClick={() => void copyContent()}>
+                复制
+              </button>
               {canCreate && (
-                <button type="button" className="btn-primary" onClick={() => setSaving(true)}>
-                  保存文案
+                <button type="button" className="btn-primary" disabled={saving} onClick={() => void save()}>
+                  {saving ? "保存中…" : "保存文案"}
                 </button>
               )}
             </div>
           </div>
           <div className="card-body">
-            <div className="material-content">{content}</div>
+            {result.original !== null && (
+              <p className="page-tip" style={{ marginTop: 0 }}>
+                已完成逆向检查修订，以下为修订稿。
+                <details style={{ marginTop: 8 }}>
+                  <summary style={{ cursor: "pointer", display: "inline-block" }}>查看原始稿</summary>
+                  <div className="material-content" style={{ marginTop: 8 }}>
+                    {result.original}
+                  </div>
+                </details>
+              </p>
+            )}
+            <label className="field">
+              <span>
+                标题<span className="req-star">*</span>
+              </span>
+              <input
+                aria-label="文案标题"
+                value={result.title}
+                placeholder="LLM 生成，可修改；保存时必填"
+                onChange={(e) => touchResult({ ...result, title: e.target.value })}
+              />
+            </label>
+            <label className="field">
+              <span>正文</span>
+              <textarea
+                aria-label="文案正文"
+                rows={12}
+                value={result.content}
+                onChange={(e) => touchResult({ ...result, content: e.target.value })}
+              />
+            </label>
           </div>
           {report && (
             <div className="card-body" style={{ paddingTop: 0 }}>
@@ -307,68 +448,7 @@ function GenerateTab({ canCreate }: { canCreate: boolean }) {
           )}
         </div>
       )}
-
-      {saving && content !== null && (
-        <SaveCopyModal
-          content={content}
-          texts={texts}
-          report={report}
-          onClose={() => setSaving(false)}
-        />
-      )}
     </>
-  );
-}
-
-interface SaveCopyModalProps {
-  content: string;
-  texts: DimensionTexts;
-  report: CopyAuditReport | null;
-  onClose: () => void;
-}
-
-/** 「保存文案」弹窗：标题（默认正文首行截 30 字）→ POST /copywriting/items */
-function SaveCopyModal({ content, texts, report, onClose }: SaveCopyModalProps) {
-  const showToast = useToast();
-  const [title, setTitle] = useState(() => (content.split("\n")[0] ?? "").slice(0, 30));
-  const [busy, setBusy] = useState(false);
-
-  const submit = async (e: FormEvent<HTMLFormElement>) => {
-    e.preventDefault();
-    setBusy(true);
-    try {
-      await api.post("/copywriting/items", {
-        title: title.trim(),
-        ...dimensionBody(texts),
-        content,
-        auditReport: report ? JSON.stringify(report) : null,
-      });
-      showToast("已保存");
-      onClose();
-    } catch (err) {
-      showToast(err instanceof ApiError ? err.message : "保存失败，请稍后重试");
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  return (
-    <Modal title="保存文案" onClose={onClose}>
-      <form onSubmit={(e) => void submit(e)}>
-        <label className="field">
-          标题
-          <input required value={title} autoFocus onChange={(e) => setTitle(e.target.value)} />
-        </label>
-        <div className="modal-actions">
-          <button type="button" onClick={onClose} disabled={busy}>
-            取消
-          </button>
-          <button type="submit" className="btn-primary" disabled={busy}>
-            保存
-          </button>
-        </div>
-      </form>
-    </Modal>
   );
 }
 

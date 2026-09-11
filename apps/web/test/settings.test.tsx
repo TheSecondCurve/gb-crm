@@ -74,6 +74,7 @@ function mockSettingsApi(me: typeof adminMe, jobRows = jobs) {
           data: {
             generateSystemPrompt: "自定义生成PROMPT",
             auditSystemPrompt: "自定义审计PROMPT",
+            reviewSystemPrompt: "自定义逆向PROMPT",
             customized: true,
             updatedAt: 1000,
             updatedBy: 1,
@@ -129,6 +130,7 @@ describe("系统设置页", () => {
     const genTa = (await screen.findByDisplayValue("自定义生成PROMPT")) as HTMLTextAreaElement;
     expect(genTa).toBeTruthy();
     expect((await screen.findByDisplayValue("自定义审计PROMPT")) as HTMLTextAreaElement).toBeTruthy();
+    expect((await screen.findByDisplayValue("自定义逆向PROMPT")) as HTMLTextAreaElement).toBeTruthy();
 
     fireEvent.change(genTa, { target: { value: "改成新的生成 PROMPT" } });
     fireEvent.click(screen.getByRole("button", { name: "保存配置" }));
@@ -146,6 +148,7 @@ describe("系统设置页", () => {
       expect(JSON.parse(String(patches[patches.length - 1]?.body))).toEqual({
         generateSystemPrompt: null,
         auditSystemPrompt: null,
+        reviewSystemPrompt: null,
       });
     });
   });

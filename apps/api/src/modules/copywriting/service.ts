@@ -3,14 +3,21 @@
 //   changes===0 → 软删 404，否则 409 且 data 带当前完整行；空 patch（仅 updatedAt）→ 422；
 // - 模板 name live-unique 按 (dimension,name)：create / PATCH 改名冲突 → 409 带当前 live 行；
 //   软删后名字可复用；删除 = 软删（K9）；
-// - generate / audit 走 OpenAI 兼容 chatJson（K60）：未配置 → 422，上游失败/不可解析 → 502 LLM_ERROR。
+// - K60 迭代：generate/audit/review 的 system prompt 统一走 system_configs code='copywritingPrompts'
+//   （内置默认 = prompts.ts 女商红线版，null/空串恢复默认）；请求体 systemPrompt/reviewPrompt 可临时覆盖；
+// - generate → {title, content}（LLM 产出标题，缺省回退正文首行截断）；
+//   review = 逆向检查第二轮审修，修订稿才是产出；
+// - generate / audit / review 走 OpenAI 兼容 chatJson：未配置 → 422，上游失败/不可解析 → 502 LLM_ERROR。
 import type {
   CopyAuditBody,
   CopyAuditReport,
   CopyGenerateBody,
+  CopyGenerateResult,
   CopyItemListQuery,
   CopyItemPatch,
   CopyItemWrite,
+  CopyReviewBody,
+  CopyReviewResult,
   CopyTemplateListQuery,
   CopyTemplatePatch,
   CopyTemplateWrite,
@@ -30,7 +37,11 @@ import {
   type CopyItemDto,
   type CopyTemplateDto,
 } from "./assemble.js";
-import { DEFAULT_AUDIT_SYSTEM_PROMPT, DEFAULT_GENERATE_SYSTEM_PROMPT } from "./prompts.js";
+import {
+  DEFAULT_AUDIT_SYSTEM_PROMPT,
+  DEFAULT_GENERATE_SYSTEM_PROMPT,
+  DEFAULT_REVIEW_SYSTEM_PROMPT,
+} from "./prompts.js";
 import {
   getItemRowAny,
   getLiveTemplateByName,
@@ -104,7 +115,8 @@ export function patchCopyTemplate(
   }
 
   const existing = getTemplateRowAny(db, id);
-  if (patch.name !== undefined && existing) {
+  if (!existing || existing.deletedAt !== null) throw notFound("模板不存在");
+  if (patch.name !== undefined) {
     assertTemplateNameFree(db, existing.dimension, patch.name, id);
   }
 
@@ -210,7 +222,7 @@ export function deleteCopyItem(db: Db, id: number, ctx: AuditContext): void {
 }
 
 // ---------------------------------------------------------------------------
-// LLM 生成 / 审计
+// LLM 生成 / 逆向检查 / 审计
 // ---------------------------------------------------------------------------
 
 /** 六段维度中文标签（prompt 拼接顺序固定；空段省略） */
@@ -243,19 +255,33 @@ function requireLlmSettings(db: Db): { baseUrl: string; apiKey: string; model: s
   return { baseUrl: cfg.baseUrl, apiKey: cfg.apiKey, model: cfg.model };
 }
 
-/** 生效 system prompt：配置缺失/字段空串 → 内置默认（女商红线版） */
-function effectiveSystemPrompt(db: Db, kind: "generate" | "audit"): string {
+/** 生效 system prompt：请求快照（systemPrompt/reviewPrompt）> copywritingPrompts 配置 >
+ *  内置默认（女商红线版，prompts.ts 为最后真相；配置缺失/字段空串 → 默认） */
+function effectiveSystemPrompt(
+  db: Db,
+  kind: "generate" | "audit" | "review",
+  snapshot?: string,
+): string {
+  const trimmed = snapshot?.trim();
+  if (trimmed) return trimmed;
   const cfg = getCopywritingPromptsConfig(db);
   if (kind === "generate") return cfg?.generateSystemPrompt ?? DEFAULT_GENERATE_SYSTEM_PROMPT;
+  if (kind === "review") return cfg?.reviewSystemPrompt ?? DEFAULT_REVIEW_SYSTEM_PROMPT;
   return cfg?.auditSystemPrompt ?? DEFAULT_AUDIT_SYSTEM_PROMPT;
 }
 
-/** 生成文案：六段文本 → prompt → {"content":"..."}；temperature 0.7（创作） */
+/** LLM 产出的标题：非空字符串用（≤100），否则回退正文首行截断（保存必填，兜底保证可存） */
+function pickTitle(raw: unknown, content: string): string {
+  if (typeof raw === "string" && raw.trim()) return raw.trim().slice(0, 100);
+  return (content.split("\n")[0] ?? "").trim().slice(0, 30);
+}
+
+/** 生成文案：六段文本 → prompt → {"title","content"}（LLM 产出标题）；temperature 0.7（创作） */
 export async function generateCopy(
   db: Db,
   body: CopyGenerateBody,
   opts: { fetchFn?: typeof fetch } = {},
-): Promise<{ content: string }> {
+): Promise<CopyGenerateResult> {
   const settings = requireLlmSettings(db);
   let result: Record<string, unknown>;
   try {
@@ -264,10 +290,7 @@ export async function generateCopy(
       fetchFn: opts.fetchFn,
       temperature: 0.7,
       messages: [
-        {
-          role: "system",
-          content: effectiveSystemPrompt(db, "generate"),
-        },
+        { role: "system", content: effectiveSystemPrompt(db, "generate", body.systemPrompt) },
         { role: "user", content: buildDimensionText(body) },
       ],
     });
@@ -277,7 +300,45 @@ export async function generateCopy(
   }
   const content = typeof result.content === "string" ? result.content.trim() : "";
   if (!content) throw llmError("LLM 返回内容无法解析为文案");
-  return { content };
+  return { title: pickTitle(result.title, content), content };
+}
+
+/** 逆向检查（K60 迭代）：第二轮 LLM 审修——检查文本并执行一轮修改，修订稿才是产出；
+ * 修订稿标题缺省时沿用输入标题，再兜底正文首行。temperature 0.3（审修偏稳）。 */
+export async function reviewCopy(
+  db: Db,
+  body: CopyReviewBody,
+  opts: { fetchFn?: typeof fetch } = {},
+): Promise<CopyReviewResult> {
+  const settings = requireLlmSettings(db);
+  const dimensionText = buildDimensionText(body);
+  const userContent =
+    (body.title ? `原标题：${body.title}\n` : "") +
+    `待审文案：\n${body.content}` +
+    (dimensionText ? `\n\n维度上下文：\n${dimensionText}` : "");
+
+  let result: Record<string, unknown>;
+  try {
+    result = await chatJson({
+      settings,
+      fetchFn: opts.fetchFn,
+      temperature: 0.3,
+      messages: [
+        { role: "system", content: effectiveSystemPrompt(db, "review", body.reviewPrompt) },
+        { role: "user", content: userContent },
+      ],
+    });
+  } catch (err) {
+    if (err instanceof LlmError) throw llmError(err.message);
+    throw err;
+  }
+  const content = typeof result.content === "string" ? result.content.trim() : "";
+  if (!content) throw llmError("LLM 返回内容无法解析为文案");
+  const title =
+    typeof result.title === "string" && result.title.trim()
+      ? result.title.trim().slice(0, 100)
+      : body.title?.trim() || pickTitle(undefined, content);
+  return { title, content };
 }
 
 /** 用户视角审计：正文 + 维度上下文 → CopyAuditReport（宽松解析兜底）；temperature 0 */
@@ -298,10 +359,7 @@ export async function auditCopy(
       fetchFn: opts.fetchFn,
       temperature: 0,
       messages: [
-        {
-          role: "system",
-          content: effectiveSystemPrompt(db, "audit"),
-        },
+        { role: "system", content: effectiveSystemPrompt(db, "audit", body.systemPrompt) },
         { role: "user", content: userContent },
       ],
     });

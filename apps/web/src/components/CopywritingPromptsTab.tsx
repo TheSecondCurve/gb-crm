@@ -1,4 +1,4 @@
-// 系统设置「文案工作台」tab（K60+，仅 admin）：generate/audit 的 system prompt 维护。
+// 系统设置「文案工作台」tab（K60+，仅 admin）：generate/audit/review 的 system prompt 维护。
 // 未配置回退内置默认（customized=false）；「还原默认」PATCH null 即复位——配置改坏的安全绳。
 import { useEffect, useState, type FormEvent } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -11,7 +11,7 @@ export function CopywritingPromptsTab() {
   const showToast = useToast();
   const queryClient = useQueryClient();
   const [busy, setBusy] = useState(false);
-  const [form, setForm] = useState({ generate: "", audit: "" });
+  const [form, setForm] = useState({ generate: "", audit: "", review: "" });
 
   const { data: prompts } = useQuery({
     queryKey: ["system", "copywriting-prompts"],
@@ -22,7 +22,11 @@ export function CopywritingPromptsTab() {
   // 加载/保存后预填生效值（即配置 ?? 内置默认）
   useEffect(() => {
     if (prompts) {
-      setForm({ generate: prompts.generateSystemPrompt, audit: prompts.auditSystemPrompt });
+      setForm({
+        generate: prompts.generateSystemPrompt,
+        audit: prompts.auditSystemPrompt,
+        review: prompts.reviewSystemPrompt,
+      });
     }
   }, [prompts]);
 
@@ -36,6 +40,9 @@ export function CopywritingPromptsTab() {
       }
       if (form.audit !== prompts?.auditSystemPrompt) {
         body.auditSystemPrompt = form.audit.trim() || null;
+      }
+      if (form.review !== prompts?.reviewSystemPrompt) {
+        body.reviewSystemPrompt = form.review.trim() || null;
       }
       await api.patch("/system/copywriting-prompts", body);
       await queryClient.invalidateQueries({ queryKey: ["system", "copywriting-prompts"] });
@@ -53,6 +60,7 @@ export function CopywritingPromptsTab() {
       await api.patch("/system/copywriting-prompts", {
         generateSystemPrompt: null,
         auditSystemPrompt: null,
+        reviewSystemPrompt: null,
       });
       await queryClient.invalidateQueries({ queryKey: ["system", "copywriting-prompts"] });
       showToast("已恢复内置默认提示词");
@@ -74,8 +82,8 @@ export function CopywritingPromptsTab() {
         </div>
         <div className="card-body">
           <p className="muted">
-            生成与审计文案时发给模型的 system prompt。留空保存即恢复内置默认；模板词表在「文案工作台 →
-            模板管理」维护。
+            生成、逆向检查与审计文案时发给模型的 system prompt（内置默认不可修改，此处为覆盖值）。
+            留空保存即恢复内置默认；六维度内容模板词表在「文案工作台 → 模板管理」维护。
           </p>
           <form className="settings-form" onSubmit={(e) => void save(e)}>
             <label className="field">
@@ -84,6 +92,14 @@ export function CopywritingPromptsTab() {
                 rows={10}
                 value={form.generate}
                 onChange={(e) => setForm((f) => ({ ...f, generate: e.target.value }))}
+              />
+            </label>
+            <label className="field">
+              逆向检查 system prompt
+              <textarea
+                rows={10}
+                value={form.review}
+                onChange={(e) => setForm((f) => ({ ...f, review: e.target.value }))}
               />
             </label>
             <label className="field">

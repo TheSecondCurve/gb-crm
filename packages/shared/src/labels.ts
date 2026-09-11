@@ -190,7 +190,7 @@ export const tokenScopeLabels: Record<TokenScope, string> = {
   write: "读写",
 };
 
-/** 文案提示词维度（K60） */
+/** 文案模板维度（K60） */
 export const copyDimensionLabels: Record<CopyDimension, string> = {
   background: "业务背景",
   audience: "目标客群",

@@ -308,11 +308,12 @@ export function upsertCommissionDefault(
 }
 
 // ---- 文案工作台 system prompt（code='copywritingPrompts'，K60+）编解码 ----
-// value = { generateSystemPrompt, auditSystemPrompt }；空串/缺键/类型不对 → null（回退内置默认）。
+// value = { generateSystemPrompt, auditSystemPrompt, reviewSystemPrompt }；空串/缺键/类型不对 → null（回退内置默认）。
 
 export interface CopywritingPromptsValue {
   generateSystemPrompt: string | null;
   auditSystemPrompt: string | null;
+  reviewSystemPrompt: string | null;
 }
 
 export interface CopywritingPromptsRow extends CopywritingPromptsValue {
@@ -332,6 +333,7 @@ export function parseCopywritingPromptsValue(json: string): CopywritingPromptsVa
   return {
     generateSystemPrompt: strOrNull(obj.generateSystemPrompt),
     auditSystemPrompt: strOrNull(obj.auditSystemPrompt),
+    reviewSystemPrompt: strOrNull(obj.reviewSystemPrompt),
   };
 }
 
@@ -341,6 +343,7 @@ export function getCopywritingPromptsConfig(db: Db): CopywritingPromptsRow | und
   const value = parseCopywritingPromptsValue(row.value) ?? {
     generateSystemPrompt: null,
     auditSystemPrompt: null,
+    reviewSystemPrompt: null,
   };
   return { ...value, updatedAt: row.updatedAt, updatedBy: row.updatedBy };
 }
@@ -355,6 +358,7 @@ export function upsertCopywritingPromptsConfig(
     JSON.stringify({
       generateSystemPrompt: values.generateSystemPrompt,
       auditSystemPrompt: values.auditSystemPrompt,
+      reviewSystemPrompt: values.reviewSystemPrompt,
     }),
     values.updatedAt,
     values.updatedBy,
