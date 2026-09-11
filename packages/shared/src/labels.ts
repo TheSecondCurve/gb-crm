@@ -3,6 +3,8 @@ import type {
   AccountType,
   ChannelStatus,
   ChannelType,
+  CopyAuditVerdict,
+  CopyDimension,
   CustomerType,
   DealStage,
   DeliverableDimension,
@@ -186,4 +188,21 @@ export const payoutBatchStatusLabels: Record<PayoutBatchStatus, string> = {
 export const tokenScopeLabels: Record<TokenScope, string> = {
   read: "只读",
   write: "读写",
+};
+
+/** 文案提示词维度（K60） */
+export const copyDimensionLabels: Record<CopyDimension, string> = {
+  background: "业务背景",
+  audience: "目标客群",
+  topic: "主题内容",
+  goal: "预期目的",
+  outputType: "产出类型",
+  polish: "润色要求",
+};
+
+/** 文案审计结论（K60） */
+export const copyAuditVerdictLabels: Record<CopyAuditVerdict, string> = {
+  pass: "通过",
+  warn: "注意",
+  fail: "不通过",
 };

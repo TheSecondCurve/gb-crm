@@ -522,6 +522,38 @@ export interface DeliverableDto {
   updatedBy: UserRefDto | null;
 }
 
+/** K60 文案提示词模板词表项 */
+export interface CopyTemplateDto {
+  id: number;
+  dimension: string;
+  name: string;
+  content: string;
+  sort: number;
+  enabled: boolean;
+  createdAt: number;
+  updatedAt: number;
+  createdBy: UserRefDto | null;
+  updatedBy: UserRefDto | null;
+}
+
+/** K60 已保存文案（auditReport = CopyAuditReport 的 JSON 序列化快照，未审计 → null） */
+export interface CopyItemDto {
+  id: number;
+  title: string;
+  background: string | null;
+  audience: string | null;
+  topic: string | null;
+  goal: string | null;
+  outputType: string | null;
+  polish: string | null;
+  content: string;
+  auditReport: string | null;
+  createdAt: number;
+  updatedAt: number;
+  createdBy: UserRefDto | null;
+  updatedBy: UserRefDto | null;
+}
+
 export interface UserDto {
   id: number;
   username: string | null;

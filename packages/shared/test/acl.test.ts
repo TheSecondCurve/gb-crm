@@ -31,6 +31,7 @@ const EXPECTED: Record<SystemRole, Partial<Record<Resource, readonly Action[]>>>
     materials: ["list", "read", "create", "update", "delete"],
     customerRecords: ["list", "read", "create", "update", "delete"],
     dealCommissions: ["list", "read", "update"],
+    copywriting: ["list", "read", "create", "update", "delete"],
     system: ["read", "update"],
     jobs: ["list", "read", "create", "cancel", "cancelAny"],
     jobSchedules: ["list", "read", "create", "update", "delete"],
@@ -55,6 +56,7 @@ const EXPECTED: Record<SystemRole, Partial<Record<Resource, readonly Action[]>>>
     materials: ["list", "read", "create", "update", "delete"],
     customerRecords: ["list", "read", "create", "update", "delete"],
     dealCommissions: ["list", "read", "update"],
+    copywriting: ["list", "read", "create", "update", "delete"],
     jobs: ["list", "read", "create", "cancel"],
     auth: ["setPassword"],
   },
@@ -68,6 +70,7 @@ const EXPECTED: Record<SystemRole, Partial<Record<Resource, readonly Action[]>>>
     materials: ["list", "read"],
     customerRecords: ["list", "read"],
     dealCommissions: ["list", "read"],
+    copywriting: ["list", "read"],
     jobs: ["list", "read", "create", "cancel"],
     auth: ["setPassword"],
   },
@@ -218,6 +221,19 @@ describe("§6 必测场景", () => {
     expect(can("assistant", "dealCommissions", "list")).toBe(true);
     expect(can("assistant", "dealCommissions", "read")).toBe(true);
     expect(can("assistant", "dealCommissions", "update")).toBe(false);
+  });
+
+  it("copywriting 文案工作台：admin/operator 全量（含模板维护与生成/审计），assistant 只读（K60）", () => {
+    for (const role of ["admin", "operator"] as const) {
+      for (const action of ["list", "read", "create", "update", "delete"] as const) {
+        expect(can(role, "copywriting", action)).toBe(true);
+      }
+    }
+    expect(can("assistant", "copywriting", "list")).toBe(true);
+    expect(can("assistant", "copywriting", "read")).toBe(true);
+    for (const action of ["create", "update", "delete"] as const) {
+      expect(can("assistant", "copywriting", action)).toBe(false);
+    }
   });
 
   it("system 配置：仅 admin（K46）", () => {

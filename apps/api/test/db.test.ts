@@ -30,6 +30,8 @@ describe("migration", () => {
       "background_jobs",
       "channel_owners",
       "channels",
+      "copy_items",
+      "copy_templates",
       "customer_maintenance_records",
       "customer_social_accounts",
       "customer_source_channels",
