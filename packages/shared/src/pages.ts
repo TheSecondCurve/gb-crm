@@ -8,7 +8,7 @@ import { can, type Action, type Resource } from "./acl.js";
 import type { SystemRole } from "./enums.js";
 
 /** 侧栏菜单分组顺序（渲染与排序用） */
-export const PAGE_GROUPS = ["我的运营", "主数据", "运营流程", "系统", "业务设置"] as const;
+export const PAGE_GROUPS = ["我的运营", "主数据", "运营流程", "私域运营", "系统", "业务设置"] as const;
 export type PageGroup = (typeof PAGE_GROUPS)[number];
 
 export interface PageDef {
@@ -51,6 +51,8 @@ export const PAGE_REGISTRY: readonly PageDef[] = [
   { key: "delivery-types", path: "/delivery-types", label: "交付类型", group: "运营流程", order: 5, menu: true, required: { resource: "deliveries", action: "list" } },
   { key: "materials", path: "/materials", label: "资料专区", group: "运营流程", order: 6, menu: true, required: { resource: "materials", action: "list" } },
   { key: "material-edit", path: "/materials/:id/edit", label: "资料全文编辑", group: "运营流程", order: 7, menu: false, parent: "materials", required: { resource: "materials", action: "read" } },
+  // ── 私域运营 ──
+  { key: "copywriting", path: "/copywriting", label: "文案工作台", group: "私域运营", order: 0, menu: true, required: { resource: "copywriting", action: "list" } },
   // ── 系统 ──
   { key: "users", path: "/users", label: "团队成员", group: "系统", order: 0, menu: true, required: { resource: "users", action: "list" } },
   { key: "settings", path: "/settings", label: "系统设置", group: "系统", order: 1, menu: true, required: { resource: "jobs", action: "list" } },

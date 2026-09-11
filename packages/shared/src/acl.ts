@@ -15,6 +15,7 @@ export const resourceSchema = z.enum([
   "materials",
   "customerRecords",
   "dealCommissions",
+  "copywriting",
   "system",
   "jobs",
   "jobSchedules",
@@ -73,6 +74,10 @@ const ALL_CUSTOMER_RECORD_ACTIONS: readonly Action[] = ["list", "read", "create"
 // K56：成交分成（财务）——admin/operator 可查看+配置，assistant 只读（同 deals 角色边界）。
 // 默认方案（commissionDefault）走 system 资源（仅 admin），admin 在此矩阵不额外区分。
 const ALL_DEAL_COMMISSION_ACTIONS: readonly Action[] = ["list", "read", "update"];
+// K60：文案工作台（提示词模板 + 生成/审计 + 已保存文案）——admin/operator 全量，assistant 只读。
+// 提示词模板是运营内容资产，operator 可维护（不同于 tags 客户词表的 admin-only 治理）；
+// generate/audit 端点挂 create 动作。
+const ALL_COPYWRITING_ACTIONS: readonly Action[] = ["list", "read", "create", "update", "delete"];
 // K46：系统配置（LLM 打标）——仅 admin
 const SYSTEM_ACTIONS: readonly Action[] = ["read", "update"];
 // K51：后台任务——全角色可创建/查看/取消自己的；取消他人任务需 cancelAny（仅 admin）。
@@ -93,6 +98,7 @@ const MATRIX: Record<SystemRole, Readonly<Partial<Record<Resource, readonly Acti
     materials: ALL_MATERIAL_ACTIONS,
     customerRecords: ALL_CUSTOMER_RECORD_ACTIONS,
     dealCommissions: ALL_DEAL_COMMISSION_ACTIONS,
+    copywriting: ALL_COPYWRITING_ACTIONS,
     system: SYSTEM_ACTIONS,
     jobs: ALL_JOB_ACTIONS,
     jobSchedules: ALL_JOB_SCHEDULE_ACTIONS,
@@ -112,6 +118,7 @@ const MATRIX: Record<SystemRole, Readonly<Partial<Record<Resource, readonly Acti
     materials: ALL_MATERIAL_ACTIONS,
     customerRecords: ALL_CUSTOMER_RECORD_ACTIONS,
     dealCommissions: ALL_DEAL_COMMISSION_ACTIONS,
+    copywriting: ALL_COPYWRITING_ACTIONS,
     jobs: ["list", "read", "create", "cancel"],
     auth: ["setPassword"],
   },
@@ -128,6 +135,7 @@ const MATRIX: Record<SystemRole, Readonly<Partial<Record<Resource, readonly Acti
     materials: ["list", "read"],
     customerRecords: ["list", "read"],
     dealCommissions: ["list", "read"],
+    copywriting: ["list", "read"],
     jobs: ["list", "read", "create", "cancel"],
     auth: ["setPassword"],
   },

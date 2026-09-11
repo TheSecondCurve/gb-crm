@@ -10,6 +10,10 @@ import {
   channelStatusSchema,
   channelTypeLabels,
   channelTypeSchema,
+  copyAuditVerdictLabels,
+  copyAuditVerdictSchema,
+  copyDimensionLabels,
+  copyDimensionSchema,
   customerTypeLabels,
   customerTypeSchema,
   dealStageLabels,
@@ -63,11 +67,13 @@ const ALL: [name: string, schema: z.ZodEnum<[string, ...string[]]>, labels: Reco
     ["materialKind", materialKindSchema, materialKindLabels],
     ["maintenanceKind", maintenanceKindSchema, maintenanceKindLabels],
     ["payoutBatchStatus", payoutBatchStatusSchema, payoutBatchStatusLabels],
+    ["copyDimension", copyDimensionSchema, copyDimensionLabels],
+    ["copyAuditVerdict", copyAuditVerdictSchema, copyAuditVerdictLabels],
   ];
 
 describe("枚举与 labels 完整性（Appendix A.5 全量）", () => {
-  it("19 个枚举都在", () => {
-    expect(ALL).toHaveLength(19);
+  it("21 个枚举都在", () => {
+    expect(ALL).toHaveLength(21);
   });
 
   for (const [name, schema, labels] of ALL) {

@@ -145,3 +145,18 @@ export type MaintenanceKind = z.infer<typeof maintenanceKindSchema>;
 /** payout 结算批次状态（K59：草稿可增删明细 → 锁定快照确认 → 已发放；locked 可 unlock 回 draft） */
 export const payoutBatchStatusSchema = z.enum(["draft", "locked", "paid"]);
 export type PayoutBatchStatus = z.infer<typeof payoutBatchStatusSchema>;
+
+/** 文案提示词维度（K60：业务背景 / 目标客群 / 主题内容 / 预期目的 / 产出类型 / 润色要求） */
+export const copyDimensionSchema = z.enum([
+  "background",
+  "audience",
+  "topic",
+  "goal",
+  "outputType",
+  "polish",
+]);
+export type CopyDimension = z.infer<typeof copyDimensionSchema>;
+
+/** 文案审计结论（K60：通过 / 注意 / 不通过） */
+export const copyAuditVerdictSchema = z.enum(["pass", "warn", "fail"]);
+export type CopyAuditVerdict = z.infer<typeof copyAuditVerdictSchema>;

@@ -18,3 +18,4 @@ export * from "./schemas/payout-batch.js";
 export * from "./schemas/followUp.js";
 export * from "./schemas/system.js";
 export * from "./schemas/job.js";
+export * from "./schemas/copywriting.js";
