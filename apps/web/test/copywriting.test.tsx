@@ -1,5 +1,5 @@
-// 文案工作台（K60）：三 tab 渲染 / 生成 tab 模板填充 + topic 必填 + generate/audit /
-// 已保存 tab 列表 + assistant 只读。
+// 文案工作台（K60）：三 tab 渲染 / 生成 tab 模板填充 + topic 必填 + generate → 自动逆向检查 →
+// 修订稿+原始稿 / 手动审计报告 / 行内保存（标题必填）/ 已保存 tab assistant 只读 / 模板管理内置锁定。
 import { describe, expect, it } from "vitest";
 import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 
@@ -56,7 +56,10 @@ function mockCopywritingApi(me: Me) {
       return { status: 200, body: { data, meta: { page: 1, pageSize: data.length, total: data.length } } };
     }
     if (url === "/api/v1/copywriting/generate" && method === "POST") {
-      return { status: 200, body: { data: { content: "生成的文案正文" } } };
+      return { status: 200, body: { data: { title: "开营推文", content: "生成的文案正文" } } };
+    }
+    if (url === "/api/v1/copywriting/review" && method === "POST") {
+      return { status: 200, body: { data: { title: "修订后标题", content: "修订后的正文" } } };
     }
     if (url === "/api/v1/copywriting/audit" && method === "POST") {
       return { status: 200, body: { data: auditReport } };
@@ -112,23 +115,79 @@ describe("文案工作台", () => {
     expect(calls.some((c) => c.url === "/api/v1/copywriting/generate")).toBe(false);
   });
 
-  it("生成 tab：mock generate 成功 → 结果区显示文案；audit 成功 → 显示结论与 issues", async () => {
+  it("生成 tab：generate → 自动逆向检查 → 修订稿在编辑框、原始稿留档；audit → 显示结论与 issues", async () => {
     const calls = mockCopywritingApi(adminMe);
     renderApp("/copywriting");
 
     fireEvent.change(await screen.findByLabelText("主题内容"), { target: { value: "开营预告" } });
     fireEvent.click(screen.getByRole("button", { name: "生成文案" }));
-    expect(await screen.findByText("生成的文案正文")).toBeTruthy();
+
+    // 修订稿才是产出：正文/标题编辑框显示修订结果
+    const contentBox = (await screen.findByLabelText("文案正文")) as HTMLTextAreaElement;
+    expect(contentBox.value).toBe("修订后的正文");
+    expect((screen.getByLabelText("文案标题") as HTMLInputElement).value).toBe("修订后标题");
+
+    // 原始稿折叠留档 + 两次 LLM 调用（generate + review）
+    expect(screen.getByText("生成的文案正文")).toBeTruthy();
     await waitFor(() => {
-      const post = calls.find((c) => c.method === "POST" && c.url === "/api/v1/copywriting/generate");
-      expect(JSON.parse(String(post?.body))).toEqual({ topic: "开营预告" });
+      expect(calls.some((c) => c.method === "POST" && c.url === "/api/v1/copywriting/generate")).toBe(true);
+      expect(calls.some((c) => c.method === "POST" && c.url === "/api/v1/copywriting/review")).toBe(true);
     });
+    const gen = calls.find((c) => c.method === "POST" && c.url === "/api/v1/copywriting/generate");
+    expect(JSON.parse(String(gen?.body))).toEqual({ topic: "开营预告" }); // 内置默认 → 不带 systemPrompt
+    const rev = calls.find((c) => c.method === "POST" && c.url === "/api/v1/copywriting/review");
+    const revBody = JSON.parse(String(rev?.body));
+    expect(revBody.title).toBe("开营推文");
+    expect(revBody.content).toBe("生成的文案正文");
 
     fireEvent.click(screen.getByRole("button", { name: "AI 审计" }));
     expect(await screen.findByText("注意")).toBeTruthy();
     expect(screen.getByText("整体可读，但行动号召偏弱。")).toBeTruthy();
     expect(screen.getByText("行动号召")).toBeTruthy();
     expect(screen.getByText(/补充报名方式/)).toBeTruthy();
+  });
+
+  it("生成 tab：关闭自动逆向检查 → 只调 generate，结果即原始稿", async () => {
+    const calls = mockCopywritingApi(adminMe);
+    renderApp("/copywriting");
+
+    fireEvent.change(await screen.findByLabelText("主题内容"), { target: { value: "开营预告" } });
+    fireEvent.click(screen.getByLabelText("生成后自动逆向检查")); // 取消勾选
+    fireEvent.click(screen.getByRole("button", { name: "生成文案" }));
+
+    const contentBox = (await screen.findByLabelText("文案正文")) as HTMLTextAreaElement;
+    expect(contentBox.value).toBe("生成的文案正文");
+    await waitFor(() => {
+      expect(calls.some((c) => c.method === "POST" && c.url === "/api/v1/copywriting/generate")).toBe(true);
+    });
+    expect(calls.some((c) => c.url === "/api/v1/copywriting/review")).toBe(false);
+  });
+
+  it("保存：标题为空提示且不发请求；补标题后 POST items（title + 修订稿 content）", async () => {
+    const calls = mockCopywritingApi(adminMe);
+    renderApp("/copywriting");
+
+    fireEvent.change(await screen.findByLabelText("主题内容"), { target: { value: "开营预告" } });
+    fireEvent.click(screen.getByRole("button", { name: "生成文案" }));
+    await screen.findByLabelText("文案正文");
+
+    // 标题清空（只剩空白）→ 提示且不发请求
+    fireEvent.change(screen.getByLabelText("文案标题"), { target: { value: " " } });
+    fireEvent.click(screen.getByRole("button", { name: "保存文案" }));
+    expect(await screen.findByText("请填写标题后再保存")).toBeTruthy();
+    expect(calls.some((c) => c.method === "POST" && c.url === "/api/v1/copywriting/items")).toBe(false);
+
+    // 补标题 → POST items
+    fireEvent.change(screen.getByLabelText("文案标题"), { target: { value: "开营推文" } });
+    fireEvent.click(screen.getByRole("button", { name: "保存文案" }));
+    await waitFor(() => {
+      const post = calls.find((c) => c.method === "POST" && c.url === "/api/v1/copywriting/items");
+      expect(post).toBeTruthy();
+      const body = JSON.parse(String(post?.body));
+      expect(body.title).toBe("开营推文");
+      expect(body.content).toBe("修订后的正文");
+      expect(body.topic).toBe("开营预告");
+    });
   });
 
   it("已保存 tab：列表渲染；assistant 只有「查看」无编辑/删除", async () => {
@@ -153,5 +212,20 @@ describe("文案工作台", () => {
     await waitFor(() =>
       expect(calls.some((c) => c.method === "DELETE" && c.url === "/api/v1/copywriting/items/1")).toBe(true),
     );
+  });
+
+  it("模板管理：六维度分组卡片，自定义模板可编辑/删除", async () => {
+    mockCopywritingApi(adminMe);
+    renderApp("/copywriting?tab=templates");
+
+    // 六段内容维度分组（行数据异步加载，findBy* 等待）
+    expect(await screen.findByRole("heading", { name: "业务背景" })).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "主题内容" })).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "润色要求" })).toBeTruthy();
+    await screen.findByText("女商品牌背景");
+
+    // 自定义行（业务背景/主题内容）有编辑/删除
+    expect(screen.getAllByRole("button", { name: "编辑" }).length).toBeGreaterThan(0);
+    expect(screen.getAllByRole("button", { name: "删除" }).length).toBeGreaterThan(0);
   });
 });

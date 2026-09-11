@@ -2,7 +2,7 @@
 
 闪光团队客户信息管理系统（品牌文案 **「女商 私域运营管理端」**）。内网单进程：Vite + React 管理端 + Fastify REST + SQLite。
 
-完整架构与编号决策见 `docs/design.md`（K1–K35）。需求原文 `docs/core.md`，视觉 `docs/style.md`，Agent 签发与 Skill 用法 `docs/dev.md`，远程备份（Cloudflare R2）申请与配置指南 `docs/remote-backup.md`。本文件是给编码代理的工作契约：改代码前先对照这里，再对照 design。
+本文件是给编码代理的**工作契约**：工程结构、命令、硬性约定。功能细节与全部编号决策（K1–K60）查 `docs/design.md` 的 Key Decisions 表——那是唯一真相源，本文件不复述。需求原文 `docs/core.md`，视觉 `docs/style.md`，Agent 签发与 Skill 用法 `docs/dev.md`，远程备份（Cloudflare R2）指南 `docs/remote-backup.md`。
 
 ## 工程结构
 
@@ -12,16 +12,14 @@ npm workspaces monorepo。Node **24**（`.nvmrc`）。包管理器是 **npm**，
 gb-crm/
   apps/web/          @gb-crm/web    Vite + React 管理端（中文 UI）
   apps/api/          @gb-crm/api    Fastify + Drizzle + better-sqlite3
-  packages/shared/   @gb-crm/shared Zod schema、枚举、labels、can() ACL
-  skills/gb-crm/     Agent skill（K35 源目录）；经软链 .agents/skills/gb-crm 安装为本项目范围 skill
+  packages/shared/   @gb-crm/shared Zod schema、枚举、labels、can() ACL、PAGE_REGISTRY
+  skills/gb-crm/     Agent skill 源目录（软链 .agents/skills/gb-crm 为项目级 skill）
   e2e/               Playwright 冒烟（不进 npm test，不挡合并）
-  docs/              core.md / design.md / dev.md / style.md
+  docs/              core.md / design.md / dev.md / style.md / remote-backup.md
   Dockerfile + docker-compose.yml
 ```
 
-`@gb-crm/shared` 的 `exports` 指向 `src/index.ts`（无构建产物）。API 用 `tsx` + **NodeNext**；web 用 Vite。根 `tsconfig.base.json` **不要**设 `moduleResolution: bundler`。
-
-v1 **不抽** `packages/ui`。视觉 token 在 `apps/web/src/styles/tokens.css`。
+`@gb-crm/shared` 的 `exports` 指向 `src/index.ts`（无构建产物）。API 用 `tsx` + **NodeNext**；web 用 Vite。根 `tsconfig.base.json` **不要**设 `moduleResolution: bundler`。v1 **不抽** `packages/ui`。视觉 token 在 `apps/web/src/styles/tokens.css`。
 
 ### API 分层（每个资源三层，禁止跨层）
 
@@ -34,31 +32,34 @@ v1 **不抽** `packages/ui`。视觉 token 在 `apps/web/src/styles/tokens.css`�
 | repo | `repo.ts` | SQL / Drizzle |
 | assemble | `assemble.ts` | 行 → JSON（展开 live 关联，INNER 未删除） |
 
-例外：`modules/agent/routes.ts` 是单文件模块（K35 Agent SQL 端点），直接用 `db.$client` 原生 better-sqlite3，不走三层。
+例外：`modules/agent/routes.ts` 单文件模块（K35 Agent SQL 端点），直接用 `db.$client` 原生 better-sqlite3，不走三层。
 
-K45/K46/K50/K51/K53 补充：`modules/tags` 词表三层（admin 写、其余只读，维护入口「业务设置」页 `/business-settings`）；`modules/copywriting`（K60）文案工作台三层：提示词模板词表 `copy_templates`（六维度 background/audience/topic/goal/outputType/polish，live 唯一 `(dimension,name)`，admin/operator 写、assistant 只读）+ 已保存文案 `copy_items`（title + 六段维度文本快照 + content + audit_report 审计 JSON 快照，软删）；`POST /copywriting/generate`（topic 必填、六段文本快照、temperature 0.7）与 `POST /copywriting/audit`（用户视角审计：目的达成/不适表达/理解成本，输出 `{verdict,summary,issues[]}` 宽松解析兜底）挂 `copywriting.create`，复用 code='llm' 配置（未配置 422、失败 502 LLM_ERROR、llmFetch 注入）；「选模板」是前端行为（模板 content 填入输入框可再编辑），服务端只收最终文本快照不解析模板 id；新 ACL 资源 `copywriting`（admin/operator 全量、assistant 只读）；前端 `/copywriting` 三 tab（生成与审计/已保存文案/模板管理）；K60+ 初始化：`0031_copy_templates_seed.sql` 种 21 条提示词模板（六维度全覆盖，不写死价格/场次数字、没把握标「待核」，表空才插不覆盖用户在 UI 的改动；业务基准见 docs/reference/业务背景_整合版_260911.md）；generate/audit 的 system prompt 内置女商红线默认值（`modules/copywriting/prompts.ts` 为最后真相），可经 `system_configs` code='copywritingPrompts' 覆盖，前端系统设置「文案工作台」tab 维护；`modules/system` 走通用 `system_configs` 表（code='llm' 存 LLM 打标配置，GET 掩码 / PATCH，admin only，有意不做 OCC；code='pageAccess' 存角色→页面权限——前端功能级配置，admin only，`GET/PATCH /system/page-access`，只在 can() 允许集内收缩，admin 固定全量不参与配置；code='s3'（K53）存 S3 兼容对象存储远程备份配置，`GET/PATCH /system/s3-config` + `POST /system/s3-config/test`（连通性探针），admin only，secret 只回掩码、enabled=true 时 endpoint/bucket/accessKeyId/secretAccessKey 四要素必须齐备否则 422；code='materialsS3'（K57）存资料文件对象存储配置，`GET/PATCH /system/materials-s3-config` + `POST /system/materials-s3-config/test`，同样 admin only、secret 掩码、enabled=true 时四要素必须齐备否则 422，与备份配置互相独立；code='copywritingPrompts'（K60+）存文案工作台 generate/audit system prompt 的覆盖值，GET 返回生效值（未配置/空串回退内置女商红线默认，prompts.ts 为最后真相），PATCH null/空串恢复默认，非密钥不掩码；未来新配置直接加 code 行不建表）；后台任务 `modules/jobs`（表 `background_jobs`，执行器 `runner.ts` 进程内**串行**消费 queued，生产 `index.ts` `start()`、测试 `pumpOnce()`；状态机 queued→running→succeeded|partial|failed|cancelled——落终态带 `status='running'` CAS，影响 0 行静默跳过（cancelled 是不可被覆盖的终态），重启 `recover()` 把残留 running 标 failed；API：POST/GET `background-jobs`、`GET :id`、`POST :id/cancel`（仅 queued/running 可取消，非本人需 `jobs.cancelAny`）；任务类型注册表 `registry.ts` 驱动（未知 422、按 type 校验业务权限、params 按各 type 注册的 Zod schema 创建+执行双侧校验、非法 422 VALIDATION、创建时预检 LLM 就绪 422）；批量打标 = type `customer-tags-generate-all`，前端在系统设置页「后台任务」tab 查看/取消（全角色），有活跃任务 3s 轮询；数据库备份 = type `db-backup`（仅 admin，`backup.ts`：better-sqlite3 backup → gzip → `<数据库目录>/backups/gb-crm-<时间戳>.sqlite.gz` chmod 600，滚动保留最近 7 份，日常备份在「定时任务」tab 配 cron；K53：备份后若 code='s3' 启用且配置完整 → 上传一份到远端固定对象 `{prefix}gb-crm-latest.sqlite.gz` **覆盖式不留多份**，上传失败任务 partial 不影响本地份）；定时任务（K52）调度定义存表 `job_schedules`（type+params+cron+enabled+last/next_run_at），调度器 `scheduler.ts` 进程内把到期（enabled=1 且 next_run_at≤now）调度用 CAS 推进 next_run_at 并插 `trigger='scheduled'` 队列行（trigger_spec=cron，created_by=NULL），执行器无感知；cron 求值 `lib/cron.ts` 零依赖、5 字段、按进程本地时区（生产容器设 `TZ=Asia/Shanghai`）；API `GET/POST job-schedules`、`GET/PATCH/DELETE :id`、`POST :id/run`、`GET types`，仅 admin（ACL 资源 `jobSchedules`），前端系统设置页「定时任务」tab）；`modules/materials`（K54）交付资料三层：每一场咨询 = 一条 deliveries（无父子记录），资料 `delivery_materials` 可空挂交付单（孤儿允许）+ 客户 M2M `delivery_material_customers`（0..N）；kind transcript/text 全文入 content（**可空**——建后在全文编辑页补写）、audio/video/link 只存 url（Zod 组合校验：仅媒体类 url 必填）、file 对象存储（K57：multipart `POST /materials/upload` 到 materialsS3，`GET /materials/:id/file` 预览/下载，软删尽力删远端对象，JSON POST kind=file 422）；列表 DTO 不含 content（带 contentLength/excerpt + originalFilename/contentType/fileSize/isImage），全文走 GET :id；搜索 = FTS5 虚表 `delivery_materials_fts`（trigram，迁移内触发器同步、软删移出索引；≥3 字符 token MATCH、<3 字符回退 LIKE；FTS 不入 Drizzle schema，repo 用 `db.$client`）；前端资料专区 `/materials`（按关联交付类型分组 tab，`deliveryKind` 过滤：consulting/activity/circle/other，other=未关联或类型为 other）+ 交付详情页/客户总览页资料区块；AI 打标 `lib/llm.ts`（OpenAI 兼容 `chat/completions`，零新依赖，`buildApp({ llmFetch })` 注入测试 mock）；S3 客户端 `lib/s3.ts`（零依赖 SigV4 签名 + path-style，兼容 AWS/MinIO/OSS/COS/R2，AWS 官方向量对拍单测，`buildApp({ s3Fetch })` / runner `fetchFn` 注入 mock）。`modules/customer-records`（K55）客户维护记录三层：嵌套路由 `/api/v1/customers/:customerId/records`（ACL 资源 `customerRecords`，admin/operator 全量、assistant 只读），表 `customer_maintenance_records`（customer_id FK + kind follow_up/status_change/lead/note/other + happened_at 可回补 + content），纯时间线表达客户状态（**不新增 customers.status 列**），新建 follow_up/lead 记录顺带 bump customers.last_followed_at；客户总览 DTO 携带 `maintenanceRecords` + stats 的 `maintenanceRecordCount`；无 FTS / 无 M2M / 无多态关联。`modules/deal-commissions`（K56 v2）成交分成（三级：税后基数 → 总比例 → 内部分配）+ payout：以「成交」为粒度 `deal_commissions`（deal_id 唯一、**懒生成**——只有被配置过的成交才有行，未配置经 LEFT JOIN NULL 判定并在读取时动态套全局默认方案）+ 明细 `deal_commission_items`（一成交一行、一人一行，`percentage` 为**占分红池的内部分配**，Σ≤1）。总比例三级回退：`deals.commission_ratio` → `products.commission_ratio` → `commissionDefault.totalRatio`；分红池 = `round(round(amount×after_tax_ratio)×totalRatio)`，每人 = `round(分红池×percentage)`。API：`GET/PUT /api/v1/deals/:id/commissions`（PUT items=[] 还原默认）+ `GET /api/v1/deals/commissions`（管理页列表，`sort`（dealDate/deliveryDate/amountCents/updatedAt，缺省 updatedAt）+`order` 排序——前端默认成交日期倒序、`startDate/endDate`（按 `deal_date`）、交付日期范围/空否、`stage` 阶段等值、`minAmountCents` 金额下限、`status=default|custom`、`payoutStatus=pending|paid`、q、分页 + `filters` 动态条件组——JSON 字符串 `{combinator: and|or, rules[]}`，rule 字段 dealDate 范围 / deliveryDate 范围+empty|notEmpty / productId in 多选，与 flat 参数 AND 叠加，非法 JSON/规则 422；前端 `components/CommissionFilterBuilder` 条件列表 + 全局 AND/OR（仅日期范围/产品多选，默认无条件），交付日期空否与成交口径是页面常驻外部条件下拉（`deliveryStatus` 默认全部/已填/未填；成交口径默认「已付款·金额>0」=`stage=paid&minAmountCents=1` 可切全部，均与条件组恒 AND 叠加），另有常驻「日期比较」控件（成交/交付日期 + ≥/≤ + 日期值，映射 startDate/endDate/deliveryStartDate/deliveryEndDate，≥ 当天零点、≤ 含当天 +86399999，同样恒 AND 叠加），导出同样带 filters+常驻条件）；payout：`GET/PUT /api/v1/deals/:id/payouts`（`{payouts:[{seq:1|2,payoutDate,rate}]}`，金额服务端=round(分红池×rate)，分红池不可算（成交金额/税后比例缺失）422、`[]`清空，不要求交付日期）+ `PATCH /deals/:id/payouts/:seq`（`{status:pending|paid}`，paid 记 `paid_at`）+ `POST /deals/:id/payouts/refresh`（刷新：待发期按当前分红池重算金额，已发期保留历史不动，日期/比例/状态不变；无待发期 no-op 200；分红池不可算 422；前端行操作「刷新 payout」仅在有待发期时显示，且成交记录页/我的成交页行内或弹窗 PATCH 携带 amountCents/afterTaxRatio/commissionRatio 键后前端静默联动调 refresh）。每人每期金额**不物化**，由 shared 的 `splitPayoutAmount`（期金额 × 分配比例逐人 round，尾差兜底最大份额人，Σ每人 = round(期金额 × Σ比例)）推导——导出 xlsx 含「Payout 明细」sheet（成交×期×参与方长表）+「统计」页按期×参与人小计（待发/已发/合计），payout 编辑器内嵌同一推导的每人每期预览。ACL 资源 `dealCommissions`，admin/operator 配置、assistant 只读；payout 同权限。默认方案 `system_configs` code=`commissionDefault` 存 `{totalRatio, rules}`（rules source ∈ owner=客户归属人 / dealOwner=成交负责人 / user=指定人；**默认方案总是包含成交负责人+客户归属人**，规则缺席以 0 占位；仅 admin 走 `GET/PATCH /system/commission-default`）。前端菜单页「成交分成」`/deals/commissions`（默认方案编辑器仅 admin，明细/ payout 编辑器 admin/operator；成交页与分成页同时展示成交负责人与客户归属人）。K58 补充：`modules/tags` 词表加 `domain`（customer/material，live 唯一按 `(domain,name)`，老行默认 customer；`GET /tags` 缺省 domain=customer，PATCH 不可改域）隔离客户/资料词表 + 新 M2M `delivery_material_tags`（复合 PK、硬删，同 customer_tags）；资料写新增 `tagIds`（K24 关系数组，id 必须是 material 域 live 词否则 422）+ `newTagNames`（≤10 个，随手建 material 域词免审批——词表写仍 admin only）；列表 `tagId` 等值过滤 + q 每个 token 额外 OR 资料标签名/文件名（original_filename）/关联交付名（deliveries.name，live 交付）命中；客户 AI 打标固定 domain=customer 不受资料词污染；业务设置页分域两卡片（客户/资料标签词表）。K59 补充：`modules/payout-batches` payout 结算批次三层 + export.ts：状态机 draft→locked→paid（locked 可 unlock 回 draft），明细 `payout_batch_items` 按 `(deal_id, seq)` 引用 `deal_payouts`（不引用 payout 行 id——`PUT payouts` 整表替换会换行 id），锁定时快照 amount_cents/payout_date/rate + 按当前分成解析跑 shared `splitPayoutAmount` 物化 `payout_batch_item_shares` 人均分摊供查账（unlock 清空），mark-paid 事务批量把底层 payout 置 paid 并返回 meta marked/skipped；端点 `GET/POST /payout-batches`、`GET /payout-batches/candidates`（待发候选 + shares 预览 + activeBatchId 占用标注）、`GET/PATCH/DELETE /payout-batches/:id`、`POST/DELETE :id/items`（仅 draft）、`POST :id/lock|unlock|mark-paid`、`GET :id/export.xlsx`（两 sheet：发放汇总含参与人×成交月份 pivot + 发放明细长表，draft 实时值、locked/paid 快照）；ACL 复用 `dealCommissions` 不新增资源（admin/operator 写、assistant 只读）；同一 payout 只能进一个 draft/locked 批次防重付（创建自动纳入排除已占用、手动添加 409）。
+模块速览（行为细节 = design.md 对应 K 行）：
+
+- `tags`（K45/K58）词表，分域 `domain=customer|material`，admin 写、其余只读；维护入口「业务设置」`/business-settings`
+- `system`（K46/K50/K53/K57）通用 `system_configs` 表按 `code` 行扩展，不建表：`llm`（LLM 配置，GET 掩码/PATCH，admin）、`pageAccess`（角色→页面权限，只在 can() 允许集内收缩）、`s3`/`materialsS3`（备份/资料对象存储，各自 `GET/PATCH + POST .../test`，secret 只回掩码、enabled=true 时四要素齐备否则 422）、`commissionDefault`（K56 分成默认方案）、`copywritingPrompts`（K60+ 文案工作台 generate/review/audit system prompt 覆盖值，GET 生效值缺省内置女商红线默认（prompts.ts 为最后真相）、PATCH null/空串恢复默认，admin）
+- `jobs`（K51/K52）后台任务 `background_jobs` + 定时调度 `job_schedules`；执行器 `runner.ts` 进程内**串行**消费 queued（`pumpOnce()` 测试 / `start()` 生产），调度器 CAS 推进到期 cron（`lib/cron.ts` 零依赖，按进程本地时区——生产容器 `TZ=Asia/Shanghai`）；任务类型 `registry.ts` 注册（未知 422、params 创建+执行双侧 Zod 校验、创建预检 LLM 就绪 422）
+- `materials`（K54/K57/K58）交付资料：可空挂交付单（孤儿允许）+ 客户 M2M；文本类全文入 `content`、媒体类只存 url、file 走 materialsS3 multipart；FTS5 trigram 虚表（≥3 字符 MATCH、<3 回退 LIKE；FTS 不入 Drizzle schema，repo 用 `db.$client`）
+- `customer-records`（K55）客户维护记录嵌套路由，纯时间线，**不新增 customers.status 列**；新建 follow_up/lead 顺带 bump `customers.last_followed_at`
+- `deal-commissions` + `payout-batches`（K56 v2/K59）成交分成三级模型（税后基数→总比例→内部分配）+ payout + 结算批次；每人每期金额**不物化**，shared `splitPayoutAmount` 推导
+- `copywriting`（K60）文案工作台：`copy_templates` 模板词表（六维度，live 唯一 `(dimension,name)`，admin/operator 写、assistant 只读；`0031_copy_templates_seed.sql` 种 21 条六维度模板——数字不写死/没把握标「待核」，表空才插不覆盖 UI 维护）+ `copy_items` 已存文案（title 必填、LLM 生成预填）；generate（→`{title,content}`）/ review（逆向检查：第二轮 LLM 审修，修订稿为产出）/ audit 三个 LLM 端点只收最终文本快照、不解析模板 id；system prompt 统一走 `system_configs` code='copywritingPrompts'（内置默认 prompts.ts 不可修改，请求 `systemPrompt`/`reviewPrompt` 可单次覆盖）
 
 公共能力：
 
-- `src/lib/patch-kernel.ts` — PATCH 标量内核（键存在才 SET）
-- `src/lib/pagination.ts` / `fuzzy.ts` / `audit.ts`
+- `src/lib/` — `patch-kernel.ts`（PATCH 标量内核：键存在才 SET）、`pagination.ts`、`fuzzy.ts`、`audit.ts`、`excel-date.ts`、`llm.ts`、`s3.ts`（SigV4 零依赖，`llmFetch`/`s3Fetch` 可注入 mock）
 - `src/plugins/` — cookie、session-auth、rbac、error-handler、static-spa
-- `src/db/` — client（PRAGMA）、schema、migrate、bootstrap-admin
-- `drizzle/0000_init.sql` 是主数据 migration 真相；`0001_api_tokens.sql` 是 PAT（K35）；`schema.ts` 镜像 SQL
+- `src/db/` — client（PRAGMA）、schema、migrate、bootstrap-admin。`drizzle/*.sql` 是 migration 真相，`schema.ts` 镜像 SQL
 
 测试用 `buildApp()` + `app.inject()`，不 listen。生产入口 `src/index.ts`：parseEnv → 建库 → migrate → bootstrap → listen。
 
 ### Web
 
-- 路由：`/login` `/my/customers` `/my/deals` `/customers` `/customers/:id`（总览）`/channels` `/products` `/deals` `/deals/commissions`（成交分成，K56）`/deals/payout-batches`（分成发放，K59）`/deals/payout-batches/:id`（批次详情）`/deliveries` `/deliveries/:id` `/deliveries/:id/circle` `/deliveries/:id/gantt` `/deliveries/:id/matrix` `/delivery-types` `/materials`（资料专区）`/materials/:id/edit`（资料全文编辑页，仅文本类）`/copywriting`（文案工作台，K60，tab：生成与审计/已保存文案/模板管理）`/users` `/settings`（系统设置，tab：LLM 打标配置 admin + 角色权限 admin + 远程备份 admin + 资料存储 admin + 文案工作台（generate/audit system prompt）admin + 后台任务全角色 + 定时任务 admin）`/tokens`（授权管理，仅 admin：列全部 Agent PAT 令牌 + 吊销任意，见 K35 治理）`/business-settings`（业务设置，客户/资料标签词表）（默认进客户）
-- 页面权限：菜单/路由统一由 `packages/shared/src/pages.ts` 的 `PAGE_REGISTRY` + `/auth/me.pages` 驱动（安全层 can() ∩ 配置允许集）；无权访问的路由被 `PageGuard` 重定向到该角色第一张可看菜单页；详情型页面（`/customers/:id`、`/deliveries/:id/*`）不单独配，跟随父页面。改菜单/新增页只改注册表，不要再在 Sidebar/App 手写显隐。
-- 表格：`components/DataGrid/`（双击编辑 + 行内 PATCH 队列）
-- 表格体验（评审后固化）：列表容器 `.data-grid-scroll` 竖向滚动 + 表头吸顶；`selectable` + 受控 `selectedIds` 供列表页做行多选批量操作（客户页 = 批量改归属人，逐行 PATCH 带各自 `updatedAt`）；分页含「跳转到第几页」；搜索框按 `/` 聚焦，全局 `Cmd/Ctrl+K` 打开客户快速搜索（`components/CommandPalette`）。
-- 侧栏分组可点击折叠（`localStorage` 持久化）；面包屑由 `layout/breadcrumb.ts` 沿 `PAGE_REGISTRY` 推导（勿再手写路径→标题映射）。
-- 图标统一 `@phosphor-icons/react`，禁止字符 glyph（`☰ ▾ × ✓ +`）当控件图标；小图标 `weight="bold"` + `aria-hidden`。
-- 列定义：`src/columns/`；列表页：`src/pages/` + `useResourceList.ts`
-- 开发：Vite `:5173`，`server.proxy."/api"` → `:3001`
-- 生产：Fastify 托管 `apps/web/dist`；非 `/api/*` 且非静态文件的 GET → `index.html`
+- 路由：`/login` `/my/customers` `/my/deals` `/customers` `/customers/:id`（总览）`/channels` `/products` `/deals` `/deals/commissions` `/deals/payout-batches(/:id)` `/deliveries` `/deliveries/:id`（含 `/circle` `/gantt` `/matrix`）`/delivery-types` `/materials` `/materials/:id/edit`（文本类全文）`/copywriting`（文案工作台：生成与审计（自动逆向检查开关 + 结果区标题/正文可编辑行内保存）/已保存文案/模板管理）`/users` `/settings`（tab：LLM/角色权限/远程备份/资料存储/文案工作台提示词 admin/后台任务/定时任务）`/tokens`（授权管理，admin）`/business-settings`（默认页）
+- 页面权限唯一由 `packages/shared/src/pages.ts` 的 `PAGE_REGISTRY` + `/auth/me.pages` 驱动（安全层 can() ∩ 配置允许集）；`PageGuard` 把无权路由重定向到该角色第一张可看菜单页；详情页跟随父页面。**改菜单/新增页只改注册表**，不要在 Sidebar/App 手写显隐；面包屑由 `layout/breadcrumb.ts` 沿注册表推导
+- 表格 `components/DataGrid/`（双击编辑 + 行内 PATCH 队列）；列表容器 `.data-grid-scroll` 竖滚 + 表头吸顶；`selectable` + 受控 `selectedIds` 行多选批量操作；分页含「跳转到第几页」；`/` 聚焦搜索，`Cmd/Ctrl+K` 客户快速搜索（`CommandPalette`）；侧栏分组可折叠（localStorage）
+- 图标统一 `@phosphor-icons/react`，**禁止字符 glyph 当控件图标**；小图标 `weight="bold"` + `aria-hidden`
+- 列定义 `src/columns/`；列表页 `src/pages/` + `useResourceList.ts`
+- 开发 Vite `:5173`，`server.proxy."/api"` → `:3001`；生产 Fastify 托管 `apps/web/dist`，非 `/api/*` 且非静态文件的 GET → `index.html`
 
 ## 常用命令
 
@@ -111,14 +112,15 @@ Workspace 依赖写法：`"@gb-crm/shared": "*"`（npm 不支持 `workspace:*`�
 
 ### 认证与权限
 
-- 服务端 session + 签名 httpOnly cookie（HMAC = `SESSION_SECRET`）。不做 JWT、不做飞书登录。
-- 密码 argon2id。登录还要求 `system_role ∈ {admin, operator, assistant}`。
+- 服务端 session + 签名 httpOnly cookie（HMAC = `SESSION_SECRET`）。不做 JWT、不做飞书登录。密码 argon2id；登录要求 `system_role ∈ {admin, operator, assistant}`。
 - Session 最多每 30 分钟 touch 一次（或剩余 idle < 11h）。禁用账户立即删 session **并撤销 PAT**。
-- Agent PAT（K35）与 cookie **并行**：`Authorization: Bearer`；有 Bearer 不回落 cookie。签发：`curl -fsSL http://<host>/agent/login.sh | sh` → `~/.gb-crm/credentials.json`。REST 资源路由 `read`/`write` ∩ `can()`。Skill 在 `skills/gb-crm/`，**不含**密钥。Agent 数据访问走单一自由 SQL 端点 `POST /api/v1/agent/sql`（仅 Bearer PAT，cookie 403）：better-sqlite3 `stmt.readonly` 判读写——只读语句任意 scope/角色放行（含渠道密钥列），写语句必须 write scope + admin/operator，且 DDL（CREATE/ALTER/DROP）对任何令牌一律 403、其余 CRUD 放行；单语句；读上限 1000 行截断。**后台治理**（系统菜单 `/tokens` 授权管理，admin）：`GET /api/v1/auth/tokens/admin`（分页+`status=active|revoked|expired`/`scope`/`userId` 过滤，回 `{data,meta}`）+ `DELETE /api/v1/auth/tokens/admin/:id`（吊销任意令牌），ACL `auth.list`/`auth.revoke`（仅 admin）。吊销置 `revoked_at`+`revoked_by`（`0022_api_token_revoked_by.sql`），行不删除，历史可查。**skill 下发改装（渠道 A，内网免 GitHub）**：`GET /agent/skill/gb-crm/install.sh`（shell 安装器）与 `GET /agent/skill/gb-crm/install.ps1`（PowerShell，Windows），安装到当前 AGENT 技能目录（项目级 `./.agents/skills` 否则 `~/.agents/skills`）+ codex 全局 `~/.codex/skills` + claude 全局 `~/.claude/skills`→依次下载 `SKILL.md`/`scripts/gb-crm.py`→引导 login.sh / login.ps1 授权；对应登录脚本 `GET /agent/login.sh`、`GET /agent/login.ps1`。**更新 = 重跑同一条命令**：每次现取安装器本体并覆盖 `SKILL.md`/`gb-crm.py`；安装器控制台会打印当前 skill 版本号（单一真相源 = `skills/gb-crm/SKILL.md` front-matter 的 `version` 字段，升版就改它）；本机已有 `~/.gb-crm/credentials.json` 时默认跳过授权（`GB_CRM_FORCE_LOGIN=1` 强制重签，`GB_CRM_SKIP_LOGIN=1` 只装文件）。源文件 `GET /agent/skill/gb-crm/SKILL.md`、`GET /agent/skill/gb-crm/scripts/gb-crm.py`（`/agent/*` 不走 session-auth；`gb-crm.py` 按 `sys.platform` 输出对应系统的登录提示）。技能源 = 仓库 `skills/gb-crm`（`modules/agent/skill-install.ts` 相对路径解析）；生产容器需 `COPY skills ./skills`（Dockerfile 已含）。
-- **扮演用户（K49）**：admin 可把当前 cookie session 切到任一可加载用户，用于测试「我的运营」等按人过滤功能。`sessions.impersonated_by` 记录原身份，单层不可嵌套；端点 `/api/v1/auth/impersonate/{targets,:id,stop}` 仅 cookie session（Bearer 403），targets/start 需 `auth.impersonate`，stop 不查角色（会话处于扮演中即准入，否则弱角色无法自行退出）。`/auth/me` 带 `impersonatedBy`。禁止扮演自己；目标须未软删/enabled/有角色。Web 右上角用户菜单「切换身份」，扮演中显示徽标 + 「退出扮演」。
+- **Agent PAT（K35）与 cookie 并行**：`Authorization: Bearer`，有 Bearer 不回落 cookie。数据访问走单一自由 SQL 端点 `POST /api/v1/agent/sql`（仅 Bearer，cookie 403）：better-sqlite3 `stmt.readonly` 判读写——只读语句任意 scope/角色放行（含渠道密钥列）；写语句必须 write scope + admin/operator；DDL（CREATE/ALTER/DROP）对任何令牌一律 403；单语句；读上限 1000 行截断。
+- **PAT 治理**（`/tokens` 授权管理，admin）：`GET /api/v1/auth/tokens/admin`（分页 + `status=active|revoked|expired`/`scope`/`userId` 过滤）+ `DELETE /api/v1/auth/tokens/admin/:id`（吊销任意），ACL `auth.list`/`auth.revoke` 仅 admin；吊销置 `revoked_at`+`revoked_by`，行不删、历史可查。
+- **Skill 下发改装（渠道 A，内网免 GitHub）**：一条命令 `curl -fsSL http://<host>/agent/skill/gb-crm/install.sh | sh`（Windows 用 `install.ps1`），装到项目级 `./.agents/skills`（否则 `~/.agents/skills`）+ codex/claude 全局技能目录，再引导 `login.sh`/`login.ps1` 授权（`~/.gb-crm/credentials.json`）；**更新 = 重跑同一条命令**（现取安装器覆盖 `SKILL.md`/`gb-crm.py`）。版本号单一真相源 = `skills/gb-crm/SKILL.md` front-matter `version`；技能源 = 仓库 `skills/gb-crm`（生产容器已 `COPY skills ./skills`）；`GB_CRM_FORCE_LOGIN=1` 强制重签、`GB_CRM_SKIP_LOGIN=1` 只装文件。Skill 不含密钥。
+- **扮演用户（K49）**：admin 可把当前 cookie session 切到任一可加载用户（测「我的运营」）。单层不可嵌套，`sessions.impersonated_by` 记录原身份；`/api/v1/auth/impersonate/{targets,:id,stop}` 仅 cookie（Bearer 403），start 需 `auth.impersonate`，stop 只要求会话处于扮演中；禁止扮演自己，目标须未软删/enabled/有角色；`/auth/me` 带 `impersonatedBy`；Web 用户菜单「切换身份」，扮演中显徽标 + 「退出扮演」。
 - 登录限流 10 次/分钟/IP；仅 `TRUST_PROXY=true` 时才信 `X-Forwarded-For`。
 - 权限唯一来源：`packages/shared` 的 `can(role, resource, action)`。缺席 = deny。`role===null` → false。路由用 `requireCan`，不要在 service 再抄一套角色判断。
-- **无行级 ACL**（没有「只看我的客户」的权限收紧；「我的运营」`/my/customers` `/my/deals` 只是 ownerId 固定过滤的列表页，不限制数据可见性）。
+- **无行级 ACL**（没有「只看我的客户」的权限收紧；「我的运营」只是 ownerId 固定过滤的列表页，不限制数据可见性）。
 - Bootstrap：零 live admin 时要 `ADMIN_USERNAME` + `ADMIN_PASSWORD`。已有 live admin 可省略密码。`ADMIN_BOOTSTRAP_RESET_PASSWORD=true` 且无密码 → **拒绝启动**。
 
 角色能力摘要：
@@ -129,15 +131,15 @@ Workspace 依赖写法：`"@gb-crm/shared": "*"`（npm 不支持 `workspace:*`�
 | channels 全套含密钥字段 | ✓ | ✓ | 可改普通字段；密钥 GET 为 null，不可 PATCH |
 | products | ✓ | ✓ | list/read only |
 | customers.create / updateOwners（ownerId 键，K39 单值） | ✓ | ✓ | ✗（仍可 PATCH 其它标量） |
-| deals（成交表，K42） | ✓ | ✓ | list/read only |
-| deliveries（交付单/类型/交付项/动作，K44） | ✓ | ✓ | list/read only |
-| tags 词表（K45，写=增删改词表） | ✓ | list/read only | list/read only |
-| materials 交付资料（K54） | ✓ | ✓ | list/read only |
-| customerRecords 客户维护记录（K55） | ✓ | ✓ | list/read only |
-| dealCommissions 成交分成（K56，配置=update） | ✓ | ✓ | list/read only |
-| copywriting 文案工作台（K60，含模板维护与生成/审计） | ✓ | ✓ | list/read only |
-| system 配置（K46，LLM 打标） | ✓ | ✗ | ✗ |
-| jobs 后台任务（K51，创建/查看/取消自己的） | ✓（+cancelAny 可取消他人） | ✓ | ✓ |
+| deals（K42） | ✓ | ✓ | list/read only |
+| deliveries（K44） | ✓ | ✓ | list/read only |
+| tags 词表（写=增删改词表） | ✓ | list/read only | list/read only |
+| materials（K54） | ✓ | ✓ | list/read only |
+| customerRecords（K55） | ✓ | ✓ | list/read only |
+| dealCommissions（K56，配置=update；payout 同） | ✓ | ✓ | list/read only |
+| copywriting（K60，含模板维护与生成/审计） | ✓ | ✓ | list/read only |
+| system 配置（K46） | ✓ | ✗ | ✗ |
+| jobs 后台任务（创建/查看/取消自己的） | ✓（+cancelAny 可取消他人） | ✓ | ✓ |
 
 渠道密钥字段：`accountId` / `registerPhone` / `registrant` / `realNamePerson` / `loginDevice`。
 
@@ -147,7 +149,7 @@ Workspace 依赖写法：`"@gb-crm/shared": "*"`（npm 不支持 `workspace:*`�
 
 - 主底永远冷灰 `#F1F1EF`，禁整页铺玄黑。冷漆红 `#CE1432` 只点睛（面积 ≤5%）。玄黑底上的字用奶白 `#EDEAE3`，别用纯白。
 - 表格：**双击**进入编辑（单击只选中）；文本 debounce 300ms；Tab/Enter **先 flush 再导航**。不是完整 spreadsheet，不要上 AG Grid Enterprise。
-- 列表页：`q` + pageSize 25/50/100 + 至多一个类型/状态下拉。API 上的 `ownerId`/`channelId` 过滤可以有，**UI 不做**（例外：「我的运营」`/my/customers`、`/my/deals` 以当前用户为固定 ownerId 等值过滤，不加下拉控件；客户页 K45 加一个标签下拉——`useResourceList` 的 `secondaryFilterKey`，仅客户页用；成交记录页 `/deals` 与 `/my/deals` 按需求提供多维筛选条 `DealFilterBar`——客户/负责人/客户归属人/成交与交付日期范围/交付日期空否）。
+- 列表页：`q` + pageSize 25/50/100 + 至多一个类型/状态下拉。API 上的 `ownerId`/`channelId` 过滤可以有，**UI 不做**（例外：「我的运营」固定 ownerId=当前用户不加下拉；客户页一个标签下拉——`useResourceList` 的 `secondaryFilterKey`，仅客户页用；成交页 `/deals` 与 `/my/deals` 用多维筛选条 `DealFilterBar`）。
 
 ### 环境变量
 
@@ -159,22 +161,22 @@ Workspace 依赖写法：`"@gb-crm/shared": "*"`（npm 不支持 `workspace:*`�
 
 ## 主要功能（v1）
 
-四张主数据的权限化 CRUD + 成交表（K42）+ 交付管理（K44：交付单/交付类型/交付项/动作打勾），Excel 式就地编辑。活动交付记录 / 内容资产 / 调休流水是 Phase 2，不要在 v1 加。
+四张主数据（users/channels/products/customers）的权限化 CRUD + 成交 + 交付 + 资料/分成/文案等扩展模块，Excel 式就地编辑。各模块完整行为见 design.md 对应 K 行，此处只列入口与跨模块硬规则。活动交付记录 / 内容资产 / 调休流水是 Phase 2，不要在 v1 加。
 
-1. **登录与会话**：bootstrap 管理员；改自己密码；管理员给他人设密码。
-2. **团队成员 `/users`**：账户、昵称、真实姓名、电话、微信、岗位、系统角色、雇佣状态、账户状态。仅 admin 可写。
-3. **渠道资产 `/channels`**：内容/对客渠道账号；关联负责人（M2M）；助手看不到登录资产。
+1. **登录与会话**：bootstrap 管理员；改自己密码；admin 给他人设密码。
+2. **团队成员 `/users`**：账户/昵称/真实姓名/电话/微信/岗位/系统角色/雇佣/账户状态。仅 admin 可写。
+3. **渠道资产 `/channels`**：内容/对客渠道账号，负责人 M2M；assistant 看不到登录资产。
 4. **产品目录 `/products`**：类型/状态/是否套餐/价格（分）。
-5. **客户信息 `/customers`**：分页、模糊搜索、来源渠道、归属人（单值 `owner_id`，K39）、社交账号独立表（`customer_social_accounts`，K41，列表页/导出不展示）；预留可空唯一 `wechat_openid`（不接小程序）。导出 Excel：`GET /api/v1/customers/export.xlsx`（exceljs 服务端生成，复用列表同一 WHERE，跟随 q/类型筛选，不分页）。所有 xlsx 导出的日期单元格统一走 `lib/excel-date.ts` 的 `excelDate`/`excelDayText`（exceljs 日期无单元格时区概念、按 UTC 墙钟解读，转为 Asia/Shanghai 墙钟的伪 UTC Date，与 UI 浏览器本地显示一致；禁止直接 `new Date(ts)` 进单元格）。
-6. **成交记录 `/deals`**（K42）：客户（单值 FK 必填）、意向产品、负责人（单值 FK 可空）、阶段（赠送/已付款/退款/已关闭）、订单号、成交日期（`deal_date` 非空、新建必填）、交付日期（`delivery_date` 可空）、支付信息备注；客户城市只读列。assistant 只读。列表多维筛选（`components/DealFilterBar`，我的成交页复用但隐藏负责人）：`customerId` / `ownerId` / `customerOwnerId`（客户归属人，EXISTS customers.owner_id）/ `startDate`+`endDate`（成交日期范围，epoch ms）/ `deliveryStartDate`+`deliveryEndDate`（交付日期范围）/ `deliveryStatus=empty|notEmpty`（交付日期空否），命名同成交分成列表的 flat 参数（成交分成管理页 UI 已改用 filters 动态条件组，flat 参数保留兼容）。
-7. **客户画像（标签 + AI 打标 + 总览）**（K45–K48/K50/K51）：标签词表 `tags`（身份/阶段/兴趣/其它，业务设置页 `/business-settings` 维护，admin only；AI 优先从词表选词，可少量自建新标签——免审批自动入词表，单条 ≤2/批量任务全局 ≤20，同名 live 标签直接复用）+ 客户标签 M2M（PATCH `tagIds` 关系数组）+ 客户列表标签筛选下拉 + 只读标签徽章列；`customers.industry`（行业）列（AI 打标同时推断并**总是覆盖**写回，LLM 给空/缺失不动）；AI 一键打标 `POST /customers/:id/tags/generate`（`system_configs` code='llm' 配置 OpenAI 兼容接口，标签并集合并直接保存，`LLM_ERROR` 502）+ 批量打标走后台任务（`POST /background-jobs` type=`customer-tags-generate-all`：客户信息页「全量生成标签」跟随筛选、我的客户页固定 ownerId=当前用户；系统设置页「后台任务」tab 查看进度/失败明细/取消；我的客户页另加行级「AI 生成标签」）；客户总览页 `/customers/:id`（基本信息 + AI 打标 + 统计（成交笔数/累计实付/最近成交/圈子数）+ 消费记录 + 当前有效交付圈子，`GET /customers/:id/overview`）。
-8. **交付管理 `/deliveries` + 交付类型 `/delivery-types`**（K44）：交付单（名称 name（**可空**，展示回退类型名）+ 类型 + 起止日期（epoch ms，日历输入）+ 客户集合（**可不选**，空交付单）+ 备注，与成交弱关联；客户可手动多选或按意向产品从成交 merge，`/deals` 按 `productId` 过滤；列表 q 命中交付名）；交付项（项目维度 / 客户维度——客户维度按客户分组分别打勾 + 备注）；交付类型配置表（名称 + 类型 kind 咨询/活动/圈子/其他 + 状态 status 有效/失效 + 说明/默认动作模板，创建交付项时预填）。打勾记完成人/时间，行级 OCC。assistant 只读。圈子类（`kind=circle`）交付有专项工作台页 `/deliveries/:id/circle`（列表/详情页按 kind 提供入口）：圈子基本信息（类型/起止日期/人数/周期状态 badge）+ 客户全量表（`GET /api/v1/deliveries/:id/customers`，含导出 Excel `/customers/export.xlsx`，添加/移除客户走 delivery PATCH `customerIds`）+ 交付项快速维护（新增/动作/修改/删除，复用 `components/ItemFormModal` `ItemEditModal` `ItemModal`）+ 甘特图与时序 todo（复用 `components/DeliveryGantt`，`DeliveryGanttPage` 为薄壳）。`DeliveryDto.deliveryType` 携带 `kind`。
-9. **我的运营**（一级菜单）：`/my/customers` 我的客户（归属人 = 当前用户）、`/my/deals` 我的成交（负责人 = 当前用户）。复用对应列表页的列定义/搜索/筛选/行内编辑/导出，固定 `ownerId` 等值过滤，不加下拉控件；不提供「新增」（新建行不会归属当前用户）。
+5. **客户信息 `/customers`**（K39/K41）：分页/模糊搜索/来源渠道/归属人单值/社交账号独立表（列表与导出不展示）；导出 `GET /customers/export.xlsx` 复用列表 WHERE、不分页。**所有 xlsx 导出日期单元格必须走 `lib/excel-date.ts` 的 `excelDate`/`excelDayText`**（伪 UTC Date 对齐 Asia/Shanghai 墙钟），禁止 `new Date(ts)` 直进单元格。
+6. **成交记录 `/deals`**（K42）：客户 FK 必填、负责人可空、`deal_date` 新建必填、`delivery_date` 可空；assistant 只读。列表筛选 `DealFilterBar` 参数：`customerId`/`ownerId`/`customerOwnerId`/`startDate`+`endDate`/`deliveryStartDate`+`deliveryEndDate`/`deliveryStatus=empty|notEmpty`——命名与成交分成列表 flat 参数一致。
+7. **客户画像**（K45–K51）：标签词表 + 客户 M2M + AI 单条/批量打标（批量走后台任务）+ 总览页 `/customers/:id`（`GET /customers/:id/overview`）；AI 推断 `industry` 总是覆盖写回。
+8. **交付管理**（K44）：交付单/交付类型/交付项（项目维度 + 客户维度打勾）；圈子类（kind=circle）有专项工作台 `/deliveries/:id/circle`（+ 甘特/矩阵页）。
+9. **我的运营**：`/my/customers`（ownerId=我）`/my/deals`（负责人=我）；复用列表页固定过滤，不提供「新增」。
 10. 每张业务表有 `created_at` / `updated_at` / `created_by` / `updated_by`。
-11. **Agent 令牌**：已有用户本机签发 PAT，skill 走单一 SQL 端点 `/api/v1/agent/sql`（K35）。
-12. **资料专区 `/materials`**（K54）：咨询场次资料库。每一场咨询 = 一条交付单（三类服务 = 三个交付类型数据：微博365连麦/线下1v1咨询/商业下午茶）；资料可挂交付单（可空，孤儿允许后补关联）+ 客户 M2M（0..N，一份资料可属多人）；文本类全文入库（content 可空，建后补写）、音视频只存链接+说明；FTS5 全文搜索（trigram）+ kind/交付/客户/未关联筛选；文本类全文维护走独立编辑页 `/materials/:id/edit`（markdown 编辑/分屏/预览可切换，Ctrl/Cmd+S 保存，行级 OCC；元信息仍走 `MaterialFormModal`，关联选择统一用 `EntityPicker` chips+搜索组件）；交付详情页与客户总览页有资料区块。assistant 只读。历史批量补录走 Agent SQL 端点（admin/operator + write scope），不做导入功能。K58：资料标签（`tags` 加 `domain=material` 分域 + `delivery_material_tags` M2M 硬删；表单 chips 选词 + `newTagNames` 随手建词免审批；列表 `tagId` 筛选下拉 + q 命中标签名；业务设置页分域两卡片）。
-13. **客户维护记录 `/customers/:id` 总览页区块**（K55）：销售为每个客户随手记录跟进触点，按时间倒序持续积累（时序时间线）。`kind` 枚举 follow_up/status_change/lead/note/other；`happenedAt` 可回补（记录补录）；`content` 自由文本；assistant 只读。纯时间线表达客户状态——**不新增 `customers.status` 列**（状态变化用 `status_change` 记录 + `content` 表达）。接口：`/api/v1/customers/:customerId/records`（嵌套子资源，ACL `customerRecords`），创建/编辑删除走总览页小弹窗（复用 `Modal`），行级 OCC；新建 `follow_up`/`lead` 记录顺带 bump `customers.last_followed_at`。无 FTS / 无 M2M / 无多态关联，历史补录走 Agent SQL 端点。
-14. **文案工作台 `/copywriting`**（K60，侧栏分组「私域运营」）：按私域内容方法论组织提示词——六维度（业务背景/目标客群/主题内容/预期目的/产出类型/润色要求）每维可选已存提示词模板（`copy_templates` 词表，live 唯一 `(dimension,name)`，admin/operator 维护）或本次自定义；「选模板」= 前端把模板正文填入输入框可再编辑，服务端只收最终文本快照。`POST /copywriting/generate` 调系统 LLM 生成文案；`POST /copywriting/audit` 用户视角审计（目的达成/不适表达/理解成本 → `{verdict,summary,issues[]}`）；生成后可保存到 `copy_items`（六段快照 + 正文 + 审计快照，软删）备查。页面三 tab：生成与审计 / 已保存文案 / 模板管理。ACL `copywriting`：admin/operator 全量，assistant 只读（generate/audit 挂 create）。
+11. **Agent 令牌**：见「认证与权限」。
+12. **资料专区 `/materials`**（K54/K57/K58）：咨询场次资料库，FTS5 搜索，文本类全文编辑页 `/materials/:id/edit`；assistant 只读；历史补录走 Agent SQL 端点，不做导入功能。
+13. **客户维护记录**（K55）：总览页时间线区块；状态变化用 `status_change` 记录 + content 表达，**不加 customers.status 列**。
+14. **文案工作台 `/copywriting`**（K60）：六维度提示词 + LLM 生成/审计 + 保存备查。
 
 飞书字段已全部移除（四张主表均无任何 `feishu_*` 列）。**v1 不做飞书 / CSV 导入**，不要加回 `import-feishu` 或 `FEISHU_*` 环境变量。主数据在管理端维护。
 

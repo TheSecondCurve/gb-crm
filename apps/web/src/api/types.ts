@@ -69,6 +69,7 @@ export interface AiConfigDto {
 export interface CopywritingPromptsDto {
   generateSystemPrompt: string;
   auditSystemPrompt: string;
+  reviewSystemPrompt: string;
   customized: boolean;
   updatedAt: number | null;
   updatedBy: number | null;

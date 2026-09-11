@@ -6,6 +6,7 @@ import {
   copyItemListQuerySchema,
   copyItemPatchSchema,
   copyItemWriteSchema,
+  copyReviewBodySchema,
   copyTemplateListQuerySchema,
   copyTemplatePatchSchema,
   copyTemplateWriteSchema,
@@ -28,6 +29,7 @@ import {
   listCopyTemplatesResult,
   patchCopyItem,
   patchCopyTemplate,
+  reviewCopy,
 } from "./service.js";
 
 export interface CopywritingRoutesOptions {
@@ -111,6 +113,17 @@ export function copywritingRoutes(app: FastifyInstance, opts: CopywritingRoutesO
     async (req) => {
       const body = copyAuditBodySchema.parse(req.body ?? {});
       const data = await auditCopy(db, body, { fetchFn: llmFetch });
+      return { data };
+    },
+  );
+
+  // K60 迭代：逆向检查——生成后第二轮 LLM 审修（检查文本并执行一轮修改，修订稿才是产出）
+  app.post(
+    "/api/v1/copywriting/review",
+    { preHandler: requireCan("copywriting", "create") },
+    async (req) => {
+      const body = copyReviewBodySchema.parse(req.body ?? {});
+      const data = await reviewCopy(db, body, { fetchFn: llmFetch });
       return { data };
     },
   );

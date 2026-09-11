@@ -133,6 +133,7 @@ export const COPYWRITING_PROMPT_MAX = 4000;
 export const copywritingPromptsGetSchema = z.object({
   generateSystemPrompt: z.string(),
   auditSystemPrompt: z.string(),
+  reviewSystemPrompt: z.string(),
   /** 是否有自定义项（false = 全部走内置默认） */
   customized: z.boolean(),
   updatedAt: z.number().nullable(),
@@ -144,5 +145,6 @@ export const copywritingPromptsPatchSchema = z.object({
   /** 传非空串设置；null/纯空白恢复内置默认；缺席不动（service 侧把空串归一为 null） */
   generateSystemPrompt: z.string().trim().max(COPYWRITING_PROMPT_MAX).nullable().optional(),
   auditSystemPrompt: z.string().trim().max(COPYWRITING_PROMPT_MAX).nullable().optional(),
+  reviewSystemPrompt: z.string().trim().max(COPYWRITING_PROMPT_MAX).nullable().optional(),
 });
 export type CopywritingPromptsPatch = z.infer<typeof copywritingPromptsPatchSchema>;
