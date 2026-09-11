@@ -45,6 +45,7 @@ const TEMPLATES = "/api/v1/copywriting/templates";
 const ITEMS = "/api/v1/copywriting/items";
 const GENERATE = "/api/v1/copywriting/generate";
 const AUDIT = "/api/v1/copywriting/audit";
+const REVIEW = "/api/v1/copywriting/review";
 
 /** 直接种 system_configs code='llm'（等价于设置页已保存） */
 function seedAiConfigRow(): void {
@@ -60,13 +61,16 @@ function seedAiConfigRow(): void {
     .run();
 }
 
-function llmOk(payload: unknown): typeof fetch {
+/** vi.fn 包装的 fetch mock：可注入 app，也可读 mock.calls 断言请求体 */
+type FetchMock = ReturnType<typeof vi.fn> & typeof fetch;
+
+function llmOk(payload: unknown): FetchMock {
   return vi.fn(async () =>
     new Response(JSON.stringify({ choices: [{ message: { content: JSON.stringify(payload) } }] }), {
       status: 200,
       headers: { "Content-Type": "application/json" },
     }),
-  ) as unknown as typeof fetch;
+  ) as unknown as FetchMock;
 }
 
 function llmRaw(content: string): typeof fetch {
@@ -116,6 +120,7 @@ describe("RBAC（copywriting 资源，K60）", () => {
     expect((await del(`${TEMPLATES}/1`, cookie)).statusCode).toBe(403);
     expect((await post(GENERATE, cookie, { topic: "主题" })).statusCode).toBe(403);
     expect((await post(AUDIT, cookie, { content: "正文" })).statusCode).toBe(403);
+    expect((await post(REVIEW, cookie, { content: "正文" })).statusCode).toBe(403);
     expect((await post(ITEMS, cookie, { title: "t", content: "c" })).statusCode).toBe(403);
   });
 
@@ -273,10 +278,10 @@ describe("POST /copywriting/generate", () => {
     expect((await post(GENERATE, cookie, {})).statusCode).toBe(422);
   });
 
-  it("mock 正常返回 → 200 content 正确", async () => {
+  it("mock 正常返回 → 200 {title, content}", async () => {
     seedAiConfigRow();
     const { cookie } = await loginAsRole("admin");
-    const app2 = appWithLlm(llmOk({ content: "生成的文案" }));
+    const app2 = appWithLlm(llmOk({ title: "周年庆推文", content: "生成的文案" }));
     try {
       const res = await app2.inject({
         method: "POST",
@@ -285,7 +290,67 @@ describe("POST /copywriting/generate", () => {
         payload: { topic: "周年庆", goal: "拉新" },
       });
       expect(res.statusCode).toBe(200);
+      expect(res.json().data.title).toBe("周年庆推文");
       expect(res.json().data.content).toBe("生成的文案");
+    } finally {
+      await app2.close();
+    }
+  });
+
+  it("缺 systemPrompt → 用内置默认系统提示词（builtin 行文本注入 messages[0]）", async () => {
+    seedAiConfigRow();
+    const { cookie } = await loginAsRole("admin");
+    const fn = llmOk({ title: "t", content: "c" });
+    const app2 = appWithLlm(fn);
+    try {
+      const res = await app2.inject({
+        method: "POST",
+        url: GENERATE,
+        headers: { cookie },
+        payload: { topic: "t" },
+      });
+      expect(res.statusCode).toBe(200);
+      const body = JSON.parse(String(fn.mock.calls[0]![1]!.body));
+      expect(body.messages[0].content).toContain("私域运营文案专家");
+      expect(body.messages[0].content).toContain("title");
+    } finally {
+      await app2.close();
+    }
+  });
+
+  it("自定义 systemPrompt 快照 → 覆盖内置默认", async () => {
+    seedAiConfigRow();
+    const { cookie } = await loginAsRole("admin");
+    const fn = llmOk({ title: "t", content: "c" });
+    const app2 = appWithLlm(fn);
+    try {
+      const res = await app2.inject({
+        method: "POST",
+        url: GENERATE,
+        headers: { cookie },
+        payload: { topic: "t", systemPrompt: "只许输出五言绝句" },
+      });
+      expect(res.statusCode).toBe(200);
+      const body = JSON.parse(String(fn.mock.calls[0]![1]!.body));
+      expect(body.messages[0].content).toBe("只许输出五言绝句");
+    } finally {
+      await app2.close();
+    }
+  });
+
+  it("LLM 未给 title → 回退正文首行截断（保存必填兜底）", async () => {
+    seedAiConfigRow();
+    const { cookie } = await loginAsRole("admin");
+    const app2 = appWithLlm(llmOk({ content: "开业大促来袭\n正文段落" }));
+    try {
+      const res = await app2.inject({
+        method: "POST",
+        url: GENERATE,
+        headers: { cookie },
+        payload: { topic: "t" },
+      });
+      expect(res.statusCode).toBe(200);
+      expect(res.json().data.title).toBe("开业大促来袭");
     } finally {
       await app2.close();
     }
@@ -372,6 +437,104 @@ describe("POST /copywriting/audit", () => {
       });
     } finally {
       await app2.close();
+    }
+  });
+});
+
+describe("POST /copywriting/review（逆向检查：第二轮 LLM 审修，修订稿才是产出）", () => {
+  it("content 缺失 → 422；未配置 LLM → 422", async () => {
+    const { cookie } = await loginAsRole("admin");
+    expect((await post(REVIEW, cookie, {})).statusCode).toBe(422);
+    const res = await post(REVIEW, cookie, { content: "正文" });
+    expect(res.statusCode).toBe(422);
+    expect(res.json().error.message).toContain("系统设置");
+  });
+
+  it("mock 修订稿 → 200 返回修订后 {title, content}（可覆盖原标题）", async () => {
+    seedAiConfigRow();
+    const { cookie } = await loginAsRole("admin");
+    const fn = llmOk({ title: "修订后标题", content: "修订后的正文" });
+    const app2 = appWithLlm(fn);
+    try {
+      const res = await app2.inject({
+        method: "POST",
+        url: REVIEW,
+        headers: { cookie },
+        payload: { title: "原标题", content: "待审正文", topic: "开营", audience: "宝妈" },
+      });
+      expect(res.statusCode).toBe(200);
+      expect(res.json().data).toEqual({ title: "修订后标题", content: "修订后的正文" });
+      const body = JSON.parse(String(fn.mock.calls[0]![1]!.body));
+      expect(body.messages[0].content).toContain("终审编辑"); // 内置逆向检查提示词
+      expect(body.messages[1].content).toContain("原标题：原标题");
+      expect(body.messages[1].content).toContain("待审正文");
+      expect(body.temperature).toBe(0.3);
+    } finally {
+      await app2.close();
+    }
+  });
+
+  it("修订稿未给 title → 沿用输入标题；无输入标题 → 正文首行兜底", async () => {
+    seedAiConfigRow();
+    const { cookie } = await loginAsRole("admin");
+    const appKeep = appWithLlm(llmOk({ content: "修订后的正文" }));
+    try {
+      const res = await appKeep.inject({
+        method: "POST",
+        url: REVIEW,
+        headers: { cookie },
+        payload: { title: "原标题", content: "待审正文" },
+      });
+      expect(res.json().data.title).toBe("原标题");
+    } finally {
+      await appKeep.close();
+    }
+
+    const appFallback = appWithLlm(llmOk({ content: "兜底标题行\n修订正文" }));
+    try {
+      const res = await appFallback.inject({
+        method: "POST",
+        url: REVIEW,
+        headers: { cookie },
+        payload: { content: "待审正文" },
+      });
+      expect(res.json().data.title).toBe("兜底标题行");
+    } finally {
+      await appFallback.close();
+    }
+  });
+
+  it("自定义 reviewPrompt 快照 → 覆盖内置；content 非字符串 → 502", async () => {
+    seedAiConfigRow();
+    const { cookie } = await loginAsRole("admin");
+    const fn = llmOk({ content: "修订后的正文" });
+    const app2 = appWithLlm(fn);
+    try {
+      const res = await app2.inject({
+        method: "POST",
+        url: REVIEW,
+        headers: { cookie },
+        payload: { content: "待审正文", reviewPrompt: "只压缩到 50 字内" },
+      });
+      expect(res.statusCode).toBe(200);
+      const body = JSON.parse(String(fn.mock.calls[0]![1]!.body));
+      expect(body.messages[0].content).toBe("只压缩到 50 字内");
+    } finally {
+      await app2.close();
+    }
+
+    const appBad = appWithLlm(llmOk({ content: 42 }));
+    try {
+      const res = await appBad.inject({
+        method: "POST",
+        url: REVIEW,
+        headers: { cookie },
+        payload: { content: "待审正文" },
+      });
+      expect(res.statusCode).toBe(502);
+      expect(res.json().error.code).toBe("LLM_ERROR");
+    } finally {
+      await appBad.close();
     }
   });
 });
@@ -580,5 +743,39 @@ describe("system prompt 走配置（/system/copywriting-prompts）", () => {
     } finally {
       await app2.close();
     }
+  });
+
+  it("review 逆向检查同样走配置：默认终审编辑，PATCH reviewSystemPrompt 生效，空串恢复默认", async () => {
+    seedAiConfigRow();
+    const { cookie } = await loginAsRole("admin");
+    const cap = llmCapture({ title: "t", content: "修订稿" });
+    const app2 = appWithLlm(cap.fetchFn);
+    try {
+      const res = await app2.inject({ method: "POST", url: REVIEW, headers: { cookie }, payload: { content: "待审" } });
+      expect(res.statusCode).toBe(200);
+      expect(cap.systems[0]).toContain("终审编辑");
+    } finally {
+      await app2.close();
+    }
+
+    clock.t += 1000;
+    const saved = await patch(PROMPTS, cookie, { reviewSystemPrompt: "自定义逆向 SYSTEM" });
+    expect(saved.statusCode).toBe(200);
+    expect(saved.json().data.reviewSystemPrompt).toBe("自定义逆向 SYSTEM");
+
+    const cap2 = llmCapture({ title: "t", content: "修订稿" });
+    const app3 = appWithLlm(cap2.fetchFn);
+    try {
+      const res = await app3.inject({ method: "POST", url: REVIEW, headers: { cookie }, payload: { content: "待审" } });
+      expect(res.statusCode).toBe(200);
+      expect(cap2.systems[0]).toBe("自定义逆向 SYSTEM");
+    } finally {
+      await app3.close();
+    }
+
+    clock.t += 1000;
+    const restored = await patch(PROMPTS, cookie, { reviewSystemPrompt: "" });
+    expect(restored.statusCode).toBe(200);
+    expect(restored.json().data.reviewSystemPrompt).toContain("终审编辑");
   });
 });

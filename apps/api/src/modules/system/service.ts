@@ -32,6 +32,7 @@ import { findLiveUserIds } from "../deal-commissions/repo.js";
 import {
   DEFAULT_AUDIT_SYSTEM_PROMPT,
   DEFAULT_GENERATE_SYSTEM_PROMPT,
+  DEFAULT_REVIEW_SYSTEM_PROMPT,
 } from "../copywriting/prompts.js";
 import {
   getAiConfig,
@@ -335,7 +336,10 @@ export function getCopywritingPromptsResult(db: Db): CopywritingPromptsGet {
   return {
     generateSystemPrompt: row?.generateSystemPrompt ?? DEFAULT_GENERATE_SYSTEM_PROMPT,
     auditSystemPrompt: row?.auditSystemPrompt ?? DEFAULT_AUDIT_SYSTEM_PROMPT,
-    customized: row !== undefined && (row.generateSystemPrompt !== null || row.auditSystemPrompt !== null),
+    reviewSystemPrompt: row?.reviewSystemPrompt ?? DEFAULT_REVIEW_SYSTEM_PROMPT,
+    customized:
+      row !== undefined &&
+      (row.generateSystemPrompt !== null || row.auditSystemPrompt !== null || row.reviewSystemPrompt !== null),
     updatedAt: row?.updatedAt ?? null,
     updatedBy: row?.updatedBy ?? null,
   };
@@ -356,6 +360,10 @@ export function patchCopywritingPrompts(
       patch.auditSystemPrompt !== undefined
         ? patch.auditSystemPrompt || null
         : (current?.auditSystemPrompt ?? null),
+    reviewSystemPrompt:
+      patch.reviewSystemPrompt !== undefined
+        ? patch.reviewSystemPrompt || null
+        : (current?.reviewSystemPrompt ?? null),
     updatedAt: ctx.now,
     updatedBy: ctx.userId,
   };

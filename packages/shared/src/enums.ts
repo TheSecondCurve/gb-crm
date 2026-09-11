@@ -146,7 +146,7 @@ export type MaintenanceKind = z.infer<typeof maintenanceKindSchema>;
 export const payoutBatchStatusSchema = z.enum(["draft", "locked", "paid"]);
 export type PayoutBatchStatus = z.infer<typeof payoutBatchStatusSchema>;
 
-/** 文案提示词维度（K60：业务背景 / 目标客群 / 主题内容 / 预期目的 / 产出类型 / 润色要求） */
+/** 文案模板维度（K60：业务背景 / 目标客群 / 主题内容 / 预期目的 / 产出类型 / 润色要求） */
 export const copyDimensionSchema = z.enum([
   "background",
   "audience",
