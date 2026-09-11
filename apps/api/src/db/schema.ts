@@ -740,3 +740,53 @@ export const customerMaintenanceRecords = sqliteTable(
     index("customer_maintenance_records_customer_idx").on(t.customerId),
   ],
 );
+
+// K60 文案工作台：提示词模板词表（live 唯一 (dimension, name)，软删）
+export const copyTemplates = sqliteTable(
+  "copy_templates",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    dimension: text("dimension").notNull(),
+    name: text("name").notNull(),
+    content: text("content").notNull(),
+    sort: integer("sort").notNull().default(0),
+    enabled: integer("enabled").notNull().default(1),
+    createdAt: integer("created_at").notNull(),
+    updatedAt: integer("updated_at").notNull(),
+    createdBy: integer("created_by").references(() => users.id, { onDelete: "set null" }),
+    updatedBy: integer("updated_by").references(() => users.id, { onDelete: "set null" }),
+    deletedAt: integer("deleted_at"),
+  },
+  (t) => [
+    check(
+      "copy_templates_dimension_check",
+      sql`"dimension" IN ('background','audience','topic','goal','outputType','polish')`,
+    ),
+    uniqueIndex("copy_templates_live_unique")
+      .on(t.dimension, t.name)
+      .where(sql`"deleted_at" IS NULL`),
+  ],
+);
+
+// K60 文案工作台：已保存文案（六段维度文本快照 + 审计 JSON 快照，软删）
+export const copyItems = sqliteTable(
+  "copy_items",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    title: text("title").notNull(),
+    background: text("background"),
+    audience: text("audience"),
+    topic: text("topic"),
+    goal: text("goal"),
+    outputType: text("output_type"),
+    polish: text("polish"),
+    content: text("content").notNull(),
+    auditReport: text("audit_report"),
+    createdAt: integer("created_at").notNull(),
+    updatedAt: integer("updated_at").notNull(),
+    createdBy: integer("created_by").references(() => users.id, { onDelete: "set null" }),
+    updatedBy: integer("updated_by").references(() => users.id, { onDelete: "set null" }),
+    deletedAt: integer("deleted_at"),
+  },
+  (t) => [index("copy_items_updated_idx").on(t.updatedAt)],
+);

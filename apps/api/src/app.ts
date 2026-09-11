@@ -14,6 +14,7 @@ import type { AppEnv } from "./env.js";
 import { authRoutes } from "./modules/auth/routes.js";
 import { agentRoutes } from "./modules/agent/routes.js";
 import { channelsRoutes } from "./modules/channels/routes.js";
+import { copywritingRoutes } from "./modules/copywriting/routes.js";
 import { customersRoutes } from "./modules/customers/routes.js";
 import { customerRecordsRoutes } from "./modules/customer-records/routes.js";
 import { dealCommissionsRoutes } from "./modules/deal-commissions/routes.js";
@@ -96,6 +97,7 @@ export function buildApp(options: BuildAppOptions): FastifyInstance {
     deliveriesRoutes(instance, { db, now: clock });
     tagsRoutes(instance, { db, now: clock });
     materialsRoutes(instance, { db, now: clock, s3Fetch });
+    copywritingRoutes(instance, { db, now: clock, llmFetch });
     systemRoutes(instance, { db, now: clock, s3Fetch });
     jobsRoutes(instance, { db, now: clock });
     jobSchedulesRoutes(instance, { db, now: clock });

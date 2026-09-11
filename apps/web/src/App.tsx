@@ -26,6 +26,7 @@ import { DeliveryCirclePage } from "./pages/DeliveryCirclePage";
 import { DeliveryTypesPage } from "./pages/DeliveryTypesPage";
 import { MaterialsPage } from "./pages/MaterialsPage";
 import { MaterialEditPage } from "./pages/MaterialEditPage";
+import { CopywritingPage } from "./pages/CopywritingPage";
 
 /** 未登录访问受保护页 → /login；等待 /auth/me 时显示占位 */
 function RequireAuth() {
@@ -206,6 +207,14 @@ export default function App() {
           element={
             <PageGuard pageKey="material-edit">
               <MaterialEditPage />
+            </PageGuard>
+          }
+        />
+        <Route
+          path="/copywriting"
+          element={
+            <PageGuard pageKey="copywriting">
+              <CopywritingPage />
             </PageGuard>
           }
         />

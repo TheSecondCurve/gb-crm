@@ -3,6 +3,11 @@ import { describe, expect, it } from "vitest";
 import {
   channelListQuerySchema,
   channelPatchSchema,
+  copyAuditBodySchema,
+  copyGenerateBodySchema,
+  copyItemWriteSchema,
+  copyTemplatePatchSchema,
+  copyTemplateWriteSchema,
   customerListQuerySchema,
   customerPatchSchema,
   materialListQuerySchema,
@@ -270,5 +275,60 @@ describe("mintTokenSchema", () => {
         name: "x".repeat(65),
       }).success,
     ).toBe(false);
+  });
+});
+
+describe("copywriting schemas（K60）", () => {
+  it("copyTemplateWriteSchema：dimension 枚举 + name/content 必填 + 默认值", () => {
+    const r = copyTemplateWriteSchema.parse({
+      dimension: "audience",
+      name: " 宝妈群体 ",
+      content: "30-40 岁一二线城市宝妈",
+    });
+    expect(r).toEqual({
+      dimension: "audience",
+      name: "宝妈群体",
+      content: "30-40 岁一二线城市宝妈",
+      sort: 0,
+      enabled: true,
+    });
+    expect(
+      copyTemplateWriteSchema.safeParse({ dimension: "nope", name: "x", content: "y" }).success,
+    ).toBe(false);
+    expect(copyTemplateWriteSchema.safeParse({ dimension: "goal", name: "", content: "y" }).success).toBe(
+      false,
+    );
+  });
+
+  it("copyTemplatePatchSchema：dimension 被剥离（不可改）+ updatedAt OCC 必填", () => {
+    // Zod 默认 strip 未知键：dimension 不进 patch 结果，即不可改
+    expect(copyTemplatePatchSchema.parse({ dimension: "topic", updatedAt: 1 })).toEqual({
+      updatedAt: 1,
+    });
+    expect(copyTemplatePatchSchema.safeParse({ name: "x" }).success).toBe(false);
+    expect(copyTemplatePatchSchema.parse({ name: "x", updatedAt: 1 })).toEqual({
+      name: "x",
+      updatedAt: 1,
+    });
+  });
+
+  it("copyGenerateBodySchema：topic 必填，其余维度可空", () => {
+    expect(copyGenerateBodySchema.safeParse({}).success).toBe(false);
+    expect(copyGenerateBodySchema.parse({ topic: "新品上新" })).toEqual({ topic: "新品上新" });
+  });
+
+  it("copyAuditBodySchema：content 必填，维度上下文可空", () => {
+    expect(copyAuditBodySchema.safeParse({ topic: "x" }).success).toBe(false);
+    expect(
+      copyAuditBodySchema.parse({ content: "文案正文", goal: "促单" }),
+    ).toEqual({ content: "文案正文", goal: "促单" });
+  });
+
+  it("copyItemWriteSchema：title/content 必填，六段快照与 auditReport 可空", () => {
+    expect(copyItemWriteSchema.safeParse({ content: "x" }).success).toBe(false);
+    expect(copyItemWriteSchema.safeParse({ title: "x" }).success).toBe(false);
+    expect(
+      copyItemWriteSchema.parse({ title: "t", content: "c", outputType: "朋友圈" }),
+    ).toEqual({ title: "t", content: "c", outputType: "朋友圈" });
   });
 });
