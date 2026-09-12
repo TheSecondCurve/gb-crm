@@ -1,5 +1,6 @@
-// 系统设置「文案工作台」tab（K60+，仅 admin）：generate/audit/review 的 system prompt 维护。
+// 文案工作台「提示词配置」tab（K60+，仅 admin）：generate/audit/review 的 system prompt 维护。
 // 未配置回退内置默认（customized=false）；「还原默认」PATCH null 即复位——配置改坏的安全绳。
+// 维护入口在本页（文案工作台 → 提示词配置 tab），不在系统设置；六维度内容模板词表在「模板管理」tab。
 import { useEffect, useState, type FormEvent } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 
@@ -83,7 +84,7 @@ export function CopywritingPromptsTab() {
         <div className="card-body">
           <p className="muted">
             生成、逆向检查与审计文案时发给模型的 system prompt（内置默认不可修改，此处为覆盖值）。
-            留空保存即恢复内置默认；六维度内容模板词表在「文案工作台 → 模板管理」维护。
+            留空保存即恢复内置默认；六维度内容模板词表在「模板管理」tab。
           </p>
           <form className="settings-form" onSubmit={(e) => void save(e)}>
             <label className="field">
