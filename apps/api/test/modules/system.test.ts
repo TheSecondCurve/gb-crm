@@ -1,7 +1,7 @@
 // system ai-config（K46）：GET 掩码返回；PATCH 单管理员；apiKey 空/缺席保留旧值。
 import { canAllowedPageKeys } from "@gb-crm/shared";
 import type { FastifyInstance } from "fastify";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { buildApp } from "../../src/app.js";
 import { loginAs, seedUser, testEnv } from "../helpers/auth.js";
@@ -218,5 +218,140 @@ describe("角色→页面权限（GET/PATCH /api/v1/system/page-access）", () =
     });
     expect(res.statusCode).toBe(422);
     expect(res.json().error.code).toBe("VALIDATION");
+  });
+});
+
+describe("文案专用 LLM（GET/PATCH /api/v1/system/copywriting-llm + POST .../test）", () => {
+  const URL = "/api/v1/system/copywriting-llm";
+  const TEST = `${URL}/test`;
+
+  type FetchMock = ReturnType<typeof vi.fn> & typeof fetch;
+
+  const postJson = (url: string, cookie: string, payload?: Record<string, unknown>) =>
+    app.inject({ method: "POST", url, headers: { cookie }, ...(payload ? { payload } : {}) });
+
+  const llmOkFetch = (): FetchMock =>
+    vi.fn(async () =>
+      new Response(JSON.stringify({ choices: [{ message: { content: '{"ok":true}' } }] }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      }),
+    ) as unknown as FetchMock;
+
+  const appWithFetch = (fetchFn: typeof fetch): FastifyInstance =>
+    buildApp({ env: testEnv(), db: tmp.db, now: () => clock.t, gcProbability: 0, llmFetch: fetchFn });
+
+  it("未配置 → 全 null + dedicatedReady=false；未登录 401；operator/assistant 403", async () => {
+    expect((await app.inject({ method: "GET", url: URL })).statusCode).toBe(401);
+    for (const role of ["operator", "assistant"] as const) {
+      const cookie = await loginAsRole(role);
+      expect((await get(URL, cookie)).statusCode).toBe(403);
+      expect((await patch(URL, cookie, { baseUrl: "x" })).statusCode).toBe(403);
+      expect((await postJson(TEST, cookie, {})).statusCode).toBe(403);
+    }
+
+    const cookie = await loginAsRole("admin");
+    const res = await get(URL, cookie);
+    expect(res.statusCode).toBe(200);
+    expect(res.json().data).toEqual({
+      provider: null,
+      baseUrl: null,
+      model: null,
+      apiKeySet: false,
+      apiKeyMasked: null,
+      dedicatedReady: false,
+      updatedAt: null,
+      updatedBy: null,
+    });
+  });
+
+  it("PATCH 设置 → GET 掩码 + dedicatedReady=true + 审计；apiKey 缺席保留旧值、null 显式清除", async () => {
+    const cookie = await loginAsRole("admin");
+    const r1 = await patch(URL, cookie, {
+      provider: "deepseek",
+      baseUrl: "https://copy.example/v1",
+      model: "copy-model",
+      apiKey: "sk-abcdefghijklmnop",
+    });
+    expect(r1.statusCode).toBe(200);
+    expect(r1.json().data.apiKeySet).toBe(true);
+    expect(r1.json().data.apiKeyMasked).toBe("sk-a…mnop");
+    expect(r1.json().data.dedicatedReady).toBe(true);
+    expect(r1.json().data.updatedAt).toBe(clock.t);
+
+    // 缺席 apiKey → 保留旧值（masked 不变）
+    const r2 = await patch(URL, cookie, { model: "copy-model-2" });
+    expect(r2.json().data.model).toBe("copy-model-2");
+    expect(r2.json().data.apiKeyMasked).toBe("sk-a…mnop");
+
+    // null 清除 → 不再 ready
+    const r3 = await patch(URL, cookie, { apiKey: null });
+    expect(r3.json().data.apiKeySet).toBe(false);
+    expect(r3.json().data.apiKeyMasked).toBeNull();
+    expect(r3.json().data.dedicatedReady).toBe(false);
+
+    // 清空 baseUrl → 不完整 → ready=false
+    const r4 = await patch(URL, cookie, { baseUrl: null });
+    expect(r4.json().data.dedicatedReady).toBe(false);
+  });
+
+  it("test：无配置且无 body → 422；body 现值齐全 → 200（用表单现值，不必先保存）；上游 500 → 502", async () => {
+    const cookie = await loginAsRole("admin");
+    const missing = await postJson(TEST, cookie);
+    expect(missing.statusCode).toBe(422);
+    expect(missing.json().error.message).toContain("文案专用 LLM");
+
+    const fn = llmOkFetch();
+    const app2 = appWithFetch(fn);
+    try {
+      const ok = await app2.inject({
+        method: "POST",
+        url: TEST,
+        headers: { cookie },
+        payload: { baseUrl: "https://copy.example/v1", model: "m", apiKey: "sk-x" },
+      });
+      expect(ok.statusCode).toBe(200);
+      expect(ok.json().data).toEqual({ ok: true });
+      expect(String(fn.mock.calls[0]![0])).toContain("copy.example");
+    } finally {
+      await app2.close();
+    }
+
+    const fail = vi.fn(async () => new Response("boom", { status: 500 })) as unknown as FetchMock;
+    const app3 = appWithFetch(fail);
+    try {
+      const res = await app3.inject({
+        method: "POST",
+        url: TEST,
+        headers: { cookie },
+        payload: { baseUrl: "https://copy.example/v1", model: "m", apiKey: "sk-x" },
+      });
+      expect(res.statusCode).toBe(502);
+      expect(res.json().error.code).toBe("LLM_ERROR");
+    } finally {
+      await app3.close();
+    }
+  });
+
+  it("test 也可用已保存配置（无 body）；字段非法 → 422", async () => {
+    const cookie = await loginAsRole("admin");
+    await patch(URL, cookie, {
+      baseUrl: "https://copy.example/v1",
+      model: "m",
+      apiKey: "sk-saved-config-key",
+    });
+    const fn = llmOkFetch();
+    const app2 = appWithFetch(fn);
+    try {
+      const res = await app2.inject({ method: "POST", url: TEST, headers: { cookie } });
+      expect(res.statusCode).toBe(200);
+      const init = fn.mock.calls[0]![1] as RequestInit;
+      expect((init.headers as Record<string, string>).Authorization).toBe("Bearer sk-saved-config-key");
+    } finally {
+      await app2.close();
+    }
+
+    const bad = await postJson(TEST, cookie, { baseUrl: 123 });
+    expect(bad.statusCode).toBe(422);
   });
 });

@@ -21,6 +21,17 @@ const promptsConfig = {
   updatedBy: 1,
 };
 
+const copyLlmConfig = {
+  provider: "deepseek",
+  baseUrl: "https://copy.example/v1",
+  model: "copy-model",
+  apiKeySet: true,
+  apiKeyMasked: "sk-a…wxyz",
+  dedicatedReady: true,
+  updatedAt: 1000,
+  updatedBy: 1,
+};
+
 const templates: CopyTemplateDto[] = [
   { id: 1, dimension: "background", name: "女商品牌背景", content: "我们是女商团队……", sort: 1, enabled: true, createdAt: 1, updatedAt: 1, createdBy: null, updatedBy: null },
   { id: 2, dimension: "topic", name: "活动预告", content: "活动预告模板正文", sort: 1, enabled: true, createdAt: 1, updatedAt: 1, createdBy: null, updatedBy: null },
@@ -61,6 +72,9 @@ function mockCopywritingApi(me: Me) {
     if (url === "/api/v1/auth/me") return { status: 200, body: { data: me } };
     if (url.startsWith("/api/v1/system/copywriting-prompts")) {
       return { status: 200, body: { data: promptsConfig } };
+    }
+    if (url.startsWith("/api/v1/system/copywriting-llm")) {
+      return { status: 200, body: { data: copyLlmConfig } };
     }
     if (url.startsWith("/api/v1/copywriting/templates") && method === "GET") {
       // 生成 tab 拉启用模板（?enabled=true）；模板管理 tab 全量
@@ -120,15 +134,18 @@ describe("文案工作台", () => {
     expect((await screen.findByDisplayValue("自定义审计PROMPT")) as HTMLTextAreaElement).toBeTruthy();
     expect((await screen.findByDisplayValue("自定义逆向PROMPT")) as HTMLTextAreaElement).toBeTruthy();
 
+    // 页内有两个「保存配置」（提示词 + 专用 LLM），提示词表单按卡片 scoped
+    const promptsCard = screen.getByRole("heading", { name: "文案工作台提示词" }).closest(".card") as HTMLElement;
+
     fireEvent.change(genTa, { target: { value: "改成新的生成 PROMPT" } });
-    fireEvent.click(screen.getByRole("button", { name: "保存配置" }));
+    fireEvent.click(within(promptsCard).getByRole("button", { name: "保存配置" }));
     await waitFor(() => {
       const p = calls.find((c) => c.method === "PATCH" && c.url === "/api/v1/system/copywriting-prompts");
       expect(p).toBeTruthy();
       expect(JSON.parse(String(p?.body))).toEqual({ generateSystemPrompt: "改成新的生成 PROMPT" });
     });
 
-    fireEvent.click(screen.getByRole("button", { name: "还原默认" }));
+    fireEvent.click(within(promptsCard).getByRole("button", { name: "还原默认" }));
     await waitFor(() => {
       const patches = calls.filter(
         (c) => c.method === "PATCH" && c.url === "/api/v1/system/copywriting-prompts",
@@ -138,6 +155,41 @@ describe("文案工作台", () => {
         auditSystemPrompt: null,
         reviewSystemPrompt: null,
       });
+    });
+  });
+
+  it("提示词配置：文案专用 LLM 卡片预填 + badge；测试连接 POST 现值；保存 PATCH 变更键", async () => {
+    const calls = mockCopywritingApi(adminMe);
+    renderApp("/copywriting?tab=prompts");
+
+    // 预填 + 已启用 badge
+    expect(await screen.findByDisplayValue("https://copy.example/v1")).toBeTruthy();
+    expect(screen.getByDisplayValue("copy-model")).toBeTruthy();
+    expect(screen.getByText("已启用：文案调用走此配置")).toBeTruthy();
+    const llmCard = screen.getByRole("heading", { name: "文案专用 LLM（可选）" }).closest(".card") as HTMLElement;
+
+    // 改模型 + 输入新 key → 测试连接：POST 表单现值（provider 未改也带上非空现值）
+    fireEvent.change(screen.getByPlaceholderText("如 deepseek-chat"), { target: { value: "copy-model-v2" } });
+    fireEvent.change(screen.getByPlaceholderText(/已保存/), { target: { value: "sk-new-key" } });
+    fireEvent.click(within(llmCard).getByRole("button", { name: "测试连接" }));
+    await waitFor(() => {
+      const t = calls.find((c) => c.method === "POST" && c.url === "/api/v1/system/copywriting-llm/test");
+      expect(t).toBeTruthy();
+      expect(JSON.parse(String(t?.body))).toEqual({
+        provider: "deepseek",
+        baseUrl: "https://copy.example/v1",
+        model: "copy-model-v2",
+        apiKey: "sk-new-key",
+      });
+    });
+
+    // 保存：apiKey 保留语义（表单清空后保存不带 apiKey）
+    fireEvent.change(screen.getByPlaceholderText(/已保存/), { target: { value: "" } });
+    fireEvent.click(within(llmCard).getByRole("button", { name: "保存配置" }));
+    await waitFor(() => {
+      const p = calls.find((c) => c.method === "PATCH" && c.url === "/api/v1/system/copywriting-llm");
+      expect(p).toBeTruthy();
+      expect(JSON.parse(String(p?.body))).toEqual({ model: "copy-model-v2" });
     });
   });
 
