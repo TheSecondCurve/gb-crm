@@ -148,3 +148,29 @@ export const copywritingPromptsPatchSchema = z.object({
   reviewSystemPrompt: z.string().trim().max(COPYWRITING_PROMPT_MAX).nullable().optional(),
 });
 export type CopywritingPromptsPatch = z.infer<typeof copywritingPromptsPatchSchema>;
+
+// ── 文案专用 LLM（K60++；system_configs code='copywritingLlm'）──
+// 生成/逆向检查/审计优先走这里；未配置或不完整（baseUrl/model/apiKey 缺一）→ 回退系统级 code='llm'。
+// GET 掩码同 ai-config；PATCH 空串/缺席保留旧值，apiKey 传 null 显式清除（撤掉专用配置）。
+
+export const copywritingLlmGetSchema = z.object({
+  provider: z.string().nullable(),
+  baseUrl: z.string().nullable(),
+  model: z.string().nullable(),
+  apiKeySet: z.boolean(),
+  apiKeyMasked: z.string().nullable(),
+  /** 专用配置是否完整可用（true → 文案三端点走这里；false → 回退系统 LLM） */
+  dedicatedReady: z.boolean(),
+  updatedAt: z.number().nullable(),
+  updatedBy: z.number().nullable(),
+});
+export type CopywritingLlmGet = z.infer<typeof copywritingLlmGetSchema>;
+
+export const copywritingLlmPatchSchema = z.object({
+  provider: z.string().trim().max(100).nullable().optional(),
+  baseUrl: z.string().trim().max(500).nullable().optional(),
+  model: z.string().trim().max(100).nullable().optional(),
+  /** 传非空串才更新 key；空串/缺席保留旧值；传 null 显式清除（区别于 ai-config：专用配置需要可撤） */
+  apiKey: z.string().trim().min(1).max(500).nullable().optional(),
+});
+export type CopywritingLlmPatch = z.infer<typeof copywritingLlmPatchSchema>;

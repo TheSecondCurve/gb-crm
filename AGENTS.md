@@ -37,12 +37,12 @@ gb-crm/
 模块速览（行为细节 = design.md 对应 K 行）：
 
 - `tags`（K45/K58）词表，分域 `domain=customer|material`，admin 写、其余只读；维护入口「业务设置」`/business-settings`
-- `system`（K46/K50/K53/K57）通用 `system_configs` 表按 `code` 行扩展，不建表：`llm`（LLM 配置，GET 掩码/PATCH，admin）、`pageAccess`（角色→页面权限，只在 can() 允许集内收缩）、`s3`/`materialsS3`（备份/资料对象存储，各自 `GET/PATCH + POST .../test`，secret 只回掩码、enabled=true 时四要素齐备否则 422）、`commissionDefault`（K56 分成默认方案）、`copywritingPrompts`（K60+ 文案工作台 generate/review/audit system prompt 覆盖值，GET 生效值缺省内置女商红线默认（prompts.ts 为最后真相）、PATCH null/空串恢复默认，admin）
+- `system`（K46/K50/K53/K57）通用 `system_configs` 表按 `code` 行扩展，不建表：`llm`（LLM 配置，GET 掩码/PATCH，admin）、`pageAccess`（角色→页面权限，只在 can() 允许集内收缩）、`s3`/`materialsS3`（备份/资料对象存储，各自 `GET/PATCH + POST .../test`，secret 只回掩码、enabled=true 时四要素齐备否则 422）、`commissionDefault`（K56 分成默认方案）、`copywritingPrompts`（K60+ 文案工作台 generate/review/audit system prompt 覆盖值，GET 生效值缺省内置女商红线默认（prompts.ts 为最后真相）、PATCH null/空串恢复默认，admin）、`copywritingLlm`（K60++ 文案专用 LLM：完整时 copywriting 三端点优先走这里否则回退 code='llm'，GET 掩码 + dedicatedReady、PATCH 空串/缺席保留旧值与 null 清除 key、`POST /system/copywriting-llm/test` 可选 body 现值覆盖探测，admin）
 - `jobs`（K51/K52）后台任务 `background_jobs` + 定时调度 `job_schedules`；执行器 `runner.ts` 进程内**串行**消费 queued（`pumpOnce()` 测试 / `start()` 生产），调度器 CAS 推进到期 cron（`lib/cron.ts` 零依赖，按进程本地时区——生产容器 `TZ=Asia/Shanghai`）；任务类型 `registry.ts` 注册（未知 422、params 创建+执行双侧 Zod 校验、创建预检 LLM 就绪 422）
 - `materials`（K54/K57/K58）交付资料：可空挂交付单（孤儿允许）+ 客户 M2M；文本类全文入 `content`、媒体类只存 url、file 走 materialsS3 multipart；FTS5 trigram 虚表（≥3 字符 MATCH、<3 回退 LIKE；FTS 不入 Drizzle schema，repo 用 `db.$client`）
 - `customer-records`（K55）客户维护记录嵌套路由，纯时间线，**不新增 customers.status 列**；新建 follow_up/lead 顺带 bump `customers.last_followed_at`
 - `deal-commissions` + `payout-batches`（K56 v2/K59）成交分成三级模型（税后基数→总比例→内部分配）+ payout + 结算批次；每人每期金额**不物化**，shared `splitPayoutAmount` 推导
-- `copywriting`（K60）文案工作台：`copy_templates` 模板词表（六维度，live 唯一 `(dimension,name)`，admin/operator 写、assistant 只读；`0031_copy_templates_seed.sql` 种 21 条六维度模板——数字不写死/没把握标「待核」，表空才插不覆盖 UI 维护）+ `copy_items` 已存文案（title 必填、LLM 生成预填）；generate（→`{title,content}`）/ review（逆向检查：第二轮 LLM 审修，修订稿为产出）/ audit 三个 LLM 端点只收最终文本快照、不解析模板 id；system prompt 统一走 `system_configs` code='copywritingPrompts'（内置默认 prompts.ts 不可修改，请求 `systemPrompt`/`reviewPrompt` 可单次覆盖）
+- `copywriting`（K60）文案工作台：`copy_templates` 模板词表（六维度，live 唯一 `(dimension,name)`，admin/operator 写、assistant 只读；`0031_copy_templates_seed.sql` 种 21 条六维度模板——数字不写死/没把握标「待核」，表空才插不覆盖 UI 维护）+ `copy_items` 已存文案（title 必填、LLM 生成预填）；generate（→`{title,content}`）/ review（逆向检查：第二轮 LLM 审修，修订稿为产出）/ audit 三个 LLM 端点只收最终文本快照、不解析模板 id；system prompt 统一走 `system_configs` code='copywritingPrompts'（内置默认 prompts.ts 不可修改，请求 `systemPrompt`/`reviewPrompt` 可单次覆盖）；LLM 选取 = `copywritingLlm` 完整优先、否则回退 code='llm'，都未配置 422
 
 公共能力：
 
@@ -54,7 +54,7 @@ gb-crm/
 
 ### Web
 
-- 路由：`/login` `/my/customers` `/my/deals` `/customers` `/customers/:id`（总览）`/channels` `/products` `/deals` `/deals/commissions` `/deals/payout-batches(/:id)` `/deliveries` `/deliveries/:id`（含 `/circle` `/gantt` `/matrix`）`/delivery-types` `/materials` `/materials/:id/edit`（文本类全文）`/copywriting`（文案工作台：生成与审计（六维度纵向整行平铺 + 自动逆向检查开关 + 结果区标题/正文可编辑行内保存）/已保存文案/模板管理/提示词配置 admin——三类 system prompt 覆盖值）`/users` `/settings`（tab：LLM/角色权限/远程备份/资料存储/后台任务/定时任务）`/tokens`（授权管理，admin）`/business-settings`（默认页）
+- 路由：`/login` `/my/customers` `/my/deals` `/customers` `/customers/:id`（总览）`/channels` `/products` `/deals` `/deals/commissions` `/deals/payout-batches(/:id)` `/deliveries` `/deliveries/:id`（含 `/circle` `/gantt` `/matrix`）`/delivery-types` `/materials` `/materials/:id/edit`（文本类全文）`/copywriting`（文案工作台：生成与审计（六维度纵向整行平铺 + 自动逆向检查开关 + 结果区标题/正文可编辑行内保存）/已保存文案/模板管理/提示词配置 admin——三类 system prompt 覆盖值 + 文案专用 LLM（测试连接 + 保存，留空回退系统 LLM））`/users` `/settings`（tab：LLM/角色权限/远程备份/资料存储/后台任务/定时任务）`/tokens`（授权管理，admin）`/business-settings`（默认页）
 - 页面权限唯一由 `packages/shared/src/pages.ts` 的 `PAGE_REGISTRY` + `/auth/me.pages` 驱动（安全层 can() ∩ 配置允许集）；`PageGuard` 把无权路由重定向到该角色第一张可看菜单页；详情页跟随父页面。**改菜单/新增页只改注册表**，不要在 Sidebar/App 手写显隐；面包屑由 `layout/breadcrumb.ts` 沿注册表推导
 - 表格 `components/DataGrid/`（双击编辑 + 行内 PATCH 队列）；列表容器 `.data-grid-scroll` 竖滚 + 表头吸顶；`selectable` + 受控 `selectedIds` 行多选批量操作；分页含「跳转到第几页」；`/` 聚焦搜索，`Cmd/Ctrl+K` 客户快速搜索（`CommandPalette`）；侧栏分组可折叠（localStorage）
 - 图标统一 `@phosphor-icons/react`，**禁止字符 glyph 当控件图标**；小图标 `weight="bold"` + `aria-hidden`

@@ -7,6 +7,8 @@ import type {
   AiConfigPatch,
   CommissionDefaultGet,
   CommissionDefaultPatch,
+  CopywritingLlmGet,
+  CopywritingLlmPatch,
   CopywritingPromptsGet,
   CopywritingPromptsPatch,
   MaterialsS3ConfigGet,
@@ -26,7 +28,8 @@ import {
 } from "@gb-crm/shared";
 
 import { s3Probe, S3Error, type S3ClientConfig } from "../../lib/s3.js";
-import { ApiError, s3Error, unprocessable } from "../../plugins/error-handler.js";
+import { chatJson, LlmError } from "../../lib/llm.js";
+import { ApiError, llmError, s3Error, unprocessable } from "../../plugins/error-handler.js";
 import type { Db } from "../../db/client.js";
 import { findLiveUserIds } from "../deal-commissions/repo.js";
 import {
@@ -37,13 +40,16 @@ import {
 import {
   getAiConfig,
   getCommissionDefault,
+  getCopywritingLlmConfig,
   getCopywritingPromptsConfig,
   getMaterialsS3Config,
   getPageAccessConfig,
   getS3Config,
+  isLlmConfigReady,
   isS3RemoteReady,
   upsertAiConfig,
   upsertCommissionDefault,
+  upsertCopywritingLlmConfig,
   upsertCopywritingPromptsConfig,
   upsertMaterialsS3Config,
   upsertPageAccessConfig,
@@ -369,4 +375,75 @@ export function patchCopywritingPrompts(
   };
   upsertCopywritingPromptsConfig(db, next);
   return getCopywritingPromptsResult(db);
+}
+
+// ---- 文案专用 LLM（code='copywritingLlm'，K60++；仅 admin 经 requireCan("system")）----
+// 生成/逆向检查/审计优先走专用配置；未配置或不完整 → 回退系统级 code='llm'（调用方口径见 copywriting service）。
+// PATCH：apiKey 空串/缺席保留旧值（placeholder 语义），传 null 显式清除；其余字段 nullable，传 null 清空。
+// test：可用请求体现值覆盖在已保存配置上探测（未保存的表单值也能测），不完整 → 422，上游失败 → 502 LLM_ERROR。
+
+export function getCopywritingLlmResult(db: Db): CopywritingLlmGet {
+  const row = getCopywritingLlmConfig(db);
+  const apiKey = row?.apiKey ?? null;
+  return {
+    provider: row?.provider ?? null,
+    baseUrl: row?.baseUrl ?? null,
+    model: row?.model ?? null,
+    apiKeySet: apiKey !== null && apiKey !== "",
+    apiKeyMasked: maskSecret(apiKey),
+    dedicatedReady: isLlmConfigReady(row),
+    updatedAt: row?.updatedAt ?? null,
+    updatedBy: row?.updatedBy ?? null,
+  };
+}
+
+export function patchCopywritingLlm(
+  db: Db,
+  patch: CopywritingLlmPatch,
+  ctx: { now: number; userId: number },
+): CopywritingLlmGet {
+  const current = getCopywritingLlmConfig(db);
+  upsertCopywritingLlmConfig(db, {
+    provider: patch.provider !== undefined ? patch.provider : (current?.provider ?? null),
+    baseUrl: patch.baseUrl !== undefined ? patch.baseUrl : (current?.baseUrl ?? null),
+    model: patch.model !== undefined ? patch.model : (current?.model ?? null),
+    // 非空串更新；缺席保留旧值；null 显式清除（撤掉专用配置）
+    apiKey: patch.apiKey !== undefined ? patch.apiKey : (current?.apiKey ?? null),
+    updatedAt: ctx.now,
+    updatedBy: ctx.userId,
+  });
+  return getCopywritingLlmResult(db);
+}
+
+/** 连通性测试：body 体现值覆盖在已保存配置之上，合并后三要素不齐 → 422；发最小 chat 探测，失败 → 502 */
+export async function testCopywritingLlmConnection(
+  db: Db,
+  override: CopywritingLlmPatch = {},
+  opts: { fetchFn?: typeof fetch } = {},
+): Promise<{ ok: true }> {
+  const current = getCopywritingLlmConfig(db);
+  const candidate = {
+    provider: override.provider !== undefined ? override.provider : (current?.provider ?? null),
+    baseUrl: override.baseUrl !== undefined ? override.baseUrl : (current?.baseUrl ?? null),
+    model: override.model !== undefined ? override.model : (current?.model ?? null),
+    apiKey: override.apiKey !== undefined ? override.apiKey : (current?.apiKey ?? null),
+  };
+  if (!isLlmConfigReady(candidate)) {
+    throw unprocessable("请先完整填写文案专用 LLM 配置（Base URL / 模型 / API Key）");
+  }
+  try {
+    await chatJson({
+      settings: candidate,
+      fetchFn: opts.fetchFn,
+      temperature: 0,
+      messages: [
+        { role: "system", content: "你是连通性测试端点，只输出 {\"ok\":true} 形状的 JSON，不要输出任何其他内容。" },
+        { role: "user", content: "ping" },
+      ],
+    });
+    return { ok: true };
+  } catch (err) {
+    if (err instanceof LlmError) throw llmError(err.message);
+    throw err;
+  }
 }

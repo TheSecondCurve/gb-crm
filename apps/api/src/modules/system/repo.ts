@@ -21,6 +21,8 @@ export const MATERIALS_S3_CONFIG_CODE = "materialsS3";
 export const COMMISSION_DEFAULT_CODE = "commissionDefault";
 /** 文案工作台 system prompt（K60+）：value = { generateSystemPrompt, auditSystemPrompt }，null 字段走内置默认 */
 export const COPYWRITING_PROMPTS_CODE = "copywritingPrompts";
+/** 文案专用 LLM（K60++）：value 同 code='llm'（provider/baseUrl/apiKey/model），完整时文案三端点优先走这里 */
+export const COPYWRITING_LLM_CODE = "copywritingLlm";
 
 export interface SystemConfigRow {
   code: string;
@@ -88,6 +90,21 @@ export function getAiConfig(db: Db): AiConfigRow | undefined {
   return { ...parseLlmValue(row.value), updatedAt: row.updatedAt, updatedBy: row.updatedBy };
 }
 
+/** 调用点判定「完整可用」的口径：baseUrl/apiKey/model 三要素齐备 */
+export function isLlmConfigReady(cfg: AiConfigValue | undefined): cfg is AiConfigValue & {
+  baseUrl: string;
+  apiKey: string;
+  model: string;
+} {
+  return cfg !== undefined && cfg.baseUrl !== null && cfg.apiKey !== null && cfg.model !== null;
+}
+
+export function getCopywritingLlmConfig(db: Db): AiConfigRow | undefined {
+  const row = getConfigRow(db, COPYWRITING_LLM_CODE);
+  if (!row) return undefined;
+  return { ...parseLlmValue(row.value), updatedAt: row.updatedAt, updatedBy: row.updatedBy };
+}
+
 /** 单配置 upsert（code='llm'）；调用方拼好最终值（含 apiKey 保留逻辑） */
 export function upsertAiConfig(
   db: Db,
@@ -103,6 +120,32 @@ export function upsertAiConfig(
   upsertConfigRow(
     db,
     LLM_CONFIG_CODE,
+    JSON.stringify({
+      provider: values.provider,
+      baseUrl: values.baseUrl,
+      apiKey: values.apiKey,
+      model: values.model,
+    }),
+    values.updatedAt,
+    values.updatedBy,
+  );
+}
+
+/** 文案专用 LLM upsert（code='copywritingLlm'；value 形状同 code='llm'） */
+export function upsertCopywritingLlmConfig(
+  db: Db,
+  values: {
+    provider: string | null;
+    baseUrl: string | null;
+    model: string | null;
+    apiKey: string | null;
+    updatedAt: number;
+    updatedBy: number | null;
+  },
+): void {
+  upsertConfigRow(
+    db,
+    COPYWRITING_LLM_CODE,
     JSON.stringify({
       provider: values.provider,
       baseUrl: values.baseUrl,
