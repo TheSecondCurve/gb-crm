@@ -75,6 +75,18 @@ export interface CopywritingPromptsDto {
   updatedBy: number | null;
 }
 
+/** K60++ 文案专用 LLM（apiKey 只回掩码；dedicatedReady=false 时文案三端点回退系统 LLM） */
+export interface CopywritingLlmDto {
+  provider: string | null;
+  baseUrl: string | null;
+  model: string | null;
+  apiKeySet: boolean;
+  apiKeyMasked: string | null;
+  dedicatedReady: boolean;
+  updatedAt: number | null;
+  updatedBy: number | null;
+}
+
 /** K53 S3 兼容对象存储远程备份配置（secretAccessKey 只回掩码） */
 export interface S3ConfigDto {
   enabled: boolean;

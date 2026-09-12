@@ -7,7 +7,8 @@
 //   （内置默认 = prompts.ts 女商红线版，null/空串恢复默认）；请求体 systemPrompt/reviewPrompt 可临时覆盖；
 // - generate → {title, content}（LLM 产出标题，缺省回退正文首行截断）；
 //   review = 逆向检查第二轮审修，修订稿才是产出；
-// - generate / audit / review 走 OpenAI 兼容 chatJson：未配置 → 422，上游失败/不可解析 → 502 LLM_ERROR。
+// - generate / audit / review 走 OpenAI 兼容 chatJson：LLM 选取 = 文案专用（code='copywritingLlm'）
+//   完整时优先、否则回退系统级 code='llm'，都未配置 → 422，上游失败/不可解析 → 502 LLM_ERROR。
 import type {
   CopyAuditBody,
   CopyAuditReport,
@@ -28,7 +29,7 @@ import { createAudit, updateAudit, type AuditContext } from "../../lib/audit.js"
 import { chatJson, LlmError } from "../../lib/llm.js";
 import { applyScalarPatch } from "../../lib/patch-kernel.js";
 import { conflict, llmError, notFound, unprocessable } from "../../plugins/error-handler.js";
-import { getAiConfig, getCopywritingPromptsConfig } from "../system/repo.js";
+import { getAiConfig, getCopywritingLlmConfig, getCopywritingPromptsConfig, isLlmConfigReady } from "../system/repo.js";
 import {
   assembleCopyItem,
   assembleCopyItems,
@@ -244,11 +245,13 @@ function buildDimensionText(body: Record<string, string | null | undefined>): st
   return parts.join("\n");
 }
 
-/** 读取 LLM 配置；未就绪 → 422（与 AI 打标同口径） */
+/** 读取生效 LLM 配置：文案专用（code='copywritingLlm'）完整时优先，否则回退系统级（code='llm'）；
+ *  两者都未就绪 → 422（与 AI 打标同口径） */
 function requireLlmSettings(db: Db): { baseUrl: string; apiKey: string; model: string } {
-  const cfg = getAiConfig(db);
-  if (!cfg?.apiKey || !cfg?.baseUrl || !cfg?.model) {
-    throw unprocessable("请先在「系统设置」配置 LLM 服务", [
+  const dedicated = getCopywritingLlmConfig(db);
+  const cfg = isLlmConfigReady(dedicated) ? dedicated : getAiConfig(db);
+  if (!isLlmConfigReady(cfg)) {
+    throw unprocessable("请先在「系统设置 → LLM 打标配置」或「文案工作台 → 提示词配置 → 文案专用 LLM」配置 LLM 服务", [
       { path: "ai-config", message: "缺少 baseUrl/apiKey/model" },
     ]);
   }

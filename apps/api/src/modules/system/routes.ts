@@ -3,6 +3,7 @@
 import {
   aiConfigPatchSchema,
   commissionDefaultPatchSchema,
+  copywritingLlmPatchSchema,
   copywritingPromptsPatchSchema,
   materialsS3ConfigPatchSchema,
   pageAccessPatchSchema,
@@ -15,16 +16,19 @@ import { requireCan } from "../../plugins/rbac.js";
 import {
   getAiConfigResult,
   getCommissionDefaultResult,
+  getCopywritingLlmResult,
   getCopywritingPromptsResult,
   getMaterialsS3ConfigResult,
   getPageAccessMatrix,
   getS3ConfigResult,
   patchAiConfig,
   patchCommissionDefault,
+  patchCopywritingLlm,
   patchCopywritingPrompts,
   patchMaterialsS3Config,
   patchPageAccess,
   patchS3Config,
+  testCopywritingLlmConnection,
   testMaterialsS3Connection,
   testS3Connection,
 } from "./service.js";
@@ -35,10 +39,12 @@ export interface SystemRoutesOptions {
   now: () => number;
   /** K53 S3 客户端 fetch 注入（测试 mock）；默认全局 fetch */
   s3Fetch?: typeof fetch;
+  /** K60++ 文案专用 LLM 连通性测试 fetch 注入（测试 mock）；默认全局 fetch */
+  llmFetch?: typeof fetch;
 }
 
 export function systemRoutes(app: FastifyInstance, opts: SystemRoutesOptions): void {
-  const { db, now, s3Fetch } = opts;
+  const { db, now, s3Fetch, llmFetch } = opts;
   const auditCtx = (req: { user: { id: number } | null }) => ({
     now: now(),
     userId: req.user!.id, // requireCan 已保证非空
@@ -148,6 +154,31 @@ export function systemRoutes(app: FastifyInstance, opts: SystemRoutesOptions): v
     async (req) => {
       const patch = copywritingPromptsPatchSchema.parse(req.body ?? {});
       return { data: patchCopywritingPrompts(db, patch, auditCtx(req)) };
+    },
+  );
+
+  // 文案专用 LLM（K60++；仅 admin）。完整时 copywriting 三端点优先走这里，否则回退系统 code='llm'。
+  app.get(
+    "/api/v1/system/copywriting-llm",
+    { preHandler: requireCan("system", "read") },
+    async () => ({ data: getCopywritingLlmResult(db) }),
+  );
+
+  app.patch(
+    "/api/v1/system/copywriting-llm",
+    { preHandler: requireCan("system", "update") },
+    async (req) => {
+      const patch = copywritingLlmPatchSchema.parse(req.body ?? {});
+      return { data: patchCopywritingLlm(db, patch, auditCtx(req)) };
+    },
+  );
+
+  app.post(
+    "/api/v1/system/copywriting-llm/test",
+    { preHandler: requireCan("system", "update") },
+    async (req) => {
+      const override = copywritingLlmPatchSchema.parse(req.body ?? {});
+      return { data: await testCopywritingLlmConnection(db, override, { fetchFn: llmFetch }) };
     },
   );
 }

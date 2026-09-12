@@ -653,6 +653,20 @@ function seedCopyPromptsRow(value: Record<string, unknown>): void {
     .run();
 }
 
+/** 直接种 system_configs code='copywritingLlm'（文案专用 LLM） */
+function seedCopyLlmRow(value: Record<string, unknown>): void {
+  tmp.db
+    .insert(systemConfigs)
+    .values({
+      code: "copywritingLlm",
+      value: JSON.stringify(value),
+      updatedAt: clock.t,
+      updatedBy: null,
+    })
+    .onConflictDoNothing()
+    .run();
+}
+
 /** 捕获发往 LLM 的 messages（mock 固定正常返回） */
 function llmCapture(reply: unknown = { content: "ok" }): {
   fetchFn: typeof fetch;
@@ -777,5 +791,80 @@ describe("system prompt 走配置（/system/copywriting-prompts）", () => {
     const restored = await patch(PROMPTS, cookie, { reviewSystemPrompt: "" });
     expect(restored.statusCode).toBe(200);
     expect(restored.json().data.reviewSystemPrompt).toContain("终审编辑");
+  });
+});
+
+describe("LLM 选取：文案专用（code='copywritingLlm'）优先，回退系统级（code='llm'）", () => {
+  /** 记录请求 URL/头/体的 fetch mock（返回可解析 JSON 的 LLM 应答） */
+  function llmProbe(reply: Record<string, unknown>): {
+    fn: FetchMock;
+    urls: string[];
+    auths: (string | null)[];
+    models: string[];
+  } {
+    const urls: string[] = [];
+    const auths: (string | null)[] = [];
+    const models: string[] = [];
+    const fn = vi.fn(async (url: unknown, init?: RequestInit) => {
+      urls.push(String(url));
+      const headers = (init?.headers ?? {}) as Record<string, string>;
+      auths.push(headers.Authorization ?? null);
+      models.push((JSON.parse(String(init?.body)) as { model: string }).model);
+      return new Response(JSON.stringify({ choices: [{ message: { content: JSON.stringify(reply) } }] }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    }) as unknown as FetchMock;
+    return { fn, urls, auths, models };
+  }
+
+  it("专用配置完整 → generate/audit/review 都走专用 baseUrl + 专用 key", async () => {
+    seedAiConfigRow(); // 系统级也在，验证「优先」而非「唯一」
+    seedCopyLlmRow({
+      provider: "dedicated",
+      baseUrl: "https://copy-llm.example/v1",
+      apiKey: "sk-dedicated",
+      model: "copy-model",
+    });
+    const { cookie } = await loginAsRole("admin");
+    const probe = llmProbe({ title: "t", content: "c", verdict: "pass", summary: "s", issues: [] });
+    const app2 = appWithLlm(probe.fn);
+    try {
+      const gen = await app2.inject({ method: "POST", url: GENERATE, headers: { cookie }, payload: { topic: "t" } });
+      expect(gen.statusCode).toBe(200);
+      expect(probe.urls[0]).toBe("https://copy-llm.example/v1/chat/completions");
+      expect(probe.auths[0]).toBe("Bearer sk-dedicated");
+      expect(probe.models[0]).toBe("copy-model");
+
+      await app2.inject({ method: "POST", url: AUDIT, headers: { cookie }, payload: { content: "x" } });
+      expect(probe.urls[1]).toContain("copy-llm.example");
+      await app2.inject({ method: "POST", url: REVIEW, headers: { cookie }, payload: { content: "x" } });
+      expect(probe.urls[2]).toContain("copy-llm.example");
+    } finally {
+      await app2.close();
+    }
+  });
+
+  it("专用配置不完整（缺 apiKey）→ 回退系统级配置", async () => {
+    seedAiConfigRow();
+    seedCopyLlmRow({ provider: "dedicated", baseUrl: "https://copy-llm.example/v1", apiKey: "", model: "copy-model" });
+    const { cookie } = await loginAsRole("admin");
+    const probe = llmProbe({ title: "t", content: "c" });
+    const app2 = appWithLlm(probe.fn);
+    try {
+      const res = await app2.inject({ method: "POST", url: GENERATE, headers: { cookie }, payload: { topic: "t" } });
+      expect(res.statusCode).toBe(200);
+      expect(probe.urls[0]).toBe("https://llm.example/v1/chat/completions");
+    } finally {
+      await app2.close();
+    }
+  });
+
+  it("专用与系统级都未配置 → 422，提示两个配置入口", async () => {
+    const { cookie } = await loginAsRole("admin");
+    const res = await post(GENERATE, cookie, { topic: "t" });
+    expect(res.statusCode).toBe(422);
+    expect(res.json().error.message).toContain("LLM 打标配置");
+    expect(res.json().error.message).toContain("文案专用 LLM");
   });
 });
