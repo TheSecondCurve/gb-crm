@@ -284,6 +284,9 @@ select, textarea { padding: 8px 10px; border: 1px solid var(--hairline); border-
 
 select:focus, textarea:focus { outline: 1px solid var(--ink); }
 
+/* textarea 只允许纵向拉伸：横向拖宽会撑破表单网格/卡片布局造成错位 */
+textarea { resize: vertical; }
+
 .modal .field { margin-bottom: 12px; }
 
 .field-inline { flex-direction: row; align-items: center; gap: 8px; }
@@ -405,6 +408,18 @@ select:focus, textarea:focus { outline: 1px solid var(--ink); }
 
 /* multi / relation 的选项区：边框盒 + 内部滚动，避免长选项撑爆弹窗 */
 .form-picker { display: flex; flex-direction: column; gap: 6px; }
+
+/* ---- 文案工作台「生成与审计」六段维度（K60）：纵向整行平铺，模板内容长也不挤压 ---- */
+
+.copy-dims { display: flex; flex-direction: column; gap: 14px; }
+
+.copy-dim { display: flex; flex-direction: column; gap: 6px; }
+
+.copy-dim-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+
+.copy-dim-head select { flex: 1; max-width: 360px; min-width: 220px; }
+
+.copy-dim-label { color: var(--text-2); font-size: 13px; font-weight: 500; }
 
 .form-checks { display: flex; flex-wrap: wrap; gap: 6px 14px; max-height: 132px; overflow-y: auto; padding: 8px 10px; border: 1px solid var(--hairline); border-radius: 4px; }
 

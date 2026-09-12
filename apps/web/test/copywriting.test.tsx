@@ -1,5 +1,5 @@
-// 文案工作台（K60）：三 tab 渲染 / 生成 tab 模板填充 + topic 必填 + generate → 自动逆向检查 →
-// 修订稿+原始稿 / 手动审计报告 / 行内保存（标题必填）/ 已保存 tab assistant 只读 / 模板管理内置锁定。
+// 文案工作台（K60）：tab 渲染（提示词配置仅 admin）/ 生成 tab 模板填充 + topic 必填 + generate → 自动逆向检查 →
+// 修订稿+原始稿 / 手动审计报告 / 行内保存（标题必填）/ 提示词配置 PATCH 变更键 + 还原默认 / 已保存 tab assistant 只读 / 模板管理。
 import { describe, expect, it } from "vitest";
 import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 
@@ -11,6 +11,15 @@ interface Call {
   method: string;
   body?: string;
 }
+
+const promptsConfig = {
+  generateSystemPrompt: "自定义生成PROMPT",
+  auditSystemPrompt: "自定义审计PROMPT",
+  reviewSystemPrompt: "自定义逆向PROMPT",
+  customized: true,
+  updatedAt: 1000,
+  updatedBy: 1,
+};
 
 const templates: CopyTemplateDto[] = [
   { id: 1, dimension: "background", name: "女商品牌背景", content: "我们是女商团队……", sort: 1, enabled: true, createdAt: 1, updatedAt: 1, createdBy: null, updatedBy: null },
@@ -50,6 +59,9 @@ function mockCopywritingApi(me: Me) {
     const method = init?.method ?? "GET";
     calls.push({ url, method, body: init?.body });
     if (url === "/api/v1/auth/me") return { status: 200, body: { data: me } };
+    if (url.startsWith("/api/v1/system/copywriting-prompts")) {
+      return { status: 200, body: { data: promptsConfig } };
+    }
     if (url.startsWith("/api/v1/copywriting/templates") && method === "GET") {
       // 生成 tab 拉启用模板（?enabled=true）；模板管理 tab 全量
       const data = url.includes("enabled=true") ? templates.filter((t) => t.enabled) : templates;
@@ -78,7 +90,7 @@ function mockCopywritingApi(me: Me) {
 }
 
 describe("文案工作台", () => {
-  it("渲染三个 tab", async () => {
+  it("渲染 tab：admin 四个（含「提示词配置」）；assistant 没有「提示词配置」", async () => {
     mockCopywritingApi(adminMe);
     renderApp("/copywriting");
 
@@ -86,6 +98,47 @@ describe("文案工作台", () => {
     expect(screen.getByRole("tab", { name: "生成与审计" })).toBeTruthy();
     expect(screen.getByRole("tab", { name: "已保存文案" })).toBeTruthy();
     expect(screen.getByRole("tab", { name: "模板管理" })).toBeTruthy();
+    expect(screen.getByRole("tab", { name: "提示词配置" })).toBeTruthy();
+  });
+
+  it("非 admin（assistant）不显示「提示词配置」tab；?tab=prompts 回落生成与审计", async () => {
+    mockCopywritingApi(assistantMe);
+    renderApp("/copywriting?tab=prompts");
+
+    expect(await screen.findByRole("tab", { name: "生成与审计" })).toBeTruthy();
+    expect(screen.queryByRole("tab", { name: "提示词配置" })).toBeNull();
+  });
+
+  it("提示词配置（?tab=prompts，admin）：预填生效 prompt；改动 PATCH 只带变更键；还原默认 PATCH null", async () => {
+    const calls = mockCopywritingApi(adminMe);
+    renderApp("/copywriting?tab=prompts");
+
+    const tab = await screen.findByRole("tab", { name: "提示词配置" });
+    expect(tab.getAttribute("aria-selected")).toBe("true");
+    const genTa = (await screen.findByDisplayValue("自定义生成PROMPT")) as HTMLTextAreaElement;
+    expect(genTa).toBeTruthy();
+    expect((await screen.findByDisplayValue("自定义审计PROMPT")) as HTMLTextAreaElement).toBeTruthy();
+    expect((await screen.findByDisplayValue("自定义逆向PROMPT")) as HTMLTextAreaElement).toBeTruthy();
+
+    fireEvent.change(genTa, { target: { value: "改成新的生成 PROMPT" } });
+    fireEvent.click(screen.getByRole("button", { name: "保存配置" }));
+    await waitFor(() => {
+      const p = calls.find((c) => c.method === "PATCH" && c.url === "/api/v1/system/copywriting-prompts");
+      expect(p).toBeTruthy();
+      expect(JSON.parse(String(p?.body))).toEqual({ generateSystemPrompt: "改成新的生成 PROMPT" });
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "还原默认" }));
+    await waitFor(() => {
+      const patches = calls.filter(
+        (c) => c.method === "PATCH" && c.url === "/api/v1/system/copywriting-prompts",
+      );
+      expect(JSON.parse(String(patches[patches.length - 1]?.body))).toEqual({
+        generateSystemPrompt: null,
+        auditSystemPrompt: null,
+        reviewSystemPrompt: null,
+      });
+    });
   });
 
   it("生成 tab：选择模板后 textarea 填入模板正文；切回自定义不动文本", async () => {

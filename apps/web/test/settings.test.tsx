@@ -67,21 +67,6 @@ function mockSettingsApi(me: typeof adminMe, jobRows = jobs) {
         },
       };
     }
-    if (url.startsWith("/api/v1/system/copywriting-prompts")) {
-      return {
-        status: 200,
-        body: {
-          data: {
-            generateSystemPrompt: "自定义生成PROMPT",
-            auditSystemPrompt: "自定义审计PROMPT",
-            reviewSystemPrompt: "自定义逆向PROMPT",
-            customized: true,
-            updatedAt: 1000,
-            updatedBy: 1,
-          },
-        },
-      };
-    }
     if (url.startsWith("/api/v1/background-jobs")) {
       if (url.includes("/cancel")) {
         return { status: 200, body: { data: { ...jobRows[0], status: "cancelled" } } };
@@ -118,38 +103,6 @@ describe("系统设置页", () => {
       const patch = calls.find((c) => c.method === "PATCH" && c.url === "/api/v1/system/ai-config");
       expect(patch).toBeTruthy();
       expect(JSON.parse(String(patch?.body))).toEqual({ model: "deepseek-reasoner" });
-    });
-  });
-
-  it("文案工作台 tab（?tab=copywriting，admin）：预填生效 prompt；改动 PATCH；还原默认 PATCH null", async () => {
-    const calls = mockSettingsApi(adminMe);
-    renderApp("/settings?tab=copywriting");
-
-    const tab = await screen.findByRole("tab", { name: "文案工作台" });
-    expect(tab.getAttribute("aria-selected")).toBe("true");
-    const genTa = (await screen.findByDisplayValue("自定义生成PROMPT")) as HTMLTextAreaElement;
-    expect(genTa).toBeTruthy();
-    expect((await screen.findByDisplayValue("自定义审计PROMPT")) as HTMLTextAreaElement).toBeTruthy();
-    expect((await screen.findByDisplayValue("自定义逆向PROMPT")) as HTMLTextAreaElement).toBeTruthy();
-
-    fireEvent.change(genTa, { target: { value: "改成新的生成 PROMPT" } });
-    fireEvent.click(screen.getByRole("button", { name: "保存配置" }));
-    await waitFor(() => {
-      const p = calls.find((c) => c.method === "PATCH" && c.url === "/api/v1/system/copywriting-prompts");
-      expect(p).toBeTruthy();
-      expect(JSON.parse(String(p?.body))).toEqual({ generateSystemPrompt: "改成新的生成 PROMPT" });
-    });
-
-    fireEvent.click(screen.getByRole("button", { name: "还原默认" }));
-    await waitFor(() => {
-      const patches = calls.filter(
-        (c) => c.method === "PATCH" && c.url === "/api/v1/system/copywriting-prompts",
-      );
-      expect(JSON.parse(String(patches[patches.length - 1]?.body))).toEqual({
-        generateSystemPrompt: null,
-        auditSystemPrompt: null,
-        reviewSystemPrompt: null,
-      });
     });
   });
 
