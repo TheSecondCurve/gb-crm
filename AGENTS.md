@@ -54,7 +54,7 @@ gb-crm/
 
 ### Web
 
-- 路由：`/login` `/my/customers` `/my/deals` `/customers` `/customers/:id`（总览）`/channels` `/products` `/deals` `/deals/commissions` `/deals/payout-batches(/:id)` `/deliveries` `/deliveries/:id`（含 `/circle` `/gantt` `/matrix`）`/delivery-types` `/materials` `/materials/:id/edit`（文本类全文）`/copywriting`（文案工作台：生成与审计（自动逆向检查开关 + 结果区标题/正文可编辑行内保存）/已保存文案/模板管理）`/users` `/settings`（tab：LLM/角色权限/远程备份/资料存储/文案工作台提示词 admin/后台任务/定时任务）`/tokens`（授权管理，admin）`/business-settings`（默认页）
+- 路由：`/login` `/my/customers` `/my/deals` `/customers` `/customers/:id`（总览）`/channels` `/products` `/deals` `/deals/commissions` `/deals/payout-batches(/:id)` `/deliveries` `/deliveries/:id`（含 `/circle` `/gantt` `/matrix`）`/delivery-types` `/materials` `/materials/:id/edit`（文本类全文）`/copywriting`（文案工作台：生成与审计（六维度纵向整行平铺 + 自动逆向检查开关 + 结果区标题/正文可编辑行内保存）/已保存文案/模板管理/提示词配置 admin——三类 system prompt 覆盖值）`/users` `/settings`（tab：LLM/角色权限/远程备份/资料存储/后台任务/定时任务）`/tokens`（授权管理，admin）`/business-settings`（默认页）
 - 页面权限唯一由 `packages/shared/src/pages.ts` 的 `PAGE_REGISTRY` + `/auth/me.pages` 驱动（安全层 can() ∩ 配置允许集）；`PageGuard` 把无权路由重定向到该角色第一张可看菜单页；详情页跟随父页面。**改菜单/新增页只改注册表**，不要在 Sidebar/App 手写显隐；面包屑由 `layout/breadcrumb.ts` 沿注册表推导
 - 表格 `components/DataGrid/`（双击编辑 + 行内 PATCH 队列）；列表容器 `.data-grid-scroll` 竖滚 + 表头吸顶；`selectable` + 受控 `selectedIds` 行多选批量操作；分页含「跳转到第几页」；`/` 聚焦搜索，`Cmd/Ctrl+K` 客户快速搜索（`CommandPalette`）；侧栏分组可折叠（localStorage）
 - 图标统一 `@phosphor-icons/react`，**禁止字符 glyph 当控件图标**；小图标 `weight="bold"` + `aria-hidden`

@@ -1,7 +1,8 @@
-// 文案工作台（K60）：三个 tab——「生成与审计」（六段维度提示词 + LLM 生成 + 逆向检查（第二轮审修）+
-// 用户视角审计 + 行内保存）、「已保存文案」（搜索/分页/查看/编辑/删除）、「模板管理」（六维度词表卡片 CRUD）。
+// 文案工作台（K60）：tab——「生成与审计」（六段维度提示词 + LLM 生成 + 逆向检查（第二轮审修）+
+// 用户视角审计 + 行内保存）、「已保存文案」（搜索/分页/查看/编辑/删除）、「模板管理」（六维度词表卡片 CRUD）、
+// 「提示词配置」（三类 system prompt 覆盖值，仅 admin）。
 // 「选模板」是前端行为（把模板 content 填入输入框），generate/review/audit 只收最终文本快照。
-// 三类 system prompt（生成/逆向检查/审计）的内置默认不可修改，覆盖配置在「系统设置 → 文案工作台」（admin）。
+// 三类 system prompt（生成/逆向检查/审计）的内置默认不可修改，覆盖配置在本页「提示词配置」tab（admin）。
 import { useMemo, useState, type CSSProperties, type FormEvent } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useSearchParams } from "react-router-dom";
@@ -22,6 +23,7 @@ import type { CopyItemDto, CopyTemplateDto } from "../api/types";
 import { useAuth } from "../auth/AuthProvider";
 import { formatDateTime } from "../columns/common";
 import { ConfirmDialog } from "../components/ConfirmDialog";
+import { CopywritingPromptsTab } from "../components/CopywritingPromptsTab";
 import { Pagination } from "../components/DataGrid/DataGrid";
 import { Modal } from "../components/Modal";
 import { SearchBar } from "../components/SearchBar";
@@ -84,9 +86,10 @@ export function CopywritingPage() {
   const role = me?.systemRole ?? null;
   const [searchParams, setSearchParams] = useSearchParams();
   const requestedTab = searchParams.get("tab");
-  const tab = ["generate", "saved", "templates"].includes(requestedTab ?? "")
-    ? (requestedTab ?? "generate")
-    : "generate";
+  // 「提示词配置」是 system 配置（PATCH 仅 admin），只对 admin 显隐；其余角色固定三 tab
+  const canManagePrompts = can(role, "system", "update");
+  const tabKeys = ["generate", "saved", "templates", ...(canManagePrompts ? ["prompts"] : [])];
+  const tab = tabKeys.includes(requestedTab ?? "") ? (requestedTab ?? "generate") : "generate";
 
   return (
     <>
@@ -103,10 +106,16 @@ export function CopywritingPage() {
         <button type="button" role="tab" aria-selected={tab === "templates"} onClick={() => setSearchParams({ tab: "templates" })}>
           模板管理
         </button>
+        {canManagePrompts && (
+          <button type="button" role="tab" aria-selected={tab === "prompts"} onClick={() => setSearchParams({ tab: "prompts" })}>
+            提示词配置
+          </button>
+        )}
       </div>
-      {tab === "generate" && <GenerateTab canCreate={can(role, "copywriting", "create")} />}
+      {tab === "generate" && <GenerateTab canCreate={can(role, "copywriting", "create")} canManagePrompts={canManagePrompts} />}
       {tab === "saved" && <SavedTab role={role} />}
       {tab === "templates" && <TemplatesTab role={role} />}
+      {tab === "prompts" && canManagePrompts && <CopywritingPromptsTab />}
     </>
   );
 }
@@ -119,7 +128,7 @@ interface GenResult {
 }
 
 /** Tab 1：生成与审计 */
-function GenerateTab({ canCreate }: { canCreate: boolean }) {
+function GenerateTab({ canCreate, canManagePrompts }: { canCreate: boolean; canManagePrompts: boolean }) {
   const showToast = useToast();
   const queryClient = useQueryClient();
   const [texts, setTexts] = useState<DimensionTexts>(emptyTexts);
@@ -309,31 +318,36 @@ function GenerateTab({ canCreate }: { canCreate: boolean }) {
         <div className="card-head">
           <h2>提示词</h2>
           <span className="muted-text" style={{ fontSize: 12 }}>
-            生成/逆向检查/审计的 system prompt 内置默认不可修改，覆盖配置在「系统设置 → 文案工作台」
+            {canManagePrompts
+              ? "生成/逆向检查/审计的 system prompt 内置默认不可修改，覆盖配置在本页「提示词配置」tab"
+              : "生成/逆向检查/审计的 system prompt 由管理员统一维护（内置默认不可修改）"}
           </span>
         </div>
-        <div className="card-body form-grid">
+        {/* 六段维度纵向整行平铺（模板内容长也不挤压）；textarea 只允许纵向拉伸（CSS resize: vertical），防横向撑破错位 */}
+        <div className="card-body copy-dims">
           {DIMENSIONS.map((dim) => (
-            <div className="field" key={dim}>
-              <span>
-                {copyDimensionLabels[dim]}
-                {dim === "topic" && <span className="req-star">*</span>}
-              </span>
-              <select
-                aria-label={`${copyDimensionLabels[dim]}模板`}
-                value={selected[dim]}
-                onChange={(e) => selectTemplate(dim, e.target.value)}
-              >
-                <option value="">自定义（不使用模板）</option>
-                {byDimension[dim].map((t) => (
-                  <option key={t.id} value={t.id}>
-                    {t.name}
-                  </option>
-                ))}
-              </select>
+            <div className="copy-dim" key={dim}>
+              <div className="copy-dim-head">
+                <span className="copy-dim-label">
+                  {copyDimensionLabels[dim]}
+                  {dim === "topic" && <span className="req-star">*</span>}
+                </span>
+                <select
+                  aria-label={`${copyDimensionLabels[dim]}模板`}
+                  value={selected[dim]}
+                  onChange={(e) => selectTemplate(dim, e.target.value)}
+                >
+                  <option value="">自定义（不使用模板）</option>
+                  {byDimension[dim].map((t) => (
+                    <option key={t.id} value={t.id}>
+                      {t.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
               <textarea
                 aria-label={copyDimensionLabels[dim]}
-                rows={3}
+                rows={dim === "topic" ? 4 : 2}
                 value={texts[dim]}
                 placeholder="本次自定义…"
                 onChange={(e) => setTexts((s) => ({ ...s, [dim]: e.target.value }))}
