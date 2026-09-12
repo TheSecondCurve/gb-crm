@@ -135,7 +135,7 @@ describe("文案工作台", () => {
     expect((await screen.findByDisplayValue("自定义逆向PROMPT")) as HTMLTextAreaElement).toBeTruthy();
 
     // 页内有两个「保存配置」（提示词 + 专用 LLM），提示词表单按卡片 scoped
-    const promptsCard = screen.getByRole("heading", { name: "文案工作台提示词" }).closest(".card")!;
+    const promptsCard = screen.getByRole("heading", { name: "文案工作台提示词" }).closest(".card") as HTMLElement;
 
     fireEvent.change(genTa, { target: { value: "改成新的生成 PROMPT" } });
     fireEvent.click(within(promptsCard).getByRole("button", { name: "保存配置" }));
@@ -166,7 +166,7 @@ describe("文案工作台", () => {
     expect(await screen.findByDisplayValue("https://copy.example/v1")).toBeTruthy();
     expect(screen.getByDisplayValue("copy-model")).toBeTruthy();
     expect(screen.getByText("已启用：文案调用走此配置")).toBeTruthy();
-    const llmCard = screen.getByRole("heading", { name: "文案专用 LLM（可选）" }).closest(".card")!;
+    const llmCard = screen.getByRole("heading", { name: "文案专用 LLM（可选）" }).closest(".card") as HTMLElement;
 
     // 改模型 + 输入新 key → 测试连接：POST 表单现值（provider 未改也带上非空现值）
     fireEvent.change(screen.getByPlaceholderText("如 deepseek-chat"), { target: { value: "copy-model-v2" } });
