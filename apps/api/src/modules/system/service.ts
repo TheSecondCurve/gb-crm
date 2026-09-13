@@ -16,6 +16,8 @@ import type {
   S3ConfigGet,
   S3ConfigPatch,
   S3TestResult,
+  WorkbenchS3ConfigGet,
+  WorkbenchS3ConfigPatch,
 } from "@gb-crm/shared";
 import {
   canAllowedPageKeys,
@@ -45,6 +47,7 @@ import {
   getMaterialsS3Config,
   getPageAccessConfig,
   getS3Config,
+  getWorkbenchS3Config,
   isLlmConfigReady,
   isS3RemoteReady,
   upsertAiConfig,
@@ -54,6 +57,7 @@ import {
   upsertMaterialsS3Config,
   upsertPageAccessConfig,
   upsertS3Config,
+  upsertWorkbenchS3Config,
   type S3CredentialsValue,
 } from "./repo.js";
 
@@ -254,6 +258,41 @@ export function patchMaterialsS3Config(
   return getMaterialsS3ConfigResult(db);
 }
 
+export function getWorkbenchS3ConfigResult(db: Db): WorkbenchS3ConfigGet {
+  return credentialsToGet(getWorkbenchS3Config(db));
+}
+
+export function patchWorkbenchS3Config(
+  db: Db,
+  patch: WorkbenchS3ConfigPatch,
+  ctx: { now: number; userId: number },
+): WorkbenchS3ConfigGet {
+  const current = getWorkbenchS3Config(db);
+  const next: S3CredentialsValue & { updatedAt: number; updatedBy: number } = {
+    enabled: patch.enabled !== undefined ? patch.enabled : (current?.enabled ?? false),
+    endpoint: patch.endpoint !== undefined ? patch.endpoint : (current?.endpoint ?? null),
+    region: patch.region !== undefined ? patch.region : (current?.region ?? null),
+    bucket: patch.bucket !== undefined ? patch.bucket : (current?.bucket ?? null),
+    prefix:
+      patch.prefix !== undefined
+        ? normalizeS3Prefix(patch.prefix)
+        : normalizeS3Prefix(current?.prefix ?? null),
+    accessKeyId:
+      patch.accessKeyId !== undefined ? patch.accessKeyId : (current?.accessKeyId ?? null),
+    secretAccessKey:
+      patch.secretAccessKey !== undefined
+        ? patch.secretAccessKey
+        : (current?.secretAccessKey ?? null),
+    updatedAt: ctx.now,
+    updatedBy: ctx.userId,
+  };
+  if (next.enabled && !isS3RemoteReady(next)) {
+    throw unprocessable("启用工作台分发需先完整填写 Endpoint / Bucket / AccessKeyId / SecretAccessKey");
+  }
+  upsertWorkbenchS3Config(db, next);
+  return getWorkbenchS3ConfigResult(db);
+}
+
 async function probeS3Config(
   cfg: S3CredentialsValue | undefined,
   opts: { fetchFn?: typeof fetch },
@@ -285,6 +324,13 @@ export async function testMaterialsS3Connection(
   opts: { fetchFn?: typeof fetch } = {},
 ): Promise<S3TestResult> {
   return probeS3Config(getMaterialsS3Config(db), opts);
+}
+
+export async function testWorkbenchS3Connection(
+  db: Db,
+  opts: { fetchFn?: typeof fetch } = {},
+): Promise<S3TestResult> {
+  return probeS3Config(getWorkbenchS3Config(db), opts);
 }
 
 /** 供 /auth/me 计算当前角色实际可见的菜单页（含安全边界交集） */

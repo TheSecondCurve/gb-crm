@@ -112,6 +112,18 @@ export interface MaterialsS3ConfigDto {
   secretKeyMasked: string | null;
 }
 
+/** K61 工作台分发（无 keep） */
+export interface WorkbenchS3ConfigDto {
+  enabled: boolean;
+  endpoint: string | null;
+  region: string | null;
+  bucket: string | null;
+  prefix: string | null;
+  accessKeyId: string | null;
+  secretKeySet: boolean;
+  secretKeyMasked: string | null;
+}
+
 /** K50 批量生成标签结果（逐客户串行，LLM 失败跳过计数） */
 export interface BulkTagGenerateResultDto {
   total: number;

@@ -76,6 +76,13 @@ export type MaterialsS3ConfigGet = z.infer<typeof materialsS3ConfigGetSchema>;
 export const materialsS3ConfigPatchSchema = z.object(s3CredentialsPatchShape);
 export type MaterialsS3ConfigPatch = z.infer<typeof materialsS3ConfigPatchSchema>;
 
+/** 工作台分发（K61，system_configs code='workbenchS3'）：无 keep（版本保留数是代码常量） */
+export const workbenchS3ConfigGetSchema = z.object(s3CredentialsGetShape);
+export type WorkbenchS3ConfigGet = z.infer<typeof workbenchS3ConfigGetSchema>;
+
+export const workbenchS3ConfigPatchSchema = z.object(s3CredentialsPatchShape);
+export type WorkbenchS3ConfigPatch = z.infer<typeof workbenchS3ConfigPatchSchema>;
+
 /** 远程备份（K53，code='s3'）：在凭证之上多 keep */
 export const s3ConfigGetSchema = z.object({
   ...s3CredentialsGetShape,
