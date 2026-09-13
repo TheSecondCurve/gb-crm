@@ -17,6 +17,8 @@ export const PAGE_ACCESS_CONFIG_CODE = "pageAccess";
 export const S3_CONFIG_CODE = "s3";
 /** S3 兼容对象存储资料文件（K57） */
 export const MATERIALS_S3_CONFIG_CODE = "materialsS3";
+/** S3 兼容对象存储工作台快照（K61） */
+export const WORKBENCH_S3_CONFIG_CODE = "workbenchS3";
 /** K56 成交分成的全局默认方案 */
 export const COMMISSION_DEFAULT_CODE = "commissionDefault";
 /** 文案工作台 system prompt（K60+）：value = { generateSystemPrompt, auditSystemPrompt }，null 字段走内置默认 */
@@ -303,6 +305,33 @@ export function upsertMaterialsS3Config(
   upsertConfigRow(
     db,
     MATERIALS_S3_CONFIG_CODE,
+    JSON.stringify({
+      enabled: values.enabled,
+      endpoint: values.endpoint,
+      region: values.region,
+      bucket: values.bucket,
+      prefix: values.prefix,
+      accessKeyId: values.accessKeyId,
+      secretAccessKey: values.secretAccessKey,
+    }),
+    values.updatedAt,
+    values.updatedBy,
+  );
+}
+
+export function getWorkbenchS3Config(db: Db): S3CredentialsValue | undefined {
+  const row = getConfigRow(db, WORKBENCH_S3_CONFIG_CODE);
+  if (!row) return undefined;
+  return parseS3Credentials(row.value);
+}
+
+export function upsertWorkbenchS3Config(
+  db: Db,
+  values: S3CredentialsValue & { updatedAt: number; updatedBy: number | null },
+): void {
+  upsertConfigRow(
+    db,
+    WORKBENCH_S3_CONFIG_CODE,
     JSON.stringify({
       enabled: values.enabled,
       endpoint: values.endpoint,

@@ -27,6 +27,7 @@ import { materialsRoutes } from "./modules/materials/routes.js";
 import { payoutBatchesRoutes } from "./modules/payout-batches/routes.js";
 import { systemRoutes } from "./modules/system/routes.js";
 import { tagsRoutes } from "./modules/tags/routes.js";
+import { workbenchRoutes } from "./modules/workbench/routes.js";
 import { usersRoutes, type UsersRoutesOptions } from "./modules/users/routes.js";
 import { registerCookie } from "./plugins/cookie.js";
 import { registerErrorHandler } from "./plugins/error-handler.js";
@@ -101,6 +102,7 @@ export function buildApp(options: BuildAppOptions): FastifyInstance {
     systemRoutes(instance, { db, now: clock, s3Fetch, llmFetch });
     jobsRoutes(instance, { db, now: clock });
     jobSchedulesRoutes(instance, { db, now: clock });
+    workbenchRoutes(instance, { db, now: clock, s3Fetch });
     agentRoutes(instance, { db });
     done();
   });

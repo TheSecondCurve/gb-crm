@@ -8,6 +8,7 @@ import {
   materialsS3ConfigPatchSchema,
   pageAccessPatchSchema,
   s3ConfigPatchSchema,
+  workbenchS3ConfigPatchSchema,
 } from "@gb-crm/shared";
 import type { FastifyInstance } from "fastify";
 
@@ -21,6 +22,7 @@ import {
   getMaterialsS3ConfigResult,
   getPageAccessMatrix,
   getS3ConfigResult,
+  getWorkbenchS3ConfigResult,
   patchAiConfig,
   patchCommissionDefault,
   patchCopywritingLlm,
@@ -28,9 +30,11 @@ import {
   patchMaterialsS3Config,
   patchPageAccess,
   patchS3Config,
+  patchWorkbenchS3Config,
   testCopywritingLlmConnection,
   testMaterialsS3Connection,
   testS3Connection,
+  testWorkbenchS3Connection,
 } from "./service.js";
 
 export interface SystemRoutesOptions {
@@ -139,6 +143,28 @@ export function systemRoutes(app: FastifyInstance, opts: SystemRoutesOptions): v
     "/api/v1/system/materials-s3-config/test",
     { preHandler: requireCan("system", "update") },
     async () => ({ data: await testMaterialsS3Connection(db, { fetchFn: s3Fetch }) }),
+  );
+
+  // 工作台分发（K61；仅 admin）。gb-content 系统层快照的对象存储，与备份/资料互相独立。
+  app.get(
+    "/api/v1/system/workbench-s3-config",
+    { preHandler: requireCan("system", "read") },
+    async () => ({ data: getWorkbenchS3ConfigResult(db) }),
+  );
+
+  app.patch(
+    "/api/v1/system/workbench-s3-config",
+    { preHandler: requireCan("system", "update") },
+    async (req) => {
+      const patch = workbenchS3ConfigPatchSchema.parse(req.body ?? {});
+      return { data: patchWorkbenchS3Config(db, patch, auditCtx(req)) };
+    },
+  );
+
+  app.post(
+    "/api/v1/system/workbench-s3-config/test",
+    { preHandler: requireCan("system", "update") },
+    async () => ({ data: await testWorkbenchS3Connection(db, { fetchFn: s3Fetch }) }),
   );
 
   // 文案工作台 system prompt（K60+；仅 admin）。非密钥不掩码；未配置回退内置默认。

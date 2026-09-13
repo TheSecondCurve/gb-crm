@@ -790,3 +790,21 @@ export const copyItems = sqliteTable(
   },
   (t) => [index("copy_items_updated_idx").on(t.updatedAt)],
 );
+
+// K61 工作台快照版本：gb-content 系统层的发布记录（不可变；文件体按内容寻址存 S3，
+// 本表只存 manifest）。滚动保留超出的硬删（分发日志，语义同备份滚动清理，非业务记录）。
+export const workbenchVersions = sqliteTable(
+  "workbench_versions",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    commitSha: text("commit_sha").notNull(),
+    commitSubject: text("commit_subject"),
+    note: text("note"),
+    fileCount: integer("file_count").notNull(),
+    totalBytes: integer("total_bytes").notNull(),
+    manifestJson: text("manifest_json").notNull(),
+    publishedBy: integer("published_by").references(() => users.id, { onDelete: "set null" }),
+    publishedAt: integer("published_at").notNull(),
+  },
+  (t) => [index("workbench_versions_published_idx").on(t.publishedAt)],
+);
