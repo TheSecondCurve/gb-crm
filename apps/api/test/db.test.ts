@@ -65,6 +65,7 @@ describe("migration", () => {
       "system_configs",
       "tags",
       "users",
+      "workbench_versions",
     ]);
   });
 });
