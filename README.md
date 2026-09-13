@@ -64,6 +64,20 @@ GB_CRM_USERNAME=alice GB_CRM_PASSWORD='***' GB_CRM_SCOPE=read \
 
 Agent skill 包在仓库 `skills/gb-crm/`（备用；拷到本机 skill 目录即可用）。脚本读上述凭证文件，不把 token 写进 skill。完整设计 `docs/design.md` K35，命令与拷贝步骤 `docs/dev.md`。
 
+## 工作台快照分发（K61）
+
+gb-content（内容工作台仓库）的系统层经本服务以 HTTP 快照分发给不碰 git 的团队成员，
+授权与上面同一份 PAT，文件体按内容寻址存 S3（系统设置 → 工作台分发，`code='workbenchS3'`）。
+
+- **成员接入（一次性）**：`curl -fsSL http://<crm-host>/agent/workbench/install.sh | sh`
+  （装到 `~/gb-content`，输入 CRM 用户名密码，read 范围即可）。
+- **日常同步**：跑 `~/gb-content/_工作区仓库/脚本/sync.sh`（或对 agent 说「同步工作台」）——
+  manifest 比对按文件增量下载、sha256 校验，本地改过的文件先备份再覆盖。
+- **发布（维护者，在 gb-content 开发机）**：`_工作区仓库/脚本/publish.sh`（要求工作树干净、
+  范例索引新鲜；`git archive HEAD` 打包上传，版本保留最近 10 个，同内容对象零重复上传）。
+
+完整设计 `docs/design.md` K61。
+
 ## Git 工作流
 
 - `origin/dev` 与 `origin/main` **均已存在**，禁止再创建 `dev`。
