@@ -38,6 +38,7 @@ function field(buf: Buffer, off: number, len: number): string {
 
 /** 八进制字段解析：trim 空白与 NUL；非纯 [0-7] → null */
 function parseOctal(raw: string): number | null {
+  // eslint-disable-next-line no-control-regex -- tar 头字段以 NUL 填充，须显式剔除
   const t = raw.replace(/[\s\u0000]/g, "");
   if (t === "") return null;
   if (!/^[0-7]+$/.test(t)) return null;
