@@ -44,7 +44,7 @@ if [ "$skip_login" = false ]; then
 fi
 
 if [ ! -f "$CRED" ]; then
-  echo "缺少 $CRED，授权未完成；重跑本脚本或：curl -fsSL $BASE/agent/login.sh | sh" >&2
+  echo "缺少 ${CRED}，授权未完成；重跑本脚本或：curl -fsSL $BASE/agent/login.sh | sh" >&2
   exit 1
 fi
 
@@ -72,7 +72,7 @@ if [ -z "$VER" ]; then
   echo "清单里没有版本信息（服务器还没有任何发布版本？）" >&2
   exit 1
 fi
-echo "最新版本 v$VER${SUBJECT:+（$SUBJECT）}，开始下载文件 ..."
+echo "最新版本 v$VER${SUBJECT:+（${SUBJECT}）}，开始下载文件 ..."
 
 grep -v '^#' "$WORK/manifest.tsv" > "$WORK/data.tsv"
 
@@ -98,7 +98,7 @@ while IFS="$TAB" read -r sha size mode path; do
   fi
   got="$(hash_of "$WORK/obj")"
   if [ "$got" != "$sha" ]; then
-    echo "✗ 校验不符：$path（请重跑）" >&2
+    echo "✗ 校验不符：${path}（请重跑）" >&2
     FAIL=$((FAIL+1))
     continue
   fi
@@ -107,7 +107,7 @@ while IFS="$TAB" read -r sha size mode path; do
 done < "$WORK/data.tsv"
 
 if [ "$FAIL" -gt 0 ]; then
-  echo "完成 $((COUNT-FAIL))/$COUNT，$FAIL 个文件失败；直接重跑本脚本即可续装。" >&2
+  echo "完成 $((COUNT-FAIL))/${COUNT}，$FAIL 个文件失败；直接重跑本脚本即可续装。" >&2
   exit 1
 fi
 
@@ -116,6 +116,6 @@ cp "$WORK/data.tsv" "$TARGET/.gb-workbench/manifest.tsv"
 printf '%s\n' "$VER" > "$TARGET/.gb-workbench/version"
 
 echo ""
-echo "安装完成：v$VER，共 $COUNT 个文件 → $TARGET"
+echo "安装完成：v${VER}，共 $COUNT 个文件 → $TARGET"
 echo "日常更新：sh \"$TARGET/_工作区仓库/脚本/sync.sh\"（或对电脑上的 agent 说「同步工作台」）"
 echo "提示：不要把 ~/.gb-crm/credentials.json 的内容发给任何人 / 不要写进对话。"
