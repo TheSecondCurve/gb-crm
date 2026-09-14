@@ -14,8 +14,8 @@ BASE="${BASE%/}"
 API="$BASE/api/v1/workbench"
 CRED="$HOME/.gb-crm/credentials.json"
 
-# 目标目录：第一个参数 > GB_WORKBENCH_DIR > 默认 ~/gb-content
-TARGET="${1:-${GB_WORKBENCH_DIR:-$HOME/gb-content}}"
+# 目标目录：第一个参数 > GB_WORKBENCH_DIR > 默认 ~/闪光团队工作台
+TARGET="${1:-${GB_WORKBENCH_DIR:-$HOME/闪光团队工作台}}"
 
 command -v curl >/dev/null 2>&1 || { echo "缺少 curl，请先安装。" >&2; exit 1; }
 if ! command -v shasum >/dev/null 2>&1 && ! command -v sha256sum >/dev/null 2>&1; then
