@@ -14,8 +14,8 @@ BASE="${BASE%/}"
 API="$BASE/api/v1/workbench"
 CRED="$HOME/.gb-crm/credentials.json"
 
-# 目标目录：第一个参数 > GB_WORKBENCH_DIR > 默认 ~/gb-content
-TARGET="${1:-${GB_WORKBENCH_DIR:-$HOME/gb-content}}"
+# 目标目录：第一个参数 > GB_WORKBENCH_DIR > 默认 ~/闪光团队工作台
+TARGET="${1:-${GB_WORKBENCH_DIR:-$HOME/闪光团队工作台}}"
 
 command -v curl >/dev/null 2>&1 || { echo "缺少 curl，请先安装。" >&2; exit 1; }
 if ! command -v shasum >/dev/null 2>&1 && ! command -v sha256sum >/dev/null 2>&1; then
@@ -61,10 +61,23 @@ WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
 
 echo "从 $BASE 拉取最新清单 ..."
-if ! curl -fsSL -H "$AUTH" "$API/manifest.tsv" -o "$WORK/manifest.tsv"; then
-  echo "拉取清单失败：检查网络，或凭证是否仍有效（401 时重新跑 login.sh）。" >&2
-  exit 1
-fi
+# 不用 curl -f：要拿状态码区分「无版本 404」/「凭证 401」/ 网络故障，给准确提示
+HTTP="$(curl -sSL -H "$AUTH" -o "$WORK/manifest.tsv" -w '%{http_code}' "$API/manifest.tsv" || true)"
+case "$HTTP" in
+  200) ;;
+  401|403)
+    echo "凭证无效或已过期（HTTP $HTTP）：重新授权 curl -fsSL $BASE/agent/login.sh | sh 后重跑本脚本。" >&2
+    exit 1
+    ;;
+  404)
+    echo "服务器上还没有任何已发布的工作台版本：请维护者在 gb-content 跑 _工作区仓库/脚本/publish.sh 发布后再安装。" >&2
+    exit 1
+    ;;
+  *)
+    echo "拉取清单失败（HTTP ${HTTP:-000}）：检查网络 / 服务器地址后重试。" >&2
+    exit 1
+    ;;
+esac
 
 VER="$(awk -F'\t' '$1 == "#version" { print $2; exit }' "$WORK/manifest.tsv")"
 SUBJECT="$(awk -F'\t' '$1 == "#subject" { print $2; exit }' "$WORK/manifest.tsv")"
