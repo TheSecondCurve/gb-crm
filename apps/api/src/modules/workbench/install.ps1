@@ -10,9 +10,11 @@
 #
 # Install (when remote script execution is allowed):
 #   powershell -ExecutionPolicy Bypass -Command "irm http://<crm-host>/agent/workbench/install.ps1 | iex"
-# Or download then run (when `irm ... | iex` is blocked by machine policy):
-#   powershell -Command "irm http://<crm-host>/agent/workbench/install.ps1 -OutFile $env:TEMP\gb-workbench-install.ps1"
-#   powershell -ExecutionPolicy Bypass -File $env:TEMP\gb-workbench-install.ps1
+# Or download then run (when `irm ... | iex` is blocked by machine policy; a plain relative
+# file name works from both cmd.exe and a PowerShell session - from cmd.exe do NOT write
+# $env:TEMP, cmd passes it through literally and -File rejects the path):
+#   powershell -Command "irm http://<crm-host>/agent/workbench/install.ps1 -OutFile gb-workbench-install.ps1"
+#   powershell -ExecutionPolicy Bypass -File gb-workbench-install.ps1
 #
 # Target dir: first positional argument > GB_WORKBENCH_DIR > default under $HOME.
 # GB_CRM_SKIP_LOGIN=1 skips authorization; GB_CRM_FORCE_LOGIN=1 forces a reissue;
