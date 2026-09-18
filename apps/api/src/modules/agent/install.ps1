@@ -6,9 +6,10 @@
 #
 # Install (Windows PowerShell):
 #   powershell -ExecutionPolicy Bypass -Command "irm http://<crm-host>/agent/skill/gb-crm/install.ps1 | iex"
-# Or download then run (more reliable):
-#   curl.exe -fsSL http://<crm-host>/agent/skill/gb-crm/install.ps1 -o $env:TEMP\gb-crm-install.ps1
+# Or download then run (when `irm ... | iex` is blocked by machine policy):
+#   powershell -Command "irm http://<crm-host>/agent/skill/gb-crm/install.ps1 -OutFile $env:TEMP\gb-crm-install.ps1"
 #   powershell -ExecutionPolicy Bypass -File $env:TEMP\gb-crm-install.ps1
+#   (curl.exe -fsSL ... -o <file> works as the download step too)
 $ErrorActionPreference = "Stop"
 
 $base = [string]$env:GB_CRM_BASE_URL

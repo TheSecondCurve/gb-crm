@@ -4,7 +4,7 @@
 //   「read 令牌仅 GET/HEAD」拦下，operator 一律 403）——发布是质量门，只属于维护者。
 // - 读取 GET（版本列表 / manifest / 对象下载）：任意已认证身份（read PAT 即可），
 //   团队成员人手一个 read 令牌就能同步。
-// - /agent/workbench/install.sh：公开（无密钥，同 /agent/login.sh 信任面）。
+// - /agent/workbench/install.sh 与 /agent/workbench/install.ps1：公开（无密钥，同 /agent/login.sh 信任面）。
 import { pageQuerySchema } from "@gb-crm/shared";
 import type { FastifyInstance, FastifyRequest } from "fastify";
 import { z } from "zod";
@@ -12,7 +12,7 @@ import { z } from "zod";
 import type { Db } from "../../db/client.js";
 import { forbidden, notFound, unprocessable } from "../../plugins/error-handler.js";
 import { publicBaseUrl } from "../auth/login-script.js";
-import { renderWorkbenchInstallScript } from "./install-script.js";
+import { renderWorkbenchInstallScript, renderWorkbenchInstallScriptPs1 } from "./install-script.js";
 import {
   getWorkbenchObject,
   latestWorkbenchVersionResult,
@@ -133,6 +133,15 @@ export function workbenchRoutes(app: FastifyInstance, opts: WorkbenchRoutesOptio
     return reply
       .header("Content-Type", "text/x-shellscript; charset=utf-8")
       .header("Content-Disposition", 'inline; filename="install.sh"')
+      .send(script);
+  });
+
+  // Windows PowerShell 版（纯 ASCII 模板；同 skill 安装器双脚本模式）
+  app.get("/agent/workbench/install.ps1", async (req, reply) => {
+    const script = renderWorkbenchInstallScriptPs1(publicBaseUrl(req));
+    return reply
+      .header("Content-Type", "text/x-powershell; charset=utf-8")
+      .header("Content-Disposition", 'inline; filename="install.ps1"')
       .send(script);
   });
 }

@@ -123,6 +123,13 @@ Windows（PowerShell）：
 powershell -ExecutionPolicy Bypass -Command "irm http://<crm-host>/agent/skill/gb-crm/install.ps1 | iex"
 ```
 
+Windows 组策略禁远程脚本（`irm | iex` 被拦）时，改用「下载后本地执行」两步（已在实际成员机验证可用）：
+
+```powershell
+powershell -Command "irm http://<crm-host>/agent/skill/gb-crm/install.ps1 -OutFile $env:TEMP\gb-crm-install.ps1"
+powershell -ExecutionPolicy Bypass -File $env:TEMP\gb-crm-install.ps1
+```
+
 安装器行为：校验 `python3`（shell 版；ps1 版探测 `python3`/`python`/`py`，缺则警告仍装文件）→ 确定目标目录并逐个安装（当前 AGENT 项目级 `./.agents/skills` 否则 `~/.agents/skills`，外加 codex 全局 `~/.codex/skills` 与 claude 全局 `~/.claude/skills`）→ 每目录各下载一份 `SKILL.md` + `scripts/gb-crm.py` → shell 版 `chmod +x` → 最后复用 `/agent/login.sh`（或 `/agent/login.ps1`）用用户名/密码签发 PAT，写入 `~/.gb-crm/credentials.json`（POSIX 600；Windows 尽力收紧 ACL）。
 
 **更新 = 重跑同一条命令**：每次重跑都会从服务器现取最新 `install.sh`/`install.ps1` 并覆盖 `SKILL.md`/`gb-crm.py`，安装器本体改动自动生效。若本机已有 `~/.gb-crm/credentials.json`，默认**跳过重复授权**、只更新文件；需要重新签发设 `GB_CRM_FORCE_LOGIN=1`；只装文件不授权用 `GB_CRM_SKIP_LOGIN=1`。
@@ -132,7 +139,9 @@ powershell -ExecutionPolicy Bypass -Command "irm http://<crm-host>/agent/skill/g
 ```
 请帮我安装 gb-crm skill：
   macOS/Linux 运行 `curl -fsSL http://<crm-host>/agent/skill/gb-crm/install.sh | sh`；
-  Windows 运行 `powershell -ExecutionPolicy Bypass -Command "irm http://<crm-host>/agent/skill/gb-crm/install.ps1 | iex"`。
+  Windows 运行 `powershell -ExecutionPolicy Bypass -Command "irm http://<crm-host>/agent/skill/gb-crm/install.ps1 | iex"`，
+  若被组策略拦截则改两步：`irm http://<crm-host>/agent/skill/gb-crm/install.ps1 -OutFile $env:TEMP\gb-crm-install.ps1`
+  再 `powershell -ExecutionPolicy Bypass -File $env:TEMP\gb-crm-install.ps1`。
 若缺 python3 就告诉我；不要读取或回显 ~/.gb-crm/credentials.json，别让我在对话里输密码。
 ```
 
@@ -141,3 +150,28 @@ powershell -ExecutionPolicy Bypass -Command "irm http://<crm-host>/agent/skill/g
 Agent 数据访问走单一自由 SQL 端点 `POST /api/v1/agent/sql`（仅 Bearer PAT）：`stmt.readonly` 判读写，只读语句任意 scope / 角色放行，写语句必须 admin + write scope；单语句；读上限 1000 行截断——详见 `skills/gb-crm/SKILL.md` 与 design.md K35。REST 资源路由保留给 web 管理端。
 
 「我的客户 / 我的成交」的语义收敛见 `skills/gb-crm/SKILL.md` 工作守则第 2 条：SQL 查询须按当前令牌账号写 `WHERE owner_id = <me 的 id>`；用户说「所有 / 全部 / 名单」则**不加** owner 过滤（助理 / 运营本就可读全量，这一步只是等值过滤，**不是**权限收紧）。
+
+### 工作台安装（K61，成员机）
+
+成员机一条命令装最新 gb-content 快照（授权复用 gb-crm PAT，同一 `~/.gb-crm/credentials.json`；默认装到 `~/闪光团队工作台`，首参或 `GB_WORKBENCH_DIR` 可覆盖；已有凭证自动跳过登录）：
+
+macOS / Linux：
+
+```bash
+curl -fsSL http://<crm-host>/agent/workbench/install.sh | sh
+```
+
+Windows（PowerShell）：
+
+```powershell
+powershell -ExecutionPolicy Bypass -Command "irm http://<crm-host>/agent/workbench/install.ps1 | iex"
+```
+
+Windows 组策略禁远程脚本（`irm | iex` 被拦）时，改用「下载后本地执行」两步（已在实际成员机验证可用）：
+
+```powershell
+powershell -Command "irm http://<crm-host>/agent/workbench/install.ps1 -OutFile $env:TEMP\gb-workbench-install.ps1"
+powershell -ExecutionPolicy Bypass -File $env:TEMP\gb-workbench-install.ps1
+```
+
+装完后日常更新**不要**重跑安装器（重跑 = 覆盖重装，本地改动会被覆盖）：运行目标目录里的 sync 脚本（`_工作区仓库/脚本/sync.sh`，Windows 需 Git Bash / WSL），或对电脑上的 agent 说「同步工作台」。安装器行为细节见 design.md K61 ⑤。
