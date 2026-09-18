@@ -520,3 +520,37 @@ describe("GET /agent/workbench/install.sh", () => {
     expect(weird.body).toContain('BASE="http://127.0.0.1:3001"');
   });
 });
+
+describe("GET /agent/workbench/install.ps1", () => {
+  it("公开下发，注入请求 origin；指向 /agent/login.ps1；纯 ASCII", async () => {
+    await seedRolesAndLogin();
+    const res = await app.inject({
+      method: "GET",
+      url: "/agent/workbench/install.ps1",
+      headers: { host: "crm.internal:3001" },
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.headers["content-type"]).toContain("text/x-powershell");
+    expect(res.body).toContain('http://crm.internal:3001');
+    expect(res.body).toContain("/agent/login.ps1"); // 授权链走 Windows 版登录脚本
+    expect(res.body).toContain("manifest.tsv"); // 拉 TSV 清单逐文件下载
+    expect(res.body).not.toContain("__GB_CRM_BASE_URL__"); // 占位符已替换
+    // 纯 ASCII：Windows PS 5.1 对无 BOM 的 .ps1 按 ANSI 读、有 BOM 又让 `irm|iex` 首行报错；
+    // 纯 ASCII 则 iex / -File / & 三种执行方式都无编码歧义（同 skill 安装器结论）。
+    let maxByte = 0;
+    for (const b of res.rawPayload) if (b > maxByte) maxByte = b;
+    expect(maxByte).toBeLessThanOrEqual(0x7f);
+  });
+
+  it("非法 Host 不写入脚本（防注入），回退本地默认", async () => {
+    await seedRolesAndLogin();
+    const res = await app.inject({
+      method: "GET",
+      url: "/agent/workbench/install.ps1",
+      headers: { host: "evil host; rm -rf" },
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.body).not.toContain("rm -rf");
+    expect(res.body).toContain("http://127.0.0.1:3001");
+  });
+});
