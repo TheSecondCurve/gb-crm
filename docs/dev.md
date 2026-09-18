@@ -123,14 +123,14 @@ Windows（PowerShell）：
 powershell -ExecutionPolicy Bypass -Command "irm http://<crm-host>/agent/skill/gb-crm/install.ps1 | iex"
 ```
 
-Windows 组策略禁远程脚本（`irm | iex` 被拦）时，改用「下载后本地执行」两步（已在实际成员机验证可用；用相对文件名，cmd.exe 与 PowerShell 会话都能直接跑）：
+Windows 组策略禁远程脚本（`irm | iex` 被拦）时，改用「下载后本地执行」两步（已在实际成员机验证可用）。**用相对文件名**：落在当前目录（一定存在；别用 `C:\temp`——那不是 Windows 自带目录，很多机器没有），cmd.exe 与 PowerShell 会话都能直接跑；**与工作台安装器文件名不同**（`gb-crm-skill-install.ps1` / `gb-crm-workbench-install.ps1`），互不覆盖：
 
 ```powershell
-powershell -Command "irm http://<crm-host>/agent/skill/gb-crm/install.ps1 -OutFile gb-crm-install.ps1"
-powershell -ExecutionPolicy Bypass -File gb-crm-install.ps1
+powershell -Command "irm http://<crm-host>/agent/skill/gb-crm/install.ps1 -OutFile gb-crm-skill-install.ps1"
+powershell -ExecutionPolicy Bypass -File gb-crm-skill-install.ps1
 ```
 
-> 在 cmd.exe 里**不要**写 `$env:TEMP`——那是 PowerShell 语法，cmd 会原样传给 `-File`，报「不支持给定路径的格式」。要放临时目录就写 `"%TEMP%\gb-crm-install.ps1"`（cmd 展开）；PowerShell 会话里 `$env:TEMP\gb-crm-install.ps1` 才有效。
+> 在 cmd.exe 里**不要**写 `$env:TEMP`——那是 PowerShell 语法，cmd 会原样传给 `-File`，报「不支持给定路径的格式」。当前目录不可写时改用 `"%TEMP%\gb-crm-skill-install.ps1"`（`%TEMP%` 系统必有，cmd 展开）；PowerShell 会话里才可写 `$env:TEMP\...`。
 
 安装器行为：校验 `python3`（shell 版；ps1 版探测 `python3`/`python`/`py`，缺则警告仍装文件）→ 确定目标目录并逐个安装（当前 AGENT 项目级 `./.agents/skills` 否则 `~/.agents/skills`，外加 codex 全局 `~/.codex/skills` 与 claude 全局 `~/.claude/skills`）→ 每目录各下载一份 `SKILL.md` + `scripts/gb-crm.py` → shell 版 `chmod +x` → 最后复用 `/agent/login.sh`（或 `/agent/login.ps1`）用用户名/密码签发 PAT，写入 `~/.gb-crm/credentials.json`（POSIX 600；Windows 尽力收紧 ACL）。
 
@@ -143,8 +143,8 @@ powershell -ExecutionPolicy Bypass -File gb-crm-install.ps1
   macOS/Linux 运行 `curl -fsSL http://<crm-host>/agent/skill/gb-crm/install.sh | sh`；
   Windows 运行 `powershell -ExecutionPolicy Bypass -Command "irm http://<crm-host>/agent/skill/gb-crm/install.ps1 | iex"`，
   若被组策略拦截则改两步（相对文件名，cmd / PowerShell 都能跑）：
-  `powershell -Command "irm http://<crm-host>/agent/skill/gb-crm/install.ps1 -OutFile gb-crm-install.ps1"` 再
-  `powershell -ExecutionPolicy Bypass -File gb-crm-install.ps1`。
+  `powershell -Command "irm http://<crm-host>/agent/skill/gb-crm/install.ps1 -OutFile gb-crm-skill-install.ps1"` 再
+  `powershell -ExecutionPolicy Bypass -File gb-crm-skill-install.ps1`。
 若缺 python3 就告诉我；不要读取或回显 ~/.gb-crm/credentials.json，别让我在对话里输密码。
 ```
 
@@ -170,13 +170,13 @@ Windows（PowerShell）：
 powershell -ExecutionPolicy Bypass -Command "irm http://<crm-host>/agent/workbench/install.ps1 | iex"
 ```
 
-Windows 组策略禁远程脚本（`irm | iex` 被拦）时，改用「下载后本地执行」两步（已在实际成员机验证可用；用相对文件名，cmd.exe 与 PowerShell 会话都能直接跑）：
+Windows 组策略禁远程脚本（`irm | iex` 被拦）时，改用「下载后本地执行」两步（已在实际成员机验证可用）。**用相对文件名**：落在当前目录（一定存在；别用 `C:\temp`——那不是 Windows 自带目录，很多机器没有），cmd.exe 与 PowerShell 会话都能直接跑；**与 skill 安装器文件名不同**（`gb-crm-workbench-install.ps1` / `gb-crm-skill-install.ps1`），互不覆盖：
 
 ```powershell
-powershell -Command "irm http://<crm-host>/agent/workbench/install.ps1 -OutFile gb-workbench-install.ps1"
-powershell -ExecutionPolicy Bypass -File gb-workbench-install.ps1
+powershell -Command "irm http://<crm-host>/agent/workbench/install.ps1 -OutFile gb-crm-workbench-install.ps1"
+powershell -ExecutionPolicy Bypass -File gb-crm-workbench-install.ps1
 ```
 
-> 在 cmd.exe 里**不要**写 `$env:TEMP`——那是 PowerShell 语法，cmd 会原样传给 `-File`，报「不支持给定路径的格式」。要放临时目录就写 `"%TEMP%\gb-workbench-install.ps1"`（cmd 展开）；PowerShell 会话里 `$env:TEMP\gb-workbench-install.ps1` 才有效。
+> 在 cmd.exe 里**不要**写 `$env:TEMP`——那是 PowerShell 语法，cmd 会原样传给 `-File`，报「不支持给定路径的格式」。当前目录不可写时改用 `"%TEMP%\gb-crm-workbench-install.ps1"`（`%TEMP%` 系统必有，cmd 展开）；PowerShell 会话里才可写 `$env:TEMP\...`。
 
 装完后日常更新**不要**重跑安装器（重跑 = 覆盖重装，本地改动会被覆盖）：运行目标目录里的 sync 脚本（`_工作区仓库/脚本/sync.sh`，Windows 需 Git Bash / WSL），或对电脑上的 agent 说「同步工作台」。安装器行为细节见 design.md K61 ⑤。
