@@ -2,9 +2,10 @@
 #
 # No repo clone needed (Windows PowerShell):
 #   powershell -ExecutionPolicy Bypass -Command "irm http://<crm-host>/agent/login.ps1 | iex"
-# Or download then run (more reliable):
-#   curl.exe -fsSL http://<crm-host>/agent/login.ps1 -o $env:TEMP\gb-crm-login.ps1
-#   powershell -ExecutionPolicy Bypass -File $env:TEMP\gb-crm-login.ps1
+# Or download then run (a plain relative file name works from cmd.exe and PowerShell alike;
+# C:\temp is NOT guaranteed to exist, and cmd.exe does NOT expand $env:TEMP):
+#   powershell -Command "irm http://<crm-host>/agent/login.ps1 -OutFile gb-crm-login.ps1"
+#   powershell -ExecutionPolicy Bypass -File gb-crm-login.ps1
 #
 # Non-interactive:
 #   $env:GB_CRM_USERNAME='alice'; $env:GB_CRM_PASSWORD='***'; $env:GB_CRM_SCOPE='read'; iex ...
