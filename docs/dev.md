@@ -179,4 +179,4 @@ powershell -ExecutionPolicy Bypass -File gb-crm-workbench-install.ps1
 
 > 在 cmd.exe 里**不要**写 `$env:TEMP`——那是 PowerShell 语法，cmd 会原样传给 `-File`，报「不支持给定路径的格式」。当前目录不可写时改用 `"%TEMP%\gb-crm-workbench-install.ps1"`（`%TEMP%` 系统必有，cmd 展开）；PowerShell 会话里才可写 `$env:TEMP\...`。
 
-装完后日常更新**不要**重跑安装器（重跑 = 覆盖重装，本地改动会被覆盖）：运行目标目录里的 sync 脚本（`_工作区仓库/脚本/sync.sh`，Windows 需 Git Bash / WSL），或对电脑上的 agent 说「同步工作台」。安装器行为细节见 design.md K61 ⑤。
+装完后日常更新**不要**重跑安装器（重跑 = 覆盖重装，本地改动会被覆盖）：运行目标目录里的 sync 脚本（`_工作区仓库/脚本/sync.sh`；Windows 跑同目录 `sync.ps1`——PowerShell 原生，无需 Git Bash / WSL），或对电脑上的 agent 说「同步工作台」。安装器行为细节见 design.md K61 ⑤。
