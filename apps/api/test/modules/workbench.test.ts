@@ -534,6 +534,7 @@ describe("GET /agent/workbench/install.ps1", () => {
     expect(res.body).toContain('http://crm.internal:3001');
     expect(res.body).toContain("/agent/login.ps1"); // 授权链走 Windows 版登录脚本
     expect(res.body).toContain("manifest.tsv"); // 拉 TSV 清单逐文件下载
+    expect(res.body).toContain("sync.ps1"); // 收尾日常更新提示指向 Windows 版 sync 脚本（不再是 Git Bash/WSL）
     expect(res.body).not.toContain("__GB_CRM_BASE_URL__"); // 占位符已替换
     // 纯 ASCII：Windows PS 5.1 对无 BOM 的 .ps1 按 ANSI 读、有 BOM 又让 `irm|iex` 首行报错；
     // 纯 ASCII 则 iex / -File / & 三种执行方式都无编码歧义（同 skill 安装器结论）。
