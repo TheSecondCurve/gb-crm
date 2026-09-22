@@ -14,7 +14,7 @@ gb-crm/
   apps/api/          @gb-crm/api    Fastify + Drizzle + better-sqlite3
   packages/shared/   @gb-crm/shared Zod schema、枚举、labels、can() ACL、PAGE_REGISTRY
   skills/gb-crm/     Agent skill 源目录（软链 .agents/skills/gb-crm 为项目级 skill）
-  e2e/               Playwright 冒烟（不进 npm test，不挡合并）
+  e2e/               Playwright 业务验收套件（不进 npm test，不挡合并；npm run e2e:report 出 HTML 报告 + summary）
   docs/              core.md / design.md / dev.md / style.md / remote-backup.md
   Dockerfile + docker-compose.yml
 ```
@@ -96,7 +96,7 @@ Workspace 依赖写法：`"@gb-crm/shared": "*"`（npm 不支持 `workspace:*`�
 - API：Vitest + 临时 sqlite + `inject()`。覆盖率门禁覆盖 `apps/api/src/{modules,plugins,lib,db}/**`（不含 `schema.ts`）合计 **≥ 80%**（statements/branches/functions/lines）。
 - 必须覆盖：无 `systemRole` 登录 401；reset flag 无密码拒启；有 live admin 时无 `ADMIN_PASSWORD` 仍可启动；`can()` 矩阵相关 403。
 - Web：Testing Library。DataGrid 必须覆盖 Tab 两格无 409、unmount flush、pageSize 切换。
-- Playwright 在 `e2e/`，**不进** `npm test`，CI `continue-on-error`，不挡合并。
+- Playwright 业务验收套件在 `e2e/tests/`（按域拆分 spec，共用夹具 `e2e/fixtures.ts`），**不进** `npm test`，CI `continue-on-error`，不挡合并。种子常量单一来源在 `apps/api/scripts/e2e-seed-data.ts`（种子脚本与用例同源 import，禁止各自写字面量）。`npm run e2e:report` 生成 `e2e/report/`（HTML + summary.md，失败附 trace/截图）；CI 同名 artifact。
 - `can()` 每一格有单测（`packages/shared/test/acl.test.ts`）。枚举 labels 必须与 Zod enum 双向对齐，禁止节选。
 
 ### API 约定

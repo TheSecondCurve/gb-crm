@@ -1,14 +1,16 @@
 name: e2e
 
-# K28：Playwright 冒烟独立于 ci.yml，continue-on-error，不挡合并。
+# K28：Playwright 套件独立于 ci.yml，continue-on-error，不挡合并。
+# 手动触发（workflow_dispatch）= 独立流水线：完整跑一遍并产出 HTML 报告 + 汇总 + 失败留证 artifact。
 on:
   push:
     branches: [dev, main]
   pull_request:
     branches: [dev, main]
+  workflow_dispatch:
 
 jobs:
-  smoke:
+  suite:
     runs-on: ubuntu-latest
     continue-on-error: true
     steps:
@@ -21,4 +23,14 @@ jobs:
 
       - run: npm ci
       - run: npx playwright install --with-deps chromium
-      - run: npm run e2e
+      - run: npm run e2e:report
+
+      - name: 上传 e2e 报告（HTML + 汇总 + JSON，含失败截图/trace）
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-report
+          path: |
+            e2e/report/
+            e2e/test-results/
+          retention-days: 14
