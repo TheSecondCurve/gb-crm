@@ -255,6 +255,23 @@ describe("insights REST", () => {
     expect((await get("/api/v1/insights/topics", asst.cookie)).statusCode).toBe(403);
   });
 
+  it("pivot：query 字符串数值参数（window=90 显式传递）不再 422；非法 window 422", async () => {
+    const admin = await loginAsRole("admin");
+    await createCustomer(admin.cookie, "窗口客户");
+
+    // 回归：query 里 window 是字符串 "90"，曾因 z.literal(90) 不匹配报 VALIDATION
+    const ok = await get("/api/v1/insights/pivot?x=city&y=stageTag&window=90", admin.cookie);
+    expect(ok.statusCode).toBe(200);
+    expect(ok.json().data.windowDays).toBe(90);
+
+    for (const w of ["30", "180", "365"]) {
+      expect((await get(`/api/v1/insights/pivot?window=${w}`, admin.cookie)).statusCode).toBe(200);
+    }
+    expect((await get("/api/v1/insights/pivot?window=45", admin.cookie)).statusCode).toBe(422);
+    // 缺省 window 仍走 default=90
+    expect((await get("/api/v1/insights/pivot", admin.cookie)).json().data.windowDays).toBe(90);
+  });
+
   it("pivot：默认 city × stageTag；带 calibre meta；非法轴 422；ownerId 过滤", async () => {
     const admin = await loginAsRole("admin");
     const op = await loginAsRole("operator");

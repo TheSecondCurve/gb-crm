@@ -1,8 +1,9 @@
 // K62 客户洞察 —— API 请求 schema（透视台查询 / 信号读写 / 词表）。
+// 注意：query 参数一律以字符串到达，数值型枚举必须 coerce（window 的 z.literal 陷阱已在生产踩过）。
 import { z } from "zod";
 
 import { signalSourceTypeSchema, signalTypeSchema } from "../enums.js";
-import { PIVOT_AXIS_KEYS } from "../insights.js";
+import { INSIGHT_WINDOWS, PIVOT_AXIS_KEYS } from "../insights.js";
 import type { InsightWindow, PivotAxisKey } from "../insights.js";
 
 // ── 透视台 ──
@@ -10,7 +11,8 @@ export const pivotQuerySchema = z.object({
   x: z.enum(PIVOT_AXIS_KEYS as unknown as [PivotAxisKey, ...PivotAxisKey[]]).default("city"),
   y: z.enum(PIVOT_AXIS_KEYS as unknown as [PivotAxisKey, ...PivotAxisKey[]]).default("stageTag"),
   window: z
-    .union([z.literal(30), z.literal(90), z.literal(180), z.literal(365)])
+    .coerce.number()
+    .refine((v) => (INSIGHT_WINDOWS as readonly number[]).includes(v), "window 必须是 30/90/180/365")
     .default(90),
   ownerId: z.coerce.number().int().positive().optional(),
 });
