@@ -13,3 +13,24 @@
   --line-dark: #3a3530;
   --on-ink: #dcd7ce; /* 玄黑底亮字（style.md 辅助） */
 }
+
+/* ── K62 客户全景驾驶舱 token ──
+   温度色阶（冷→热）：冰点灰蓝 → 燧石灰 → 琥珀；漆红仍只给警报/行动项，不参与温度渐变。 */
+:root {
+  --temp-frozen: #8fa3b0; /* 冰点 <25° */
+  --temp-mild: #a39d93;   /* 低温带 25-40°（燧石灰） */
+  --temp-warm: #c98a3d;   /* 温和 40-60°（琥珀前段） */
+  --temp-hot: #b35c1f;    /* 活跃 ≥60°（琥珀后段，接近漆红但不是漆红） */
+  --insight-gap: 20px;
+  --insight-card-pad: 18px;
+  --insight-headline: 26px; /* 人话结论行 */
+  --insight-heat-min: rgba(20, 18, 16, 0.06); /* 矩阵格子热度最低 */
+  --insight-heat-max: rgba(20, 18, 16, 0.55); /* 矩阵格子热度最高（玄黑浓度表达密度） */
+  --drawer-ease: cubic-bezier(0.22, 1, 0.36, 1);
+  --drawer-dur: 240ms;
+}
+
+/* 温度 → 色阶（组件用 data-band 或内联均可；这里给语义类） */
+.temp-band-frozen { color: var(--temp-frozen); }
+.temp-band-warm { color: var(--temp-warm); }
+.temp-band-hot { color: var(--temp-hot); }

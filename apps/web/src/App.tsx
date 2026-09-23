@@ -27,6 +27,7 @@ import { DeliveryTypesPage } from "./pages/DeliveryTypesPage";
 import { MaterialsPage } from "./pages/MaterialsPage";
 import { MaterialEditPage } from "./pages/MaterialEditPage";
 import { CopywritingPage } from "./pages/CopywritingPage";
+import { InsightsPivotPage } from "./pages/InsightsPivotPage";
 
 /** 未登录访问受保护页 → /login；等待 /auth/me 时显示占位 */
 function RequireAuth() {
@@ -215,6 +216,14 @@ export default function App() {
           element={
             <PageGuard pageKey="copywriting">
               <CopywritingPage />
+            </PageGuard>
+          }
+        />
+        <Route
+          path="/insights"
+          element={
+            <PageGuard pageKey="insights">
+              <InsightsPivotPage />
             </PageGuard>
           }
         />
