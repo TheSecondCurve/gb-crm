@@ -191,8 +191,11 @@ $utf8 = [System.Text.UTF8Encoding]::new($false)
 
 Write-Host ""
 Write-Host "Installed v$($meta['version']), $count files -> $target"
+$syncPs1 = Get-ChildItem -LiteralPath $target -Recurse -Filter "sync.ps1" -File -ErrorAction SilentlyContinue | Select-Object -First 1
 $syncSh = Get-ChildItem -LiteralPath $target -Recurse -Filter "sync.sh" -File -ErrorAction SilentlyContinue | Select-Object -First 1
-if ($syncSh) {
+if ($syncPs1) {
+  Write-Host "Daily update: powershell -ExecutionPolicy Bypass -File `"$($syncPs1.FullName)`" (or ask the agent on this computer to sync the workbench)."
+} elseif ($syncSh) {
   Write-Host "Daily update: sh `"$($syncSh.FullName)`" (Git Bash / WSL), or ask the agent on this computer to sync the workbench."
 } else {
   Write-Host "Daily update: ask the agent on this computer to sync the workbench."
