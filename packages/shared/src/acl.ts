@@ -16,6 +16,7 @@ export const resourceSchema = z.enum([
   "customerRecords",
   "dealCommissions",
   "copywriting",
+  "insights",
   "system",
   "jobs",
   "jobSchedules",
@@ -78,6 +79,9 @@ const ALL_DEAL_COMMISSION_ACTIONS: readonly Action[] = ["list", "read", "update"
 // 提示词模板是运营内容资产，operator 可维护（不同于 tags 客户词表的 admin-only 治理）；
 // generate/audit 端点挂 create 动作。
 const ALL_COPYWRITING_ACTIONS: readonly Action[] = ["list", "read", "create", "update", "delete"];
+// K62：客户洞察（透视台/决策台/信号）——admin/operator 可用，assistant 默认不可见
+//（含金额聚合与风险/情感等敏感信号浓缩；如需放开走 pageAccess 同源的配置评估，不进矩阵）。
+const ALL_INSIGHTS_ACTIONS: readonly Action[] = ["list", "read", "create", "update"];
 // K46：系统配置（LLM 打标）——仅 admin
 const SYSTEM_ACTIONS: readonly Action[] = ["read", "update"];
 // K51：后台任务——全角色可创建/查看/取消自己的；取消他人任务需 cancelAny（仅 admin）。
@@ -99,6 +103,7 @@ const MATRIX: Record<SystemRole, Readonly<Partial<Record<Resource, readonly Acti
     customerRecords: ALL_CUSTOMER_RECORD_ACTIONS,
     dealCommissions: ALL_DEAL_COMMISSION_ACTIONS,
     copywriting: ALL_COPYWRITING_ACTIONS,
+    insights: ALL_INSIGHTS_ACTIONS,
     system: SYSTEM_ACTIONS,
     jobs: ALL_JOB_ACTIONS,
     jobSchedules: ALL_JOB_SCHEDULE_ACTIONS,
@@ -119,6 +124,7 @@ const MATRIX: Record<SystemRole, Readonly<Partial<Record<Resource, readonly Acti
     customerRecords: ALL_CUSTOMER_RECORD_ACTIONS,
     dealCommissions: ALL_DEAL_COMMISSION_ACTIONS,
     copywriting: ALL_COPYWRITING_ACTIONS,
+    insights: ALL_INSIGHTS_ACTIONS,
     jobs: ["list", "read", "create", "cancel"],
     auth: ["setPassword"],
   },

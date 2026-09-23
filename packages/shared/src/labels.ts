@@ -18,6 +18,8 @@ import type {
   PayoutBatchStatus,
   ProductStatus,
   ProductType,
+  SignalSourceType,
+  SignalType,
   SocialPlatform,
   SystemRole,
   TagDomain,
@@ -205,4 +207,25 @@ export const copyAuditVerdictLabels: Record<CopyAuditVerdict, string> = {
   pass: "通过",
   warn: "注意",
   fail: "不通过",
+};
+
+/** 客户信号类型（K62） */
+export const signalTypeLabels: Record<SignalType, string> = {
+  growth: "成长信号",
+  risk: "风险信号",
+  intent: "明确意向",
+  interest_hint: "兴趣提示",
+  need: "需求",
+  supply: "供给",
+  lifecycle: "人生节点",
+  sentiment: "情感倾向",
+};
+
+/** 信号出处类型（K62） */
+export const signalSourceTypeLabels: Record<SignalSourceType, string> = {
+  maintenance_record: "维护记录",
+  origin_story: "来历",
+  note: "备注",
+  transcript: "场次语料",
+  manual: "人工补录",
 };
