@@ -1,13 +1,14 @@
 ---
 name: gb-crm
-version: 0.14.0
+version: 0.15.0
 description: >
   女商 私域运营管理端（gb-crm）本机 HTTP 客户端。用 ~/.gb-crm/credentials.json 的 PAT
   通过单一 SQL 端点查询或维护客户、渠道、产品、团队成员、成交记录、交付管理与资料。
   当用户提到 CRM 查找（查客户/名单/资料/语料）、CRM 更新（增改删客户/渠道/产品/成交/交付/
   资料/维护记录）、客户跟进、新增客户维护（给客户记一条维护记录/状态变化/线索/备注）、
-  客户咨询了什么产品/对什么感兴趣（要落成客户线索记录）、客户洞察（温度/全景/信号/需求/撮合，
-  走 insights 端点）这类对系统的增删改查操作，
+  客户咨询了什么产品/对什么感兴趣（要落成客户线索记录）、复杂资料整理入库（把一坨资料/
+  录音稿/聊天记录/咨询记录拆解成客户+跟进+交付+资料，见「复杂资料整理入库」节）、
+  客户洞察（温度/全景/信号/需求/撮合，走 insights 端点）这类对系统的增删改查操作，
   或提到 CRM、客户名单、渠道资产、产品目录、团队成员、成交、交付、资料、语料、gb-crm、
   女商私域运营管理端，或要查/改客户时使用。
   Use when the user runs /gb-crm.
@@ -136,9 +137,34 @@ python3 "$SKILL_DIR/scripts/gb-crm.py" GET "/api/v1/insights/topics"
 - **透视台** `pivot`：`x`/`y` 任选两轴（stageTag/identityTag/interestTag/city/region/customerType/channel/owner/temperatureBand/valueBand/ladder/signal），`window` 30/90/180/365，`ownerId` 过滤「我名下」。响应用**中文桶名**（行=`y`、列=`x`），每格带 `customerIds`+`sample` 客户名——直接把人名报给用户，不要甩矩阵 JSON。
 - **深潜** `depth`：单客户温度（0-100，21 天半衰期事件衰减模型）、180 天走势、已付款累计、产品阶梯、信号时间线。用户问「王总最近怎么样/什么状态」→ 先查到客户 id 再调这个。
 - **口径自描述**：`pivot`/`depth` 响应的 `meta.calibre` 带全部口径常量（温度权重表、TTL、撮合加成）。解释「为什么说她是沉睡/活跃」时引用 calibre 数字，不要自行编公式。
-- **信号写入口**（write PAT + admin/operator）：`POST /api/v1/insights/signals`（人工补录，`topic` 词表没有会自动建词）；`POST /api/v1/insights/signals/<id>/reject`（看到错的随手否决）。维护记录落库后系统会**自动**触发该客户的信号抽取（LLM 已配置时），不需要你手动跑。
+- **信号写入口**（write PAT + admin/operator）：`POST /api/v1/insights/signals`（人工补录，`topic` 词表没有会自动建词）；`POST /api/v1/insights/signals/<id>/reject`（看到错的随手否决）。**信号生成是自动的**：维护记录、文本类资料（transcript/text）、客户来历/备注经 REST 落库 → 系统即时入队抽取（LLM 未配置静默跳过）；SQL 直写不走钩子，靠管理员配的夜间扫尾 cron 兜底——所以整理资料请走 REST（见「复杂资料整理入库」节）。
 - **温度禁忌**：不要用 SQL 近似估算温度或自行加权——回答一律以端点数字为准；端点没给的口径就说没有，不要造。
 - **触发与指令**：用户说「客户温度/谁在降温/沉睡客户/全景/画像/信号/需求/撮合/缘分」等 → 走本节端点；说「补一条信号/否决这条信号」→ 走写入口。
+
+## 复杂资料整理入库（主工作流）
+
+用户丢来一坨复杂资料——咨询录音稿、微信聊天记录、活动笔记、混合文本、文件——说「整理入库 / 更新客户 / 归档」时，按下面的固定协议拆解落库。**全部走 REST（通用 HTTP `--json`），禁止 SQL 直写业务表**：组合校验、审计四列、信号抽取触发链只在 REST 路径完整（SQL 直写的资料不触发即时抽取，只能等夜间扫尾）。
+
+### 拆解顺序（先通读盘点，再动笔写入）
+
+1. **通读盘点**：先识别资料里的实体，不要边读边写——
+   - **客户**：新的还是已有的（昵称/电话/微信号线索）？
+   - **跟进事件**：每个有时间点的沟通 → 一条维护记录；
+   - **交付**：有没有「场次/活动/圈子/咨询期」结构（名称、类别、起止、参与人）？
+   - **资料文本**：哪段是录音稿/文本全文，哪个是链接，哪个是本地文件？
+2. **客户落位**：已有的先 SQL 模糊定位（nickname LIKE / phone / wechat），报候选让用户确认；新客户 `POST /api/v1/customers`（来历写进 `originStory`）；要更新字段先 `GET /customers/:id` 拿 `updatedAt` 再 `PATCH`（409 就重读重试一次）。
+3. **交付落位**（仅当资料属于某个场次/项目）：按语义找交付类型（`GET /delivery-types`，咨询/活动/圈子/其他），缺则 `POST /delivery-types {"name":…, "kind":…}`；再 `POST /deliveries {"deliveryTypeId":…, "name":…, "startsAt"?…, "endsAt"?…, "customerIds":[…]}`。
+4. **资料落库**：`transcript`/`text` → `POST /api/v1/materials {"kind","title","content","deliveryId"?,"customerIds":[…]}`（content 全文可上万字）；`audio`/`video`/`link` → 带 `url`；本地文件 → `upload` 子命令（<32MB，支持 `deliveryId=`/`customerIds=`）。
+5. **跟进记录**（基础信息层，**每个沟通事件一条**）：`POST /api/v1/customers/:id/records {"kind","happenedAt","content"}`——咨询产品/表意向 → `lead`（content 写明产品名，规则见「客户维护记录」节）；沟通触点 → `follow_up`；状态变化 → `status_change`；历史时间用 `happenedAt` 补录（epoch ms，「上周三」先换算）。
+6. **signals：不要手工造**。记录、资料、来历/备注经 REST 落库后系统**自动触发抽取**（LLM 已配置时即时入队，串行执行几分钟内完成；未配置则如实告知信号暂不会生成）。agent 只做两件事：落库后可 `GET /insights/signals?customerId=…` 核对（抽取完成前为空属正常，不要谎报）；对资料里明确、抽取可能漏掉的关键事实，用 `POST /api/v1/insights/signals` 人工补录（type/topic/content/sourceAt）。
+7. **收尾汇报**：列清单——新建/更新了哪些行（带 id 和名字）、挂了什么资料、记了几条跟进、哪些信号即将自动出现；拿不准的（客户身份存疑、时间不明）单独列出待用户确认，不要硬写。
+
+### 硬规则
+
+- 资料里**没有**场次结构就跳过第 3-4 步的交付部分，资料直接挂客户——不要为整理而造交付/交付类别。
+- 一次整理尽量当轮完成写入；跨多个客户时逐客户汇报进度。
+- 全程中文标签对齐枚举：交付类别 kind（consulting/activity/circle/other）、记录 kind、信号 type 见「枚举 code → 中文」表。
+- 结束前自查组合约束：文本类资料必须有 `content`、媒体类必须有 `url`、记录必须有 `kind`+`happenedAt`。
 
 ## 表结构
 
@@ -592,6 +618,20 @@ INSERT OR IGNORE INTO customer_tags (customer_id, tag_id, created_at, created_by
 ```
 
 **删标签**：join 表唯一允许的硬删——`DELETE FROM customer_tags WHERE customer_id=? AND tag_id=?`（先按名字解析出 `tag_id`，删前向用户复述）。
+
+**AI 打标（K46，日常主力，走端点）**：用户说「给客户打标签 / 给我名下的客户打标 / 重新打标这批」时——
+
+```bash
+# 批量：按筛选范围创建后台任务（params = 客户列表筛选项，缺省 = 全部 live 客户；串行逐客户一次 LLM 调用）
+python3 "$SKILL_DIR/scripts/gb-crm.py" POST /api/v1/background-jobs --json '{"type":"customer-tags-generate-all","params":{"ownerId":3}}'
+# 单个客户（同步，直接生效）
+python3 "$SKILL_DIR/scripts/gb-crm.py" POST /api/v1/customers/11/tags/generate
+```
+
+- params 组合：`q`（昵称/电话模糊）、`ownerId`（某归属人）、`customerType`、`channelId`（来源渠道）、`tagId`（已带某标签）——如「给我名下的打标」用 `{"ownerId":<me>}`。**批量建任务前先复述范围与客户数，用户确认再建**（写操作 + LLM 成本，范围错了白跑）。
+- 行为：产出 身份/阶段/兴趣 三类标签与已有手工标签**并集合并**（不覆盖），行业非空则覆盖写回；进度用 `GET /api/v1/background-jobs` 查，失败客户在任务详情 failures 里。
+- 权限：customers.update（admin/operator；assistant 建任务/单条都 403）。
+- 边界：没有「只打未打标」的过滤——重复跑会对范围内全部客户重打（幂等无害但费 LLM）；点名式小批量（两三个客户）直接逐个 `tags/generate`，别建任务。LLM 未配置 → 批量任务创建即 422、单条 502，如实告知。
 
 ### 系统表（别动）
 
