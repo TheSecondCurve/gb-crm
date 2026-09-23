@@ -18,6 +18,7 @@ import { createAudit, updateAudit, type AuditContext } from "../../lib/audit.js"
 import { applyScalarPatch } from "../../lib/patch-kernel.js";
 import { notFound, unprocessable } from "../../plugins/error-handler.js";
 import { getDeliveryById } from "../deliveries/repo.js";
+import { enqueueSignalExtract } from "../insights/repo.js";
 import {
   assembleMaterialDetail,
   assembleMaterials,
@@ -29,6 +30,7 @@ import {
   findLiveCustomerIds,
   getMaterialByIdAny,
   insertMaterial,
+  listMaterialCustomerRows,
   listMaterials,
   occUpdateMaterial,
   replaceMaterialCustomers,
@@ -95,12 +97,22 @@ export function getMaterialResult(db: Db, id: number): MaterialDetailDto {
   return assembleMaterialDetail(db, row);
 }
 
+/** 文本类资料（进抽取 bundle 的两类）才触发信号抽取 */
+function isTextKind(kind: string): boolean {
+  return kind === "transcript" || kind === "text";
+}
+
+/** 该资料当前关联的客户 id 列表（patch/delete 前取旧关联，K62 抽取入队用） */
+function listMaterialCustomerIds(db: Db, materialId: number): number[] {
+  return listMaterialCustomerRows(db, [materialId]).map((r) => r.customerId);
+}
+
 export function createMaterial(
   db: Db,
   body: MaterialWrite,
   ctx: AuditContext,
 ): MaterialDetailDto {
-  return inTx(db, (tx) => {
+  const dto = inTx(db, (tx) => {
     const { customerIds, tagIds, newTagNames, ...fields } = body;
     // Zod 已挡组合违规，此处与 PATCH 共用同一规则兜底
     assertKindCombo(fields.kind, fields.url ?? null);
@@ -113,6 +125,13 @@ export function createMaterial(
     applyMaterialTags(tx, id, { tagIds, newTagNames }, ctx);
     return assembleMaterialDetail(tx, getMaterialByIdAny(tx, id)!);
   });
+  // K62 四期：文本类语料关联客户 → 抽取（LLM 未配置静默跳过）
+  if (isTextKind(dto.kind)) {
+    for (const customerId of dto.customers.map((c) => c.id)) {
+      enqueueSignalExtract(db, customerId, { now: ctx.now, userId: ctx.userId });
+    }
+  }
+  return dto;
 }
 
 /** PATCH 可写标量键（updatedAt 是 OCC 凭证；customerIds 关系键走整表替换） */
@@ -124,7 +143,10 @@ export function patchMaterial(
   patch: MaterialPatch,
   ctx: AuditContext,
 ): MaterialDetailDto {
-  return inTx(db, (tx) => {
+  const beforeCustomerIds = listMaterialCustomerIds(db, id);
+  const textTouched =
+    patch.kind !== undefined || patch.content !== undefined || patch.title !== undefined || patch.customerIds !== undefined;
+  const dto = inTx(db, (tx) => {
     const existing = getMaterialByIdAny(tx, id);
     if (!existing || existing.deletedAt !== null) throw notFound("资料不存在");
 
@@ -166,6 +188,14 @@ export function patchMaterial(
     );
     return assembleMaterialDetail(tx, getMaterialByIdAny(tx, id)!);
   });
+  // K62 四期：文本类语料的正文/标题/类型/客户关联变化 → 对新旧关联客户重抽
+  //（旧客户也要抽：解除关联后其来自本语料的信号应被清理）
+  if (isTextKind(dto.kind) && textTouched) {
+    for (const customerId of new Set([...beforeCustomerIds, ...dto.customers.map((c) => c.id)])) {
+      enqueueSignalExtract(db, customerId, { now: ctx.now, userId: ctx.userId });
+    }
+  }
+  return dto;
 }
 
 export async function deleteMaterial(
@@ -176,11 +206,18 @@ export async function deleteMaterial(
 ): Promise<void> {
   const existing = getMaterialByIdAny(db, id);
   if (!existing || existing.deletedAt !== null) throw notFound("资料不存在");
+  const customerIds = listMaterialCustomerIds(db, id);
   const changes = softDeleteMaterial(db, id, {
     deletedAt: ctx.now,
     ...updateAudit(ctx),
   });
   if (changes === 0) throw notFound("资料不存在");
   await deleteStoredObjectIfAny(db, existing, opts);
+  // K62 四期：文本类语料被删 → 关联客户重抽（清理来自本语料的信号）
+  if (isTextKind(existing.kind)) {
+    for (const customerId of customerIds) {
+      enqueueSignalExtract(db, customerId, { now: ctx.now, userId: ctx.userId });
+    }
+  }
 }
 

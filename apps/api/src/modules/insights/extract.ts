@@ -72,13 +72,21 @@ export async function extractCustomerSignals(
   // 词表种子（空表才预热，幂等）：兴趣标签 + 产品名 + 高频行业
   ensureTopicSeeds(db, audit);
 
-  // 清理：来源维护记录已被软删的信号行 → 软删（来源消失，事实随之消失）。
-  // 判活用该客户全部 live 记录 id（与 bundle 的最新 50 条上限无关，不误伤老记录）。
+  // 清理：来源文本已消失的信号行 → 软删（来源消失，事实随之消失）。
+  // ① 维护记录被软删（判活用该客户全部 live 记录 id，与 bundle 的最新 50 条上限无关，不误伤老记录）；
+  // ② 场次语料被软删或已解除与该客户的关联（transcript 源：资料行 live 且仍挂在该客户名下才算活）。
   const cleanDeadSources = (): number => {
-    const liveRecordIds = repo.listLiveRecordIdsByCustomer(db, customerId);
     let cleaned = 0;
+    const liveRecordIds = repo.listLiveRecordIdsByCustomer(db, customerId);
     for (const row of repo.listActiveRowsByCustomerSourceType(db, customerId, "maintenance_record")) {
       if (row.sourceId !== null && !liveRecordIds.has(row.sourceId)) {
+        repo.updateSignalRow(db, row.id, { deletedAt: audit.now, updatedAt: audit.now, updatedBy: audit.userId });
+        cleaned += 1;
+      }
+    }
+    for (const row of repo.listActiveRowsByCustomerSourceType(db, customerId, "transcript")) {
+      if (row.sourceId === null) continue;
+      if (!repo.isMaterialLiveAndLinked(db, row.sourceId, customerId)) {
         repo.updateSignalRow(db, row.id, { deletedAt: audit.now, updatedAt: audit.now, updatedBy: audit.userId });
         cleaned += 1;
       }

@@ -314,6 +314,26 @@ export function listLiveRecordIdsByCustomer(db: Db, customerId: number): Set<num
   return new Set(rows.map((r) => r.id));
 }
 
+/** transcript 信号判活：资料行 live 且仍挂在该客户名下（软删或解除关联都算来源消失） */
+export function isMaterialLiveAndLinked(db: Db, materialId: number, customerId: number): boolean {
+  const row = db
+    .select({ id: deliveryMaterials.id })
+    .from(deliveryMaterials)
+    .innerJoin(
+      deliveryMaterialCustomers,
+      eq(deliveryMaterialCustomers.materialId, deliveryMaterials.id),
+    )
+    .where(
+      and(
+        eq(deliveryMaterials.id, materialId),
+        eq(deliveryMaterialCustomers.customerId, customerId),
+        isNull(deliveryMaterials.deletedAt),
+      ),
+    )
+    .get();
+  return row !== undefined;
+}
+
 // ---- 二期决策台查询 ----
 
 /** 每客户最近触点（live 记录 max happened_at，任意 kind） */
@@ -782,7 +802,13 @@ export function listCustomerTextBundle(db: Db, customerId: number, maxRecords = 
   return { customerId, nickname: customer.nickname, texts };
 }
 
-/** 扫尾目标：有记录比该客户最近一次抽取更新（agent SQL 直写路径的兜底） */
+/**
+ * 扫尾目标（夜间兜底，专治不经 REST 的写入路径如 agent SQL 直写）：
+ * ① 有维护记录比该客户最近抽取更新；
+ * ② 客户带来历/备注文本且客户行 updated_at 晚于最近抽取（来历/备注被直改；
+ *    代价是无关 PATCH（如打标签）也会让该客户当晚多抽一次——幂等 ingest 使其多为 no-op，可接受）；
+ * ③ 关联到该客户的资料（transcript/text）比最近抽取更新（语料直写/改关联）。
+ */
 export function listStaleCustomerIds(db: Db): number[] {
   return db
     .select({ id: customers.id })
@@ -790,13 +816,23 @@ export function listStaleCustomerIds(db: Db): number[] {
     .where(
       and(
         isNull(customers.deletedAt),
-        sql`EXISTS (
-          SELECT 1 FROM customer_maintenance_records r
-          WHERE r.customer_id = ${customers.id} AND r.deleted_at IS NULL
-            AND r.updated_at > COALESCE((
-              SELECT MAX(s.extracted_at) FROM customer_signals s
-              WHERE s.customer_id = ${customers.id} AND s.deleted_at IS NULL
-            ), 0)
+        sql`(
+          EXISTS (
+            SELECT 1 FROM customer_maintenance_records r
+            WHERE r.customer_id = ${customers.id} AND r.deleted_at IS NULL
+              AND r.updated_at > COALESCE((SELECT MAX(s.extracted_at) FROM customer_signals s WHERE s.customer_id = ${customers.id} AND s.deleted_at IS NULL), 0)
+          )
+          OR (
+            (COALESCE(${customers.originStory}, '') <> '' OR COALESCE(${customers.notes}, '') <> '')
+            AND ${customers.updatedAt} > COALESCE((SELECT MAX(s.extracted_at) FROM customer_signals s WHERE s.customer_id = ${customers.id} AND s.deleted_at IS NULL), 0)
+          )
+          OR EXISTS (
+            SELECT 1 FROM delivery_material_customers mc
+            JOIN delivery_materials m ON m.id = mc.material_id
+            WHERE mc.customer_id = ${customers.id} AND m.deleted_at IS NULL
+              AND m.kind IN ('transcript','text')
+              AND m.updated_at > COALESCE((SELECT MAX(s.extracted_at) FROM customer_signals s WHERE s.customer_id = ${customers.id} AND s.deleted_at IS NULL), 0)
+          )
         )`,
       ),
     )
