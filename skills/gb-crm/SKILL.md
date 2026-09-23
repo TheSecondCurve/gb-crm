@@ -1,12 +1,13 @@
 ---
 name: gb-crm
-version: 0.13.0
+version: 0.14.0
 description: >
   女商 私域运营管理端（gb-crm）本机 HTTP 客户端。用 ~/.gb-crm/credentials.json 的 PAT
   通过单一 SQL 端点查询或维护客户、渠道、产品、团队成员、成交记录、交付管理与资料。
   当用户提到 CRM 查找（查客户/名单/资料/语料）、CRM 更新（增改删客户/渠道/产品/成交/交付/
   资料/维护记录）、客户跟进、新增客户维护（给客户记一条维护记录/状态变化/线索/备注）、
-  客户咨询了什么产品/对什么感兴趣（要落成客户线索记录）这类对系统的增删改查操作，
+  客户咨询了什么产品/对什么感兴趣（要落成客户线索记录）、客户洞察（温度/全景/信号/需求/撮合，
+  走 insights 端点）这类对系统的增删改查操作，
   或提到 CRM、客户名单、渠道资产、产品目录、团队成员、成交、交付、资料、语料、gb-crm、
   女商私域运营管理端，或要查/改客户时使用。
   Use when the user runs /gb-crm.
@@ -120,6 +121,24 @@ UPDATE customers SET owner_id = ?, updated_at = ?, updated_by = ? WHERE id = ?;
 ```
 
 边界情况：渠道查不到（名字记错）→ 报出近似候选让用户选；渠道**没有当前管理人**（`channel_owners` 无行）→ 如实告知「该号当前无人认领」，只挂来源渠道、`owner_id` 不动，让用户定夺；渠道有**多个管理人** → 列出全部让用户指定归属销售。反过来，只改归属人不动来源渠道（「这客户转给小王跟」→ 只 `UPDATE customers.owner_id`）、只补来源渠道不动归属人的场景也存在，按用户说的做，不要互相牵连。
+
+## 客户洞察（K62：口径即 API，**必须走端点，禁止手写 SQL 重算**）
+
+客户温度、客户全景、信号（growth/risk/intent/interest_hint/need/supply/lifecycle/sentiment 八类）这类洞察问题的**口径只活在服务端**——agent 与 Web 驾驶舱必须同口径，自己拿 SQL 重算温度必然漂移。统一走通用 HTTP（`insights` 资源，admin/operator + read PAT）：
+
+```bash
+python3 "$SKILL_DIR/scripts/gb-crm.py" GET "/api/v1/insights/pivot?x=city&y=stageTag&window=90"
+python3 "$SKILL_DIR/scripts/gb-crm.py" GET "/api/v1/insights/customers/<id>/depth"
+python3 "$SKILL_DIR/scripts/gb-crm.py" GET "/api/v1/insights/signals?type=need&active=true"
+python3 "$SKILL_DIR/scripts/gb-crm.py" GET "/api/v1/insights/topics"
+```
+
+- **透视台** `pivot`：`x`/`y` 任选两轴（stageTag/identityTag/interestTag/city/region/customerType/channel/owner/temperatureBand/valueBand/ladder/signal），`window` 30/90/180/365，`ownerId` 过滤「我名下」。响应用**中文桶名**（行=`y`、列=`x`），每格带 `customerIds`+`sample` 客户名——直接把人名报给用户，不要甩矩阵 JSON。
+- **深潜** `depth`：单客户温度（0-100，21 天半衰期事件衰减模型）、180 天走势、已付款累计、产品阶梯、信号时间线。用户问「王总最近怎么样/什么状态」→ 先查到客户 id 再调这个。
+- **口径自描述**：`pivot`/`depth` 响应的 `meta.calibre` 带全部口径常量（温度权重表、TTL、撮合加成）。解释「为什么说她是沉睡/活跃」时引用 calibre 数字，不要自行编公式。
+- **信号写入口**（write PAT + admin/operator）：`POST /api/v1/insights/signals`（人工补录，`topic` 词表没有会自动建词）；`POST /api/v1/insights/signals/<id>/reject`（看到错的随手否决）。维护记录落库后系统会**自动**触发该客户的信号抽取（LLM 已配置时），不需要你手动跑。
+- **温度禁忌**：不要用 SQL 近似估算温度或自行加权——回答一律以端点数字为准；端点没给的口径就说没有，不要造。
+- **触发与指令**：用户说「客户温度/谁在降温/沉睡客户/全景/画像/信号/需求/撮合/缘分」等 → 走本节端点；说「补一条信号/否决这条信号」→ 走写入口。
 
 ## 表结构
 
@@ -330,7 +349,6 @@ UPDATE customers SET owner_id = ?, updated_at = ?, updated_by = ? WHERE id = ?;
 | --- | --- | --- |
 | id | INTEGER PK | — |
 | delivery_type_id | INTEGER NOT NULL | → delivery_types.id（必填） |
-| name | TEXT | 交付名，可空（展示/搜索回退类型名） |
 | remark | TEXT |  |
 | created_at | INTEGER NOT NULL | — |
 | updated_at | INTEGER NOT NULL | — |
@@ -339,6 +357,7 @@ UPDATE customers SET owner_id = ?, updated_at = ?, updated_by = ? WHERE id = ?;
 | deleted_at | INTEGER | — |
 | starts_at | INTEGER | 起止日期，epoch 毫秒，可空 |
 | ends_at | INTEGER | 起止日期，epoch 毫秒，可空 |
+| name | TEXT | 交付名，可空（展示/搜索回退类型名） |
 <!-- /SCHEMA:deliveries -->
 
 <!-- SCHEMA:delivery_customers -->
@@ -491,6 +510,52 @@ kind 枚举（CHECK 限定）：`follow_up` 跟进 / `status_change` 状态变�
 - 同守则 4/5：软删只更新 `deleted_at`，不硬删；补 `created_at`/`created_by`、`updated_at`/`updated_by`。
 - `kind` 为 `follow_up` / `lead`（跟进/线索）时，**同步刷新该客户的 `customers.last_followed_at`**，取「当前值与本次 `happened_at` 的较大者」——与「最近跟进」展示保持一致。
 
+### 客户信号与洞察词表（K62）
+
+LLM 从客户自由文本（来历/备注/维护记录）抽取的类型化事实，**无人工确认、生效即用**。状态是推导值：`rejected_by` 非空 = 已否决；`superseded_by` 非空 = 已被取代；有效 = 未软删 ∧ 未否决 ∧ 未取代 ∧ (`expires_at` 为空 或 > now)。**查询/否决优先走「客户洞察」一节的端点**；本表直读只用于核对数据，不要手工 INSERT 造信号（抽取任务 `insights-signal-extract` 自动维护，维护记录落库即自动入队重抽）。
+
+<!-- SCHEMA:signal_topics -->
+| 列 | 类型 | 含义 |
+| --- | --- | --- |
+| id | INTEGER PK | — |
+| name | TEXT NOT NULL | 归一主题词（「领域/平台+动作或对象」，如 小红书运营；live 唯一） |
+| enabled | INTEGER NOT NULL | 0 = 停用（不参与归一/撮合），默认 1 |
+| sort | INTEGER NOT NULL | 排序，默认 0 |
+| created_at | INTEGER NOT NULL | — |
+| updated_at | INTEGER NOT NULL | — |
+| created_by | INTEGER | — |
+| updated_by | INTEGER | — |
+| deleted_at | INTEGER | 软删（同义词合并 = 软删 + 信号改指） |
+<!-- /SCHEMA:signal_topics -->
+
+词表图谱 `signal_topic_relations(topic_id, related_topic_id, source('llm'/'admin'), created_at, created_by)`：LLM 建新词必须同时给 nearest 现有词 → 自动落 related 边；这是撮合两级召回的第二级。
+
+<!-- SCHEMA:customer_signals -->
+| 列 | 类型 | 含义 |
+| --- | --- | --- |
+| id | INTEGER PK | — |
+| customer_id | INTEGER NOT NULL | → customers.id |
+| type | TEXT NOT NULL | growth 成长/risk 风险/intent 意向/interest_hint 兴趣/need 需求/supply 供给/lifecycle 人生节点/sentiment 情感 |
+| topic_id | INTEGER | → signal_topics.id（可空） |
+| content | TEXT NOT NULL | 一句话事实摘要 |
+| source_type | TEXT NOT NULL | maintenance_record/origin_story/note/transcript/manual |
+| source_id | INTEGER | 出处行 id（origin_story/note/manual 为 NULL） |
+| source_at | INTEGER NOT NULL | 原文发生时间（epoch ms） |
+| mention_count | INTEGER NOT NULL | 同义事实提及次数（跨源合并累加），默认 1 |
+| confidence | REAL NOT NULL | LLM 置信度 0-1；人工补录 = 1 |
+| superseded_by | INTEGER | 被哪条新信号取代（时间序列不删旧） |
+| rejected_by | INTEGER | 随手否决人（可选纠错，非流程） |
+| rejected_at | INTEGER | — |
+| expires_at | INTEGER | 按 type TTL 推导：intent/need 90 天、risk/sentiment/interest_hint 180 天、supply 365 天、growth/lifecycle 不过期 |
+| prompt_version | TEXT NOT NULL | 抽取 prompt 版本（manual 固定 'manual'） |
+| extracted_at | INTEGER NOT NULL | 抽取/录入时间 |
+| created_at | INTEGER NOT NULL | — |
+| updated_at | INTEGER NOT NULL | — |
+| created_by | INTEGER | — |
+| updated_by | INTEGER | — |
+| deleted_at | INTEGER | 软删（来源记录被删时信号随之软删） |
+<!-- /SCHEMA:customer_signals -->
+
 ### 客户标签（K45）
 
 <!-- SCHEMA:tags -->
@@ -580,6 +645,7 @@ INSERT OR IGNORE INTO customer_tags (customer_id, tag_id, created_at, created_by
 - delivery_type kind：`consulting` 咨询类 / `activity` 活动类 / `circle` 圈子类 / `other` 其他类；status：`active` 有效 / `inactive` 失效
 - material kind（K54/K57）：`transcript` 录音文字稿 / `text` 文本资料 / `audio` 音频 / `video` 视频 / `link` 其他链接 / `file` 对象存储
 - maintenance kind（K55）：`follow_up` 跟进 / `status_change` 状态变化 / `lead` 线索 / `note` 备注 / `other` 其他
+- signal type（K62）：`growth` 成长信号 / `risk` 风险信号 / `intent` 明确意向 / `interest_hint` 兴趣提示 / `need` 需求 / `supply` 供给 / `lifecycle` 人生节点 / `sentiment` 情感倾向；source_type：`maintenance_record` 维护记录 / `origin_story` 来历 / `note` 备注 / `transcript` 场次语料 / `manual` 人工补录
 
 对用户列出结果时用昵称/名称与中文 label，不要甩一堆 id 和 code；需要跟进时再附 id。
 
