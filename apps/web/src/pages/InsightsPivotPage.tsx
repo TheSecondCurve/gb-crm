@@ -1,12 +1,13 @@
 // K62 全景透视台：经纬两轴任意组合 × 时间机器窗口 × 「只看我的」。
 // 结论先行（顶部人话行）+ 热度矩阵（玄黑浓度 = 客户数）+ 点格子出客户 → 点人名深潜。
 import { PIVOT_AXES, type PivotAxisKey } from "@gb-crm/shared";
-import { CaretDown } from "@phosphor-icons/react";
-import { useQuery } from "@tanstack/react-query";
+import { CaretDown, Sparkle } from "@phosphor-icons/react";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
 
-import { fetchPivot, type PivotCellDto, type PivotDto } from "../api/insights";
+import { fetchPivot, postSummary, type PivotCellDto, type PivotDto } from "../api/insights";
 import { useAuth } from "../auth/AuthProvider";
+import { useToast } from "../components/Toast";
 import { InsightsDepthDrawer } from "../components/InsightsDepthDrawer";
 
 const WINDOWS = [30, 90, 180, 365] as const;
@@ -50,6 +51,11 @@ export function InsightsPivotPage() {
   const [mineOnly, setMineOnly] = useState(false);
   const [cell, setCell] = useState<PivotCellDto | null>(null);
   const [depthId, setDepthId] = useState<number | null>(null);
+  const showToast = useToast();
+  const summary = useMutation({
+    mutationFn: postSummary,
+    onError: (err: Error) => showToast(err.message),
+  });
 
   const ownerId = mineOnly && me ? me.id : undefined;
   const { data, isLoading, isError } = useQuery({
@@ -98,7 +104,7 @@ export function InsightsPivotPage() {
         </p>
       </header>
 
-      {/* 控制条：经纬 + 时间机器 + 只看我的 + 预置切片 */}
+      {/* 控制条：经纬 + 时间机器 + 只看我的 + AI 经营备忘 */}
       <div style={{ display: "flex", flexWrap: "wrap", gap: 12, alignItems: "center", marginBottom: 14 }}>
         {axisSelect("经（列）", x, setX, "pivot-x")}
         <span style={{ color: "var(--text-3)" }}>×</span>
@@ -122,7 +128,36 @@ export function InsightsPivotPage() {
           <input type="checkbox" checked={mineOnly} onChange={(e) => setMineOnly(e.target.checked)} />
           只看我的
         </label>
+        <button
+          type="button"
+          className="ghost-btn"
+          style={{ fontSize: 13, display: "inline-flex", alignItems: "center", gap: 6, marginLeft: "auto" }}
+          disabled={summary.isPending}
+          onClick={() => summary.mutate()}
+        >
+          <Sparkle size={14} weight="bold" aria-hidden />
+          {summary.isPending ? "生成中…" : "AI 经营备忘"}
+        </button>
       </div>
+      {summary.data && (
+        <p
+          data-testid="ai-summary"
+          style={{
+            margin: "0 0 14px",
+            padding: "10px 14px",
+            background: "var(--surface)",
+            border: "1px solid var(--hairline)",
+            borderRadius: 8,
+            fontSize: 14,
+            lineHeight: 1.6,
+          }}
+        >
+          <span style={{ fontSize: 11, color: "var(--text-3)", marginRight: 8 }}>
+            {summary.data.source === "llm" ? "AI 生成" : "规则版（LLM 未配置）"}
+          </span>
+          {summary.data.summary}
+        </p>
+      )}
       <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 18 }}>
         {PRESETS.map((p) => (
           <button

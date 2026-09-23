@@ -130,3 +130,22 @@ describe("全景透视台", () => {
     expect(screen.getByRole("link", { name: "全景透视台" })).toBeTruthy();
   });
 });
+
+describe("AI 经营备忘（四期）", () => {
+  it("点按钮 → POST /insights/summary → 展示备忘与来源徽标", async () => {
+    mockFetch((url, init) => {
+      if (url === "/api/v1/auth/me") return { status: 200, body: { data: adminMe } };
+      if (url.startsWith("/api/v1/insights/summary") && init?.method === "POST") {
+        return { status: 200, body: { data: { source: "llm", summary: "先唤醒沉睡客户，再跟进断线线索。", generatedAt: 1 } } };
+      }
+      if (url.startsWith("/api/v1/insights/pivot")) return { status: 200, body: pivotBody };
+      return emptyList();
+    });
+    renderApp("/insights");
+    await screen.findByText(/2 位客户/);
+    fireEvent.click(screen.getByRole("button", { name: /AI 经营备忘/ }));
+    const summary = await screen.findByTestId("ai-summary");
+    expect(summary.textContent).toContain("先唤醒沉睡客户");
+    expect(summary.textContent).toContain("AI 生成");
+  });
+});

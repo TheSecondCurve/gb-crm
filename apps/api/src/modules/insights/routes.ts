@@ -23,6 +23,7 @@ import {
   ladderResult,
 } from "./decisions.js";
 import { matchResult } from "./match.js";
+import { insightsSummaryResult } from "./summary.js";
 import {
   createManualSignalResult,
   depthResult,
@@ -36,10 +37,12 @@ import {
 export interface InsightsRoutesOptions {
   db: Db;
   now: () => number;
+  /** LLM fetch 注入（AI 经营备忘；未配置时端点内部回退规则版） */
+  llmFetch?: typeof fetch;
 }
 
 export function insightsRoutes(app: FastifyInstance, opts: InsightsRoutesOptions): void {
-  const { db, now } = opts;
+  const { db, now, llmFetch } = opts;
   const auditCtx = (req: { user: { id: number } | null }) => ({
     now: now(),
     userId: req.user!.id, // requireCan 已保证非空
@@ -106,6 +109,17 @@ export function insightsRoutes(app: FastifyInstance, opts: InsightsRoutesOptions
     { preHandler: requireCan("insights", "list") },
     async () => {
       return { data: matchResult(db, now()), meta: { calibre: insightsCalibre(), generatedAt: now() } };
+    },
+  );
+
+  // ── 四期 AI 经营备忘：显式动作（POST），LLM 可用时生成、否则回退规则版 ──
+
+  app.post(
+    "/api/v1/insights/summary",
+    { preHandler: requireCan("insights", "read") },
+    async () => {
+      const data = await insightsSummaryResult(db, now(), llmFetch);
+      return { data, meta: { generatedAt: data.generatedAt } };
     },
   );
 

@@ -100,7 +100,7 @@ export function buildApp(options: BuildAppOptions): FastifyInstance {
     tagsRoutes(instance, { db, now: clock });
     materialsRoutes(instance, { db, now: clock, s3Fetch });
     copywritingRoutes(instance, { db, now: clock, llmFetch });
-    insightsRoutes(instance, { db, now: clock });
+    insightsRoutes(instance, { db, now: clock, llmFetch });
     systemRoutes(instance, { db, now: clock, s3Fetch, llmFetch });
     jobsRoutes(instance, { db, now: clock });
     jobSchedulesRoutes(instance, { db, now: clock });

@@ -177,3 +177,12 @@ export const fetchTopics = (page = 1): Promise<{ data: TopicHealthRow[]; total: 
     .then((r) => ({ data: r!.data, total: r!.meta.total }));
 export const mergeTopic = (id: number, intoId: number): Promise<unknown> =>
   api.post(`/insights/topics/${id}/merge`, { intoId });
+
+/** 四期 AI 经营备忘（LLM 可用时生成，否则回退规则版） */
+export interface InsightsSummaryDto {
+  source: "llm" | "rule";
+  summary: string;
+  generatedAt: number;
+}
+export const postSummary = (): Promise<InsightsSummaryDto> =>
+  api.post<{ data: InsightsSummaryDto }>("/insights/summary", {}).then((r) => r!.data);

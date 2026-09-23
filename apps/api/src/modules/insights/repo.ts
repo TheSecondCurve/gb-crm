@@ -702,11 +702,48 @@ export function listFrequentIndustries(db: Db, minCount: number, topN: number): 
 
 // ---- 抽取目标 ----
 
+/** 该客户关联的场次资料文本（K62 四期：transcript/text 进抽取 bundle） */
+export function listCustomerMaterialTexts(
+  db: Db,
+  customerId: number,
+  maxItems = 10,
+  maxChars = 3000,
+): { sourceId: number; sourceAt: number; content: string }[] {
+  const rows = db
+    .select({
+      id: deliveryMaterials.id,
+      title: deliveryMaterials.title,
+      kind: deliveryMaterials.kind,
+      content: deliveryMaterials.content,
+      createdAt: deliveryMaterials.createdAt,
+    })
+    .from(deliveryMaterialCustomers)
+    .innerJoin(
+      deliveryMaterials,
+      and(
+        eq(deliveryMaterials.id, deliveryMaterialCustomers.materialId),
+        isNull(deliveryMaterials.deletedAt),
+        inArray(deliveryMaterials.kind, ["transcript", "text"]),
+      ),
+    )
+    .where(eq(deliveryMaterialCustomers.customerId, customerId))
+    .orderBy(desc(deliveryMaterials.createdAt))
+    .limit(maxItems)
+    .all();
+  return rows
+    .filter((r) => (r.content ?? "").trim().length > 0)
+    .map((r) => ({
+      sourceId: r.id,
+      sourceAt: r.createdAt,
+      content: `[${r.kind}:${r.title}] ${(r.content ?? "").slice(0, maxChars)}`,
+    }));
+}
+
 /** 抽取文本 bundle：客户档案文本 + live 维护记录（最新在前，条数/单条长度封顶控成本） */
 export interface CustomerTextBundle {
   customerId: number;
   nickname: string;
-  texts: { sourceType: "maintenance_record" | "origin_story" | "note"; sourceId: number | null; sourceAt: number; content: string }[];
+  texts: { sourceType: "maintenance_record" | "origin_story" | "note" | "transcript"; sourceId: number | null; sourceAt: number; content: string }[];
 }
 
 export function listCustomerTextBundle(db: Db, customerId: number, maxRecords = 50, maxChars = 2000): CustomerTextBundle | undefined {
@@ -723,6 +760,9 @@ export function listCustomerTextBundle(db: Db, customerId: number, maxRecords = 
   }
   if (customer.notes && customer.notes.trim()) {
     texts.push({ sourceType: "note", sourceId: null, sourceAt: customer.createdAt, content: customer.notes.slice(0, maxChars) });
+  }
+  for (const m of listCustomerMaterialTexts(db, customerId)) {
+    texts.push({ sourceType: "transcript", sourceId: m.sourceId, sourceAt: m.sourceAt, content: m.content });
   }
   for (const r of db
     .select({ id: customerMaintenanceRecords.id, kind: customerMaintenanceRecords.kind, happenedAt: customerMaintenanceRecords.happenedAt, content: customerMaintenanceRecords.content })
