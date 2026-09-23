@@ -808,3 +808,94 @@ export const workbenchVersions = sqliteTable(
   },
   (t) => [index("workbench_versions_published_idx").on(t.publishedAt)],
 );
+
+// ── K62 客户全景驾驶舱：信号层三张表（0033_customer_insights.sql）──
+// 状态是推导值，不落 status 列：rejected_by 非空 = 已否决；superseded_by 非空 = 已被取代；
+// 有效 = 未软删 ∧ 未否决 ∧ 未取代 ∧ (expires_at 为空 或 > now)。
+
+// 归一主题词表（种子由抽取任务运行时从兴趣标签/产品/行业预热；live 唯一 name）。
+export const signalTopics = sqliteTable(
+  "signal_topics",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    name: text("name").notNull(),
+    enabled: integer("enabled").notNull().default(1),
+    sort: integer("sort").notNull().default(0),
+    createdAt: integer("created_at").notNull(),
+    updatedAt: integer("updated_at").notNull(),
+    createdBy: integer("created_by").references(() => users.id, { onDelete: "set null" }),
+    updatedBy: integer("updated_by").references(() => users.id, { onDelete: "set null" }),
+    deletedAt: integer("deleted_at"),
+  },
+  (t) => [
+    uniqueIndex("signal_topics_name_live_uq")
+      .on(t.name)
+      .where(sql`"deleted_at" IS NULL`),
+  ],
+);
+
+// 词表图谱：related 边（LLM 建新词自带 nearest；admin 手工关联）。
+export const signalTopicRelations = sqliteTable(
+  "signal_topic_relations",
+  {
+    topicId: integer("topic_id")
+      .notNull()
+      .references(() => signalTopics.id),
+    relatedTopicId: integer("related_topic_id")
+      .notNull()
+      .references(() => signalTopics.id),
+    source: text("source").notNull(),
+    createdAt: integer("created_at").notNull(),
+    createdBy: integer("created_by").references(() => users.id, { onDelete: "set null" }),
+  },
+  (t) => [
+    primaryKey({ columns: [t.topicId, t.relatedTopicId] }),
+    check("signal_topic_relations_source_check", sql`"source" IN ('llm','admin')`),
+    check("signal_topic_relations_no_self_check", sql`"topic_id" <> "related_topic_id"`),
+  ],
+);
+
+// 客户信号：LLM 抽取 + 人工补录的类型化事实行。
+export const customerSignals = sqliteTable(
+  "customer_signals",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    customerId: integer("customer_id")
+      .notNull()
+      .references(() => customers.id),
+    type: text("type").notNull(),
+    topicId: integer("topic_id").references(() => signalTopics.id),
+    content: text("content").notNull(),
+    sourceType: text("source_type").notNull(),
+    sourceId: integer("source_id"),
+    sourceAt: integer("source_at").notNull(),
+    mentionCount: integer("mention_count").notNull().default(1),
+    confidence: real("confidence").notNull().default(1.0),
+    supersededBy: integer("superseded_by").references((): AnySQLiteColumn => customerSignals.id),
+    rejectedBy: integer("rejected_by").references(() => users.id, { onDelete: "set null" }),
+    rejectedAt: integer("rejected_at"),
+    expiresAt: integer("expires_at"),
+    promptVersion: text("prompt_version").notNull(),
+    extractedAt: integer("extracted_at").notNull(),
+    createdAt: integer("created_at").notNull(),
+    updatedAt: integer("updated_at").notNull(),
+    createdBy: integer("created_by").references(() => users.id, { onDelete: "set null" }),
+    updatedBy: integer("updated_by").references(() => users.id, { onDelete: "set null" }),
+    deletedAt: integer("deleted_at"),
+  },
+  (t) => [
+    check(
+      "customer_signals_type_check",
+      sql`"type" IN ('growth','risk','intent','interest_hint','need','supply','lifecycle','sentiment')`,
+    ),
+    check(
+      "customer_signals_source_type_check",
+      sql`"source_type" IN ('maintenance_record','origin_story','note','transcript','manual')`,
+    ),
+    check("customer_signals_confidence_check", sql`"confidence" >= 0 AND "confidence" <= 1`),
+    index("customer_signals_customer_idx").on(t.customerId, t.type),
+    index("customer_signals_topic_idx").on(t.topicId),
+    index("customer_signals_source_idx").on(t.sourceType, t.sourceId),
+    index("customer_signals_expires_idx").on(t.expiresAt),
+  ],
+);

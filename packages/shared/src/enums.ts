@@ -160,3 +160,30 @@ export type CopyDimension = z.infer<typeof copyDimensionSchema>;
 /** 文案审计结论（K60：通过 / 注意 / 不通过） */
 export const copyAuditVerdictSchema = z.enum(["pass", "warn", "fail"]);
 export type CopyAuditVerdict = z.infer<typeof copyAuditVerdictSchema>;
+
+/** 客户信号类型（K62：LLM 从客户自由文本抽取的类型化事实，8 类） */
+export const signalTypeSchema = z.enum([
+  "growth",
+  "risk",
+  "intent",
+  "interest_hint",
+  "need",
+  "supply",
+  "lifecycle",
+  "sentiment",
+]);
+export type SignalType = z.infer<typeof signalTypeSchema>;
+
+/** 信号出处类型（K62）：manual = 人工补录，直生 active、置信度 1 */
+export const signalSourceTypeSchema = z.enum([
+  "maintenance_record",
+  "origin_story",
+  "note",
+  "transcript",
+  "manual",
+]);
+export type SignalSourceType = z.infer<typeof signalSourceTypeSchema>;
+
+/** 信号词表 related 边来源（K62：LLM 建新词自带 nearest / admin 手工关联） */
+export const signalTopicRelationSourceSchema = z.enum(["llm", "admin"]);
+export type SignalTopicRelationSource = z.infer<typeof signalTopicRelationSourceSchema>;
