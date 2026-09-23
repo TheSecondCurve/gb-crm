@@ -35,6 +35,7 @@ import { assembleDeliveries } from "../deliveries/assemble.js";
 import { listActiveCircleRowsByCustomer } from "../deliveries/repo.js";
 import { assembleMaterials } from "../materials/assemble.js";
 import { countLiveMaterialsByCustomer, listLiveMaterialsByCustomer } from "../materials/repo.js";
+import { enqueueSignalExtract } from "../insights/repo.js";
 import { assembleCustomerMaintenanceRecords } from "../customer-records/assemble.js";
 import {
   countRecordsByCustomer,
@@ -163,7 +164,7 @@ export function exportCustomers(db: Db, query: CustomerListQuery): CustomerDto[]
 }
 
 export function createCustomer(db: Db, body: CustomerWrite, ctx: AuditContext): CustomerDto {
-  return inTx(db, (tx) => {
+  const dto = inTx(db, (tx) => {
     const { socialAccounts, sourceChannelIds, tagIds, ...fields } = body;
     assertRelations(tx, { sourceChannelIds, tagIds });
     assertLiveOwner(tx, fields.ownerId, "ownerId");
@@ -173,6 +174,16 @@ export function createCustomer(db: Db, body: CustomerWrite, ctx: AuditContext): 
     replaceRelations(tx, id, { socialAccounts, sourceChannelIds, tagIds }, createAudit(ctx));
     return assembleCustomer(tx, getCustomerByIdAny(tx, id)!);
   });
+  // K62：创建即带来历/备注文本 → 抽取信号（LLM 未配置静默跳过）
+  if (hasStoryText(body.originStory) || hasStoryText(body.notes)) {
+    enqueueSignalExtract(db, dto.id, { now: ctx.now, userId: ctx.userId });
+  }
+  return dto;
+}
+
+/** 来历/备注含非空白文本（触发信号抽取的门槛） */
+function hasStoryText(value: string | null | undefined): boolean {
+  return typeof value === "string" && value.trim().length > 0;
 }
 
 /** PATCH 可写标量键（updatedAt 是 OCC 凭证；ownerId 单值走标量内核，关系键走整表替换） */
@@ -199,7 +210,7 @@ export function patchCustomer(
   patch: CustomerPatch,
   ctx: AuditContext,
 ): CustomerDto {
-  return inTx(db, (tx) => {
+  const dto = inTx(db, (tx) => {
     // 先校验（422 先于任何写入；事务回滚兜底）
     assertRelations(tx, patch);
     assertLiveOwner(tx, patch.ownerId, "ownerId");
@@ -221,6 +232,12 @@ export function patchCustomer(
     replaceRelations(tx, id, patch, createAudit(ctx));
     return assembleCustomer(tx, getCustomerByIdAny(tx, id)!);
   });
+  // K62：来历/备注被实际写入非空白文本 → 重抽信号（幂等：同源同事实跳过/取代；
+  // 仅改电话/打标签等不含这两键的 PATCH 不触发，避免无谓 LLM 调用。清空文本 v1 不触发）
+  if (hasStoryText(patch.originStory) || hasStoryText(patch.notes)) {
+    enqueueSignalExtract(db, id, { now: ctx.now, userId: ctx.userId });
+  }
+  return dto;
 }
 
 export function deleteCustomer(db: Db, id: number, ctx: AuditContext): void {
