@@ -68,6 +68,18 @@ function mockSettingsApi(me: typeof adminMe, jobRows = jobs) {
       };
     }
     if (url.startsWith("/api/v1/background-jobs")) {
+      if (url === "/api/v1/background-jobs/types") {
+        return {
+          status: 200,
+          body: { data: [
+            { type: "insights-signal-extract", label: "客户信号抽取" },
+            { type: "db-backup", label: "数据库备份" },
+          ] },
+        };
+      }
+      if (method === "POST" && url === "/api/v1/background-jobs") {
+        return { status: 201, body: { data: { ...jobRows[0]!, id: 99, type: "insights-signal-extract", typeLabel: "客户信号抽取", status: "queued" } } };
+      }
       if (url.includes("/cancel")) {
         return { status: 200, body: { data: { ...jobRows[0], status: "cancelled" } } };
       }
@@ -266,5 +278,45 @@ describe("系统设置页", () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+});
+
+describe("后台任务 · 新建任务（K62 补）", () => {
+  it("admin：新建任务弹窗选类型填 params → POST /background-jobs → toast + 弹窗关闭", async () => {
+    const calls = mockSettingsApi(adminMe);
+    renderApp("/settings?tab=jobs");
+    fireEvent.click(await screen.findByRole("button", { name: "新建任务" }));
+
+    const dialog = await screen.findByRole("dialog", { name: "新建后台任务" });
+    fireEvent.change(within(dialog).getByLabelText("任务类型"), { target: { value: "insights-signal-extract" } });
+    fireEvent.change(within(dialog).getByLabelText("任务参数 JSON"), { target: { value: '{"all": true}' } });
+    fireEvent.click(within(dialog).getByRole("button", { name: "创建任务" }));
+
+    await waitFor(() => {
+      expect(screen.getByText(/任务已创建：客户信号抽取 #99/)).toBeTruthy();
+    });
+    const created = calls.find((c) => c.method === "POST" && c.url === "/api/v1/background-jobs");
+    expect(created?.body).toBe(JSON.stringify({ type: "insights-signal-extract", params: { all: true } }));
+    expect(screen.queryByRole("dialog", { name: "新建后台任务" })).toBeNull();
+  });
+
+  it("params 非法 JSON：本地拦截不 POST", async () => {
+    const calls = mockSettingsApi(adminMe);
+    renderApp("/settings?tab=jobs");
+    fireEvent.click(await screen.findByRole("button", { name: "新建任务" }));
+    const dialog = await screen.findByRole("dialog", { name: "新建后台任务" });
+    fireEvent.change(within(dialog).getByLabelText("任务参数 JSON"), { target: { value: "{oops" } });
+    fireEvent.click(within(dialog).getByRole("button", { name: "创建任务" }));
+    await waitFor(() => {
+      expect(screen.getByText(/params 必须是合法的 JSON 对象/)).toBeTruthy();
+    });
+    expect(calls.find((c) => c.method === "POST" && c.url === "/api/v1/background-jobs")).toBeUndefined();
+  });
+
+  it("assistant：后台任务 tab 无「新建任务」入口", async () => {
+    mockSettingsApi(assistantMe);
+    renderApp("/settings?tab=jobs");
+    await screen.findByText("暂无后台任务");
+    expect(screen.queryByRole("button", { name: "新建任务" })).toBeNull();
   });
 });
