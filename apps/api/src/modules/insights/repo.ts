@@ -442,6 +442,25 @@ export function listActiveNeedSupplyRows(
   return rows.map((r) => ({ ...r.signal, nickname: r.nickname, city: r.city, topicName: r.topicName }));
 }
 
+/** 未过期 risk 信号的客户集合（撮合护栏：正在收缩的人不进名单） */
+export function listActiveRiskCustomerIds(db: Db, now: number): number[] {
+  return db
+    .selectDistinct({ customerId: customerSignals.customerId })
+    .from(customerSignals)
+    .where(and(eq(customerSignals.type, "risk"), activeSignalWhere(now)))
+    .all()
+    .map((r) => r.customerId);
+}
+
+/** 交付归属（customerId → 参与 deliveryId 集合；撮合共同交付加成用） */
+export function listDeliveryMembership(db: Db): { customerId: number; deliveryId: number }[] {
+  return db
+    .select({ customerId: deliveryCustomers.customerId, deliveryId: deliveryCustomers.deliveryId })
+    .from(deliveryCustomers)
+    .innerJoin(deliveries, and(eq(deliveries.id, deliveryCustomers.deliveryId), isNull(deliveries.deletedAt)))
+    .all();
+}
+
 /** 跨来源合并候选：同客户同 type 同 topic 的有效行 */
 export function listActiveRowsByTypeTopic(
   db: Db,

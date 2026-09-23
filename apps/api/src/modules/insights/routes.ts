@@ -22,6 +22,7 @@ import {
   intentResult,
   ladderResult,
 } from "./decisions.js";
+import { matchResult } from "./match.js";
 import {
   createManualSignalResult,
   depthResult,
@@ -95,6 +96,16 @@ export function insightsRoutes(app: FastifyInstance, opts: InsightsRoutesOptions
     { preHandler: requireCan("insights", "list") },
     async () => {
       return { data: guardResult(db, now()), meta: { calibre: insightsCalibre(), generatedAt: now() } };
+    },
+  );
+
+  // ── 三期 缘分清单（need × supply 两级召回）与词表健康度（GET /insights/topics 已有） ──
+
+  app.get(
+    "/api/v1/insights/match",
+    { preHandler: requireCan("insights", "list") },
+    async () => {
+      return { data: matchResult(db, now()), meta: { calibre: insightsCalibre(), generatedAt: now() } };
     },
   );
 

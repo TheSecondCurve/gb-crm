@@ -137,3 +137,43 @@ export const fetchGeo = (): Promise<GeoDto> => api.get<{ data: GeoDto }>("/insig
 export const fetchLadder = (): Promise<LadderDto> => api.get<{ data: LadderDto }>("/insights/ladder").then((r) => r!.data);
 export const fetchIntent = (): Promise<IntentDto> => api.get<{ data: IntentDto }>("/insights/intent").then((r) => r!.data);
 export const fetchGuard = (): Promise<GuardDto> => api.get<{ data: GuardDto }>("/insights/guard").then((r) => r!.data);
+
+// ── 三期 缘分清单与词表 ──
+
+export interface MatchDto {
+  windowDays: number;
+  total: number;
+  conclusion: string;
+  topics: { topic: string; needCount: number; supplyCount: number; cityCount: number }[];
+  pairs: {
+    needCustomerId: number;
+    needNickname: string;
+    supplyCustomerId: number;
+    supplyNickname: string;
+    topic: string;
+    viaRelated: boolean;
+    score: number;
+    sameCity: boolean;
+    sharedDeliveries: number;
+    needEvidence: string;
+    supplyEvidence: string;
+  }[];
+}
+
+export interface TopicHealthRow {
+  id: number;
+  name: string;
+  enabled: number;
+  signalCount: number;
+  needCount: number;
+  supplyCount: number;
+  relatedNames: string[];
+}
+
+export const fetchMatch = (): Promise<MatchDto> => api.get<{ data: MatchDto }>("/insights/match").then((r) => r!.data);
+export const fetchTopics = (page = 1): Promise<{ data: TopicHealthRow[]; total: number }> =>
+  api
+    .get<{ data: TopicHealthRow[]; meta: { total: number } }>(`/insights/topics${buildQuery({ page, pageSize: 100 })}`)
+    .then((r) => ({ data: r!.data, total: r!.meta.total }));
+export const mergeTopic = (id: number, intoId: number): Promise<unknown> =>
+  api.post(`/insights/topics/${id}/merge`, { intoId });

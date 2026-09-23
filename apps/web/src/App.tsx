@@ -32,6 +32,8 @@ import { InsightsGeoPage } from "./pages/InsightsGeoPage";
 import { InsightsLadderPage } from "./pages/InsightsLadderPage";
 import { InsightsIntentPage } from "./pages/InsightsIntentPage";
 import { InsightsGuardPage } from "./pages/InsightsGuardPage";
+import { InsightsMatchPage } from "./pages/InsightsMatchPage";
+import { InsightsTopicsPage } from "./pages/InsightsTopicsPage";
 
 /** 未登录访问受保护页 → /login；等待 /auth/me 时显示占位 */
 function RequireAuth() {
@@ -260,6 +262,22 @@ export default function App() {
           element={
             <PageGuard pageKey="insights-guard">
               <InsightsGuardPage />
+            </PageGuard>
+          }
+        />
+        <Route
+          path="/insights/match"
+          element={
+            <PageGuard pageKey="insights-match">
+              <InsightsMatchPage />
+            </PageGuard>
+          }
+        />
+        <Route
+          path="/insights/topics"
+          element={
+            <PageGuard pageKey="insights-topics">
+              <InsightsTopicsPage />
             </PageGuard>
           }
         />
