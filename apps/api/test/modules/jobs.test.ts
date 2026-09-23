@@ -104,6 +104,31 @@ describe("创建任务", () => {
     expect((await app.inject({ method: "POST", url: "/api/v1/background-jobs", payload: { type: "customer-tags-generate-all" } })).statusCode).toBe(401);
   });
 
+  it("GET /background-jobs/types：返回注册表全量（含客户信号抽取）；静态路由优先于 :id；未登录 401", async () => {
+    const admin = await loginAsRole("admin");
+    const res = await app.inject({ method: "GET", url: "/api/v1/background-jobs/types", headers: { cookie: admin } });
+    expect(res.statusCode).toBe(200);
+    const types = res.json().data as { type: string; label: string }[];
+    expect(types.some((t) => t.type === "insights-signal-extract" && t.label === "客户信号抽取")).toBe(true);
+    expect(types.some((t) => t.type === "db-backup")).toBe(true);
+    expect((await app.inject({ method: "GET", url: "/api/v1/background-jobs/types" })).statusCode).toBe(401);
+  });
+
+  it("创建「客户信号抽取」任务：LLM 未配置 → 422；配置后 → 201 入队", async () => {
+    const admin = await loginAsRole("admin");
+    expect((await post("/api/v1/background-jobs", admin, { type: "insights-signal-extract", params: { all: true } })).statusCode).toBe(422);
+    seedAiConfigRow();
+    const res = await post("/api/v1/background-jobs", admin, { type: "insights-signal-extract", params: { all: true } });
+    expect(res.statusCode).toBe(201);
+    const row = tmp.sqlite
+      .prepare("SELECT type, params FROM background_jobs ORDER BY id DESC LIMIT 1")
+      .get() as { type: string; params: string };
+    expect(row.type).toBe("insights-signal-extract");
+    expect(JSON.parse(row.params)).toEqual({ all: true });
+    // 非法 params（strict schema 拒未知键）→ 422
+    expect((await post("/api/v1/background-jobs", admin, { type: "insights-signal-extract", params: { nope: 1 } })).statusCode).toBe(422);
+  });
+
   it("LLM 未配置 / 词表为空 → 创建即 422（预检）", async () => {
     const admin = await loginAsRole("admin");
     const unconfigured = await post("/api/v1/background-jobs", admin, { type: "customer-tags-generate-all", params: {} });

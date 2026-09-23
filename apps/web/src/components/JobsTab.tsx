@@ -1,10 +1,11 @@
-// 后台任务面板（K51，系统设置页 tab）：任务列表（状态/进度/触发/创建人）+ 详情 + 取消。
+// 后台任务面板（K51，系统设置页 tab）：任务列表（状态/进度/触发/创建人）+ 详情 + 取消 + 新建任务（admin/operator）。
 // 有 queued/running 任务时 3s 轮询刷新，全部结束后停止轮询。
 import { useState } from "react";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { ListEnvelope } from "@gb-crm/shared";
 
 import { api, ApiError } from "../api/client";
+import { useAuth } from "../auth/AuthProvider";
 import type { BackgroundJobDto, JobFailureDto } from "../api/types";
 import { badge, formatDateTime, type BadgeTone } from "../columns/common";
 import { ConfirmDialog } from "./ConfirmDialog";
@@ -45,10 +46,12 @@ function failuresOf(job: BackgroundJobDto): JobFailureDto[] {
 
 export function JobsTab() {
   const showToast = useToast();
+  const { me } = useAuth();
   const queryClient = useQueryClient();
   const [statusFilter, setStatusFilter] = useState("");
   const [detail, setDetail] = useState<BackgroundJobDto | null>(null);
   const [cancelling, setCancelling] = useState<BackgroundJobDto | null>(null);
+  const [creating, setCreating] = useState(false);
   const [busy, setBusy] = useState(false);
 
   const { data } = useQuery({
@@ -93,18 +96,25 @@ export function JobsTab() {
     <div className="card">
       <div className="card-head">
         <h2>后台任务</h2>
-        <select
-          aria-label="任务状态筛选"
-          value={statusFilter}
-          onChange={(e) => setStatusFilter(e.target.value)}
-        >
-          <option value="">全部状态</option>
-          {Object.entries(STATUS_LABELS).map(([value, label]) => (
-            <option key={value} value={value}>
-              {label}
-            </option>
-          ))}
-        </select>
+        <div style={{ display: "inline-flex", gap: 10, alignItems: "center" }}>
+          {me?.systemRole !== "assistant" && (
+            <button type="button" className="ghost-btn" onClick={() => setCreating(true)}>
+              新建任务
+            </button>
+          )}
+          <select
+            aria-label="任务状态筛选"
+            value={statusFilter}
+            onChange={(e) => setStatusFilter(e.target.value)}
+          >
+            <option value="">全部状态</option>
+            {Object.entries(STATUS_LABELS).map(([value, label]) => (
+              <option key={value} value={value}>
+                {label}
+              </option>
+            ))}
+          </select>
+        </div>
       </div>
       <div className="card-body-flush">
         <table className="data-table">
@@ -164,6 +174,7 @@ export function JobsTab() {
       </div>
 
       {detail && <JobDetailModal job={detail} busy={busy} onClose={() => setDetail(null)} onCancel={() => setCancelling(detail)} />}
+      {creating && <CreateJobModal onClose={() => setCreating(false)} />}
       {cancelling && (
         <ConfirmDialog
           title="取消任务"
@@ -175,6 +186,95 @@ export function JobsTab() {
         />
       )}
     </div>
+  );
+}
+
+/** 新建任务：类型下拉（JOB_TYPES 注册表）+ params JSON；服务端按类型 schema 校验（非法 422 中文明细） */
+function CreateJobModal({ onClose }: { onClose: () => void }) {
+  const showToast = useToast();
+  const queryClient = useQueryClient();
+  const { data: types } = useQuery({
+    queryKey: ["jobs", "types"],
+    queryFn: async () =>
+      (await api.get<{ data: { type: string; label: string }[] }>("/background-jobs/types"))?.data ?? [],
+    staleTime: 5 * 60_000,
+  });
+  const [type, setType] = useState("");
+  const [paramsText, setParamsText] = useState("{}");
+  const [busy, setBusy] = useState(false);
+
+  const create = useMutation({
+    mutationFn: async (body: { type: string; params: Record<string, unknown> }) => {
+      const res = await api.post<{ data: BackgroundJobDto }>("/background-jobs", body);
+      return res?.data;
+    },
+    onSuccess: (job) => {
+      showToast(`任务已创建：${job?.typeLabel ?? job?.type ?? ""} #${job?.id ?? ""}，排队执行中`);
+      onClose();
+      void queryClient.invalidateQueries({ queryKey: ["jobs"] });
+    },
+    onError: (err) => showToast(err instanceof ApiError ? err.message : "创建失败，请稍后重试"),
+  });
+
+  const submit = () => {
+    const selected = type || types?.[0]?.type || "";
+    if (!selected) {
+      showToast("请选择任务类型");
+      return;
+    }
+    let params: Record<string, unknown>;
+    try {
+      const parsed: unknown = JSON.parse(paramsText.trim() || "{}");
+      if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
+        throw new Error("not object");
+      }
+      params = parsed as Record<string, unknown>;
+    } catch {
+      showToast("params 必须是合法的 JSON 对象，如 {\"all\": true}");
+      return;
+    }
+    setBusy(true);
+    create.mutate({ type: selected, params }, { onSettled: () => setBusy(false) });
+  };
+
+  return (
+    <Modal title="新建后台任务" onClose={onClose}>
+      <div className="form-grid">
+        <label className="field">
+          任务类型
+          <select value={type} onChange={(e) => setType(e.target.value)} aria-label="任务类型">
+            <option value="">选择任务类型…</option>
+            {(types ?? []).map((t) => (
+              <option key={t.type} value={t.type}>
+                {t.label}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="field">
+          参数（JSON 对象，按任务类型校验）
+          <textarea
+            aria-label="任务参数 JSON"
+            rows={4}
+            value={paramsText}
+            onChange={(e) => setParamsText(e.target.value)}
+            placeholder='例如客户信号抽取全量回填填 {"all": true}；留空 {} 为默认模式'
+            spellCheck={false}
+          />
+        </label>
+        <p style={{ margin: 0, fontSize: 12, color: "var(--text-3)" }}>
+          提示：「客户信号抽取」填 {"{"}"all": true{"}"} 全量回填；留空只扫有新记录的客户（夜间兜底同此模式）。
+        </p>
+      </div>
+      <div className="modal-actions">
+        <button type="button" className="ghost-btn" onClick={onClose} disabled={busy}>
+          取消
+        </button>
+        <button type="button" className="btn-primary" onClick={submit} disabled={busy || create.isPending}>
+          创建任务
+        </button>
+      </div>
+    </Modal>
   );
 }
 

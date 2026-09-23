@@ -8,6 +8,7 @@ import type { Db } from "../../db/client.js";
 import { listMeta } from "../../lib/pagination.js";
 import { requireCan } from "../../plugins/rbac.js";
 import { cancelJobResult, createJob, getJobResult, listJobsResult, type JobAuthContext } from "./service.js";
+import { listJobScheduleTypes } from "./schedule-service.js";
 
 export interface JobsRoutesOptions {
   db: Db;
@@ -38,6 +39,11 @@ export function jobsRoutes(app: FastifyInstance, opts: JobsRoutesOptions): void 
     const query = jobListQuerySchema.parse(req.query ?? {});
     const { data, total } = listJobsResult(db, query);
     return { data, meta: listMeta(query.page, query.pageSize, total) };
+  });
+
+  // 可创建的任务类型（后台任务 tab「新建任务」选型；与定时任务共用 JOB_TYPES 注册表）
+  app.get("/api/v1/background-jobs/types", { preHandler: requireCan("jobs", "list") }, async () => {
+    return { data: listJobScheduleTypes() };
   });
 
   app.get(
