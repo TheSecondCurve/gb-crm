@@ -27,6 +27,13 @@ import { DeliveryTypesPage } from "./pages/DeliveryTypesPage";
 import { MaterialsPage } from "./pages/MaterialsPage";
 import { MaterialEditPage } from "./pages/MaterialEditPage";
 import { CopywritingPage } from "./pages/CopywritingPage";
+import { InsightsPivotPage } from "./pages/InsightsPivotPage";
+import { InsightsGeoPage } from "./pages/InsightsGeoPage";
+import { InsightsLadderPage } from "./pages/InsightsLadderPage";
+import { InsightsIntentPage } from "./pages/InsightsIntentPage";
+import { InsightsGuardPage } from "./pages/InsightsGuardPage";
+import { InsightsMatchPage } from "./pages/InsightsMatchPage";
+import { InsightsTopicsPage } from "./pages/InsightsTopicsPage";
 
 /** 未登录访问受保护页 → /login；等待 /auth/me 时显示占位 */
 function RequireAuth() {
@@ -215,6 +222,62 @@ export default function App() {
           element={
             <PageGuard pageKey="copywriting">
               <CopywritingPage />
+            </PageGuard>
+          }
+        />
+        <Route
+          path="/insights"
+          element={
+            <PageGuard pageKey="insights">
+              <InsightsPivotPage />
+            </PageGuard>
+          }
+        />
+        <Route
+          path="/insights/geo"
+          element={
+            <PageGuard pageKey="insights-geo">
+              <InsightsGeoPage />
+            </PageGuard>
+          }
+        />
+        <Route
+          path="/insights/ladder"
+          element={
+            <PageGuard pageKey="insights-ladder">
+              <InsightsLadderPage />
+            </PageGuard>
+          }
+        />
+        <Route
+          path="/insights/intent"
+          element={
+            <PageGuard pageKey="insights-intent">
+              <InsightsIntentPage />
+            </PageGuard>
+          }
+        />
+        <Route
+          path="/insights/guard"
+          element={
+            <PageGuard pageKey="insights-guard">
+              <InsightsGuardPage />
+            </PageGuard>
+          }
+        />
+        <Route
+          path="/insights/match"
+          element={
+            <PageGuard pageKey="insights-match">
+              <InsightsMatchPage />
+            </PageGuard>
+          }
+        />
+        <Route
+          path="/insights/topics"
+          element={
+            <PageGuard pageKey="insights-topics">
+              <InsightsTopicsPage />
             </PageGuard>
           }
         />

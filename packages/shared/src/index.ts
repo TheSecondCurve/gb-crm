@@ -19,3 +19,5 @@ export * from "./schemas/followUp.js";
 export * from "./schemas/system.js";
 export * from "./schemas/job.js";
 export * from "./schemas/copywriting.js";
+export * from "./insights.js";
+export * from "./schemas/insights.js";

@@ -30,6 +30,7 @@ import {
   occUpdateRecord,
   softDeleteRecord,
 } from "./repo.js";
+import { enqueueSignalExtract } from "../insights/repo.js";
 
 // better-sqlite3 事务是同步的；tx 与 Db 的查询接口同构，收窄类型以复用 repo 函数
 function inTx<T>(db: Db, fn: (tx: Db) => T): T {
@@ -73,7 +74,7 @@ export function createRecord(
   body: MaintenanceRecordWrite,
   ctx: AuditContext,
 ): CustomerMaintenanceRecordDto {
-  return inTx(db, (tx) => {
+  const dto = inTx(db, (tx) => {
     assertLiveCustomer(tx, customerId);
     const id = insertRecord(tx, {
       customerId,
@@ -88,6 +89,9 @@ export function createRecord(
     }
     return assembleCustomerMaintenanceRecord(tx, getRecordByIdAny(tx, id)!);
   });
+  // K62：新文本落库 → 异步抽取信号（LLM 未配置静默跳过，绝不影响记录落库）
+  enqueueSignalExtract(db, customerId, { now: ctx.now, userId: ctx.userId });
+  return dto;
 }
 
 /** PATCH 可写标量键（updatedAt 是 OCC 凭证） */
@@ -100,7 +104,7 @@ export function patchRecord(
   patch: MaintenanceRecordPatch,
   ctx: AuditContext,
 ): CustomerMaintenanceRecordDto {
-  return inTx(db, (tx) => {
+  const dto = inTx(db, (tx) => {
     assertLiveCustomer(tx, customerId);
     assertRecordBelongsTo(tx, customerId, id);
 
@@ -115,6 +119,9 @@ export function patchRecord(
 
     return assembleCustomerMaintenanceRecord(tx, getRecordByIdAny(tx, id)!);
   });
+  // K62：记录编辑 → 重抽该客户信号（同源取代语义保证旧产出被替换）
+  enqueueSignalExtract(db, customerId, { now: ctx.now, userId: ctx.userId });
+  return dto;
 }
 
 export function deleteRecord(db: Db, customerId: number, id: number, ctx: AuditContext): void {
@@ -127,4 +134,6 @@ export function deleteRecord(db: Db, customerId: number, id: number, ctx: AuditC
     });
     if (changes === 0) throw notFound("维护记录不存在");
   });
+  // K62：记录删除 → 重抽清理来自该记录的旧信号
+  enqueueSignalExtract(db, customerId, { now: ctx.now, userId: ctx.userId });
 }

@@ -1,11 +1,18 @@
 // K51 任务类型注册表：type code → 中文名 + 创建所需业务权限 + params schema + 预检 + 执行器。
 // 新增任务类型只需在此注册（未来定时任务也是同一套 type，只是 trigger='scheduled'）。
-import { bulkTagJobParamsSchema, type Action, type Resource } from "@gb-crm/shared";
+import {
+  bulkTagJobParamsSchema,
+  signalExtractJobParamsSchema,
+  type Action,
+  type Resource,
+} from "@gb-crm/shared";
 import { z } from "zod";
 
 import type { Db } from "../../db/client.js";
 import { unprocessable } from "../../plugins/error-handler.js";
 import { assertAiReady, runBulkTaggingJob } from "../customers/service.js";
+import { runSignalExtractJob } from "../insights/extract.js";
+import { isLlmReady } from "../insights/repo.js";
 import { runDbBackup, type DbBackupJobResult, uploadBackupToS3 } from "./backup.js";export interface JobProgress {
   processed: number;
   total: number;
@@ -82,6 +89,35 @@ export const JOB_TYPES: Record<string, JobTypeDef> = {
         return;
       }
       // 全成功=succeeded；部分失败=partial；全失败=failed
+      const status = result.failed === 0 ? "succeeded" : result.succeeded > 0 ? "partial" : "failed";
+      ctx.finish(status, { result });
+    },
+  },
+  // K62 客户信号抽取：打包客户文本 bundle → LLM → customer_signals（幂等 ingest）。
+  // params：customerId 单客户重抽 / all=true 全量回填 / 缺省 = 扫尾（有记录比最近抽取新的客户）。
+  // 夜间扫尾建议在「定时任务」配 cron 调本类型（params 留空），兜住 agent SQL 直写记录的路径。
+  "insights-signal-extract": {
+    label: "客户信号抽取",
+    requiredPermission: { resource: "insights", action: "update" },
+    paramsSchema: signalExtractJobParamsSchema as unknown as z.ZodType<Record<string, unknown>, z.ZodTypeDef, unknown>,
+    validate: (db) => {
+      if (!isLlmReady(db)) {
+        throw unprocessable("请先在「系统设置」配置 LLM 服务", [
+          { path: "llm", message: "缺少 baseUrl/apiKey/model" },
+        ]);
+      }
+    },
+    run: async (ctx, params) => {
+      const result = await runSignalExtractJob(
+        ctx.db,
+        params as { customerId?: number; all?: boolean },
+        ctx.audit,
+        { fetchFn: ctx.fetchFn, isCancelled: ctx.isCancelled, onProgress: ctx.reportProgress },
+      );
+      if (result.cancelled) {
+        ctx.finish("cancelled", { result });
+        return;
+      }
       const status = result.failed === 0 ? "succeeded" : result.succeeded > 0 ? "partial" : "failed";
       ctx.finish(status, { result });
     },
