@@ -57,3 +57,83 @@ export function fetchPivot(params: { x: PivotAxisKey; y: PivotAxisKey; window: n
 export function fetchDepth(customerId: number): Promise<DepthDto> {
   return api.get<{ data: DepthDto }>(`/insights/customers/${customerId}/depth`).then((r) => r!.data);
 }
+
+// ── 二期决策台 DTO ──
+
+export interface GeoDto {
+  windowDays: number;
+  total: number;
+  conclusion: string;
+  cities: {
+    city: string;
+    customers: number;
+    warm: number;
+    hot: number;
+    paidTotalCents: number;
+    activeNeeds: number;
+    renewals: number;
+    eventAttendance: number;
+    customerIds: number[];
+    sample: string[];
+  }[];
+}
+
+export interface LadderDto {
+  windowDays: number;
+  conclusion: string;
+  rungs: {
+    key: string;
+    label: string;
+    count: number;
+    sample: { id: number; nickname: string; temperature: number }[];
+    customerIds: number[];
+    upgradeReadyCount: number;
+    upgradeReady: { customerId: number; nickname: string; nextLabel: string; evidence: string; topic: string | null }[];
+  }[];
+  staleTagCount: number;
+  staleTagCandidates: { customerId: number; nickname: string; stageTags: string[] }[];
+}
+
+export interface IntentDto {
+  windowDays: number;
+  total: number;
+  conclusion: string;
+  crossSellCount: number;
+  topics: { topic: string; count: number; cityCount: number }[];
+  rows: {
+    customerId: number;
+    nickname: string;
+    type: string;
+    typeLabel: string;
+    topic: string | null;
+    content: string;
+    sourceAt: number;
+    temperature: number;
+    city: string | null;
+    crossSell: boolean;
+    mentionCount: number;
+  }[];
+}
+
+export interface GuardDto {
+  windowDays: number;
+  total: number;
+  highCount: number;
+  sleepingWhaleValueCents: number;
+  conclusion: string;
+  items: {
+    kind: string;
+    kindLabel: string;
+    urgency: "high" | "mid";
+    customerId: number;
+    nickname: string;
+    reason: string;
+    action: string;
+    at: number;
+  }[];
+}
+
+export const fetchGeo = (): Promise<GeoDto> => api.get<{ data: GeoDto }>("/insights/geo").then((r) => r!.data);
+export const fetchLadder = (): Promise<LadderDto> => api.get<{ data: LadderDto }>("/insights/ladder").then((r) => r!.data);
+export const fetchIntent = (): Promise<IntentDto> => api.get<{ data: IntentDto }>("/insights/intent").then((r) => r!.data);
+export const fetchGuard = (): Promise<GuardDto> => api.get<{ data: GuardDto }>("/insights/guard").then((r) => r!.data);

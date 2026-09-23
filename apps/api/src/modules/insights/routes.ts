@@ -17,6 +17,12 @@ import type { Db } from "../../db/client.js";
 import { listMeta } from "../../lib/pagination.js";
 import { requireCan } from "../../plugins/rbac.js";
 import {
+  geoResult,
+  guardResult,
+  intentResult,
+  ladderResult,
+} from "./decisions.js";
+import {
   createManualSignalResult,
   depthResult,
   listSignalsResult,
@@ -55,6 +61,40 @@ export function insightsRoutes(app: FastifyInstance, opts: InsightsRoutesOptions
       const { id } = insightDepthParamsSchema.parse(req.params);
       const data = depthResult(db, id, now());
       return { data, meta: { calibre: insightsCalibre(), generatedAt: now() } };
+    },
+  );
+
+  // ── 二期决策台（K62）：全部纯查询视图，消费一期事实与信号 ──
+
+  app.get(
+    "/api/v1/insights/geo",
+    { preHandler: requireCan("insights", "list") },
+    async () => {
+      return { data: geoResult(db, now()), meta: { calibre: insightsCalibre(), generatedAt: now() } };
+    },
+  );
+
+  app.get(
+    "/api/v1/insights/ladder",
+    { preHandler: requireCan("insights", "list") },
+    async () => {
+      return { data: ladderResult(db, now()), meta: { calibre: insightsCalibre(), generatedAt: now() } };
+    },
+  );
+
+  app.get(
+    "/api/v1/insights/intent",
+    { preHandler: requireCan("insights", "list") },
+    async () => {
+      return { data: intentResult(db, now()), meta: { calibre: insightsCalibre(), generatedAt: now() } };
+    },
+  );
+
+  app.get(
+    "/api/v1/insights/guard",
+    { preHandler: requireCan("insights", "list") },
+    async () => {
+      return { data: guardResult(db, now()), meta: { calibre: insightsCalibre(), generatedAt: now() } };
     },
   );
 

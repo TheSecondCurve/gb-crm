@@ -55,6 +55,10 @@ export const PAGE_REGISTRY: readonly PageDef[] = [
   { key: "copywriting", path: "/copywriting", label: "文案工作台", group: "私域运营", order: 0, menu: true, required: { resource: "copywriting", action: "list" } },
   // ── 客户洞察（K62）──
   { key: "insights", path: "/insights", label: "全景透视台", group: "客户洞察", order: 0, menu: true, required: { resource: "insights", action: "list" } },
+  { key: "insights-geo", path: "/insights/geo", label: "选址台", group: "客户洞察", order: 1, menu: true, required: { resource: "insights", action: "list" } },
+  { key: "insights-ladder", path: "/insights/ladder", label: "阶梯台", group: "客户洞察", order: 2, menu: true, required: { resource: "insights", action: "list" } },
+  { key: "insights-intent", path: "/insights/intent", label: "意图台", group: "客户洞察", order: 3, menu: true, required: { resource: "insights", action: "list" } },
+  { key: "insights-guard", path: "/insights/guard", label: "守护台", group: "客户洞察", order: 4, menu: true, required: { resource: "insights", action: "list" } },
   // ── 系统 ──
   { key: "users", path: "/users", label: "团队成员", group: "系统", order: 0, menu: true, required: { resource: "users", action: "list" } },
   { key: "settings", path: "/settings", label: "系统设置", group: "系统", order: 1, menu: true, required: { resource: "jobs", action: "list" } },

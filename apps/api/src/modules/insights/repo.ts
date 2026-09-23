@@ -314,6 +314,134 @@ export function listLiveRecordIdsByCustomer(db: Db, customerId: number): Set<num
   return new Set(rows.map((r) => r.id));
 }
 
+// ---- 二期决策台查询 ----
+
+/** 每客户最近触点（live 记录 max happened_at，任意 kind） */
+export function listLastTouchMap(db: Db): Map<number, number> {
+  const rows = db
+    .select({
+      customerId: customerMaintenanceRecords.customerId,
+      lastAt: sql<number>`MAX(${customerMaintenanceRecords.happenedAt})`,
+    })
+    .from(customerMaintenanceRecords)
+    .where(isNull(customerMaintenanceRecords.deletedAt))
+    .groupBy(customerMaintenanceRecords.customerId)
+    .all();
+  return new Map(rows.map((r) => [r.customerId, r.lastAt]));
+}
+
+/** 活跃意向/需求信号（带客户昵称），守护台/意图台共用 */
+export function listActiveIntentRows(
+  db: Db,
+  now: number,
+): (CustomerSignalRow & { nickname: string; topicName: string | null })[] {
+  const rows = db
+    .select({ signal: customerSignals, nickname: customers.nickname, topicName: signalTopics.name })
+    .from(customerSignals)
+    .innerJoin(customers, and(eq(customers.id, customerSignals.customerId), isNull(customers.deletedAt)))
+    .leftJoin(signalTopics, eq(signalTopics.id, customerSignals.topicId))
+    .where(and(inArray(customerSignals.type, ["intent", "need"]), activeSignalWhere(now)))
+    .all();
+  return rows.map((r) => ({ ...r.signal, nickname: r.nickname, topicName: r.topicName }));
+}
+
+/** 刚过期的意向/需求信号（expires_at 在 (now-withinDays, now]，未否决未取代）——断线哨兵 */
+export function listRecentlyExpiredIntentRows(
+  db: Db,
+  now: number,
+  withinDays: number,
+): (CustomerSignalRow & { nickname: string; topicName: string | null })[] {
+  const rows = db
+    .select({ signal: customerSignals, nickname: customers.nickname, topicName: signalTopics.name })
+    .from(customerSignals)
+    .innerJoin(customers, and(eq(customers.id, customerSignals.customerId), isNull(customers.deletedAt)))
+    .leftJoin(signalTopics, eq(signalTopics.id, customerSignals.topicId))
+    .where(
+      and(
+        inArray(customerSignals.type, ["intent", "need"]),
+        isNull(customerSignals.deletedAt),
+        isNull(customerSignals.rejectedBy),
+        isNull(customerSignals.supersededBy),
+        sql`${customerSignals.expiresAt} IS NOT NULL AND ${customerSignals.expiresAt} <= ${now} AND ${customerSignals.expiresAt} > ${now - withinDays * 86400000}`,
+      ),
+    )
+    .all();
+  return rows.map((r) => ({ ...r.signal, nickname: r.nickname, topicName: r.topicName }));
+}
+
+/** 跟进类事件（follow_up/lead 的 happened_at）——断线判定用 */
+export function listFollowLikeEvents(db: Db): { customerId: number; at: number }[] {
+  return db
+    .select({ customerId: customerMaintenanceRecords.customerId, at: customerMaintenanceRecords.happenedAt })
+    .from(customerMaintenanceRecords)
+    .where(
+      and(
+        inArray(customerMaintenanceRecords.kind, ["follow_up", "lead"]),
+        isNull(customerMaintenanceRecords.deletedAt),
+      ),
+    )
+    .all();
+}
+
+/** 圈子/订阅类交付 30 天内到期（续费窗口）：交付名 + 客户 */
+export function listUpcomingCircleEnds(
+  db: Db,
+  now: number,
+  withinDays: number,
+): { customerId: number; nickname: string; deliveryId: number; deliveryName: string; endsAt: number }[] {
+  const rows = db
+    .select({
+      customerId: deliveryCustomers.customerId,
+      nickname: customers.nickname,
+      deliveryId: deliveries.id,
+      deliveryName: deliveries.name,
+      typeName: deliveryTypes.name,
+      endsAt: deliveries.endsAt,
+    })
+    .from(deliveryCustomers)
+    .innerJoin(
+      deliveries,
+      and(
+        eq(deliveries.id, deliveryCustomers.deliveryId),
+        isNull(deliveries.deletedAt),
+        sql`${deliveries.endsAt} IS NOT NULL AND ${deliveries.endsAt} > ${now} AND ${deliveries.endsAt} <= ${now + withinDays * 86400000}`,
+      ),
+    )
+    .innerJoin(
+      deliveryTypes,
+      and(eq(deliveryTypes.id, deliveries.deliveryTypeId), isNull(deliveryTypes.deletedAt), eq(deliveryTypes.kind, "circle")),
+    )
+    .innerJoin(customers, and(eq(customers.id, deliveryCustomers.customerId), isNull(customers.deletedAt)))
+    .all();
+  return rows.map((r) => ({
+    customerId: r.customerId,
+    nickname: r.nickname,
+    deliveryId: r.deliveryId,
+    deliveryName: r.deliveryName ?? r.typeName,
+    endsAt: r.endsAt as number,
+  }));
+}
+
+/** 活跃 need/supply 信号（撮合引擎与意图台 topic 聚合用） */
+export function listActiveNeedSupplyRows(
+  db: Db,
+  now: number,
+): (CustomerSignalRow & { nickname: string; city: string | null; topicName: string | null })[] {
+  const rows = db
+    .select({
+      signal: customerSignals,
+      nickname: customers.nickname,
+      city: customers.city,
+      topicName: signalTopics.name,
+    })
+    .from(customerSignals)
+    .innerJoin(customers, and(eq(customers.id, customerSignals.customerId), isNull(customers.deletedAt)))
+    .leftJoin(signalTopics, eq(signalTopics.id, customerSignals.topicId))
+    .where(and(inArray(customerSignals.type, ["need", "supply"]), activeSignalWhere(now)))
+    .all();
+  return rows.map((r) => ({ ...r.signal, nickname: r.nickname, city: r.city, topicName: r.topicName }));
+}
+
 /** 跨来源合并候选：同客户同 type 同 topic 的有效行 */
 export function listActiveRowsByTypeTopic(
   db: Db,

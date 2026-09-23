@@ -34,8 +34,8 @@ export interface AuditContext {
 
 // ── 透视台 ──
 
-/** 客户透视事实（内存装配，400 客户量级一次拉取） */
-interface PivotFacts {
+/** 客户透视事实（内存装配，400 客户量级一次拉取；决策台复用） */
+export interface PivotFacts {
   id: number;
   nickname: string;
   city: string | null;
@@ -51,7 +51,7 @@ interface PivotFacts {
   signalTypes: Set<string>;
 }
 
-function assemblePivotFacts(db: Db, windowDays: number, now: number): Map<number, PivotFacts> {
+export function assemblePivotFacts(db: Db, windowDays: number, now: number): Map<number, PivotFacts> {
   const facts = new Map<number, PivotFacts>();
   for (const c of repo.listPivotCustomers(db)) {
     facts.set(c.id, {
