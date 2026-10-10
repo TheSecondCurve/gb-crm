@@ -15,6 +15,7 @@ import { RolesTab } from "../components/RolesTab";
 import { SchedulesTab } from "../components/SchedulesTab";
 import { MaterialsStorageTab } from "../components/MaterialsStorageTab";
 import { StorageTab } from "../components/StorageTab";
+import { AssetsLlmTab } from "../components/AssetsLlmTab";
 import { WorkbenchStorageTab } from "../components/WorkbenchStorageTab";
 import { useToast } from "../components/Toast";
 
@@ -35,6 +36,7 @@ export function SettingsPage() {
         "storage",
         "materials-storage",
         "workbench-storage",
+        "assets-llm",
         "jobs",
         ...(canSchedules ? ["schedules"] : []),
       ]
@@ -115,6 +117,9 @@ export function SettingsPage() {
             <button type="button" role="tab" aria-selected={tab === "workbench-storage"} onClick={() => setSearchParams({ tab: "workbench-storage" })}>
               工作台分发
             </button>
+            <button type="button" role="tab" aria-selected={tab === "assets-llm"} onClick={() => setSearchParams({ tab: "assets-llm" })}>
+              素材识别
+            </button>
           </>
         )}
         <button type="button" role="tab" aria-selected={tab === "jobs"} onClick={() => setSearchParams({ tab: "jobs" })}>
@@ -139,6 +144,8 @@ export function SettingsPage() {
         <MaterialsStorageTab />
       ) : tab === "workbench-storage" ? (
         <WorkbenchStorageTab />
+      ) : tab === "assets-llm" ? (
+        <AssetsLlmTab />
       ) : (
         <div className="settings-section">
           <div className="card">

@@ -57,6 +57,7 @@ describe("migration", () => {
       "delivery_tasks",
       "delivery_types",
       "job_schedules",
+      "material_folders",
       "payout_batch_item_shares",
       "payout_batch_items",
       "payout_batches",

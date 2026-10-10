@@ -393,6 +393,15 @@ export interface MaterialDto {
   contentType: string | null;
   fileSize: number | null;
   isImage: boolean;
+  /** K63 素材库（可选字段：旧 mock/测试数据可缺席） */
+  description?: string | null;
+  folderId?: number | null;
+  folder?: { id: number; name: string; path: string } | null;
+  imageWidth?: number | null;
+  imageHeight?: number | null;
+  checksum?: string | null;
+  aiStatus?: string | null;
+  enrichedAt?: number | null;
   deliveryId: number | null;
   delivery: MaterialDeliveryRefDto | null;
   customers: { id: number; nickname: string }[];
@@ -407,6 +416,30 @@ export interface MaterialDto {
 /** K54 交付资料详情 = 列表版 + 完整 content（GET /materials/:id） */
 export interface MaterialDetailDto extends MaterialDto {
   content: string | null;
+}
+
+/** K63 素材文件夹（GET /material-folders；path 根到本级） */
+export interface MaterialFolderDto {
+  id: number;
+  name: string;
+  parentId: number | null;
+  path: string;
+  /** 直接挂的 live 资料数（不含子文件夹） */
+  materialCount: number;
+  createdAt: number;
+  updatedAt: number;
+}
+
+/** K63 素材识别 LLM 配置（GET /system/assets-llm-config；掩码形态） */
+export interface AssetsLlmDto {
+  provider: string | null;
+  baseUrl: string | null;
+  model: string | null;
+  apiKeySet: boolean;
+  apiKeyMasked: string | null;
+  dedicatedReady: boolean;
+  updatedAt: number | null;
+  updatedBy: number | null;
 }
 
 export interface ChannelDto {

@@ -1,6 +1,6 @@
 ---
 name: gb-crm
-version: 0.15.0
+version: 0.16.0
 description: >
   女商 私域运营管理端（gb-crm）本机 HTTP 客户端。用 ~/.gb-crm/credentials.json 的 PAT
   通过单一 SQL 端点查询或维护客户、渠道、产品、团队成员、成交记录、交付管理与资料。
@@ -8,8 +8,9 @@ description: >
   资料/维护记录）、客户跟进、新增客户维护（给客户记一条维护记录/状态变化/线索/备注）、
   客户咨询了什么产品/对什么感兴趣（要落成客户线索记录）、复杂资料整理入库（把一坨资料/
   录音稿/聊天记录/咨询记录拆解成客户+跟进+交付+资料，见「复杂资料整理入库」节）、
-  客户洞察（温度/全景/信号/需求/撮合，走 insights 端点）这类对系统的增删改查操作，
-  或提到 CRM、客户名单、渠道资产、产品目录、团队成员、成交、交付、资料、语料、gb-crm、
+  客户洞察（温度/全景/信号/需求/撮合，走 insights 端点）、素材库（上传/搜索/下载图片等
+  文件素材，文件夹+标签归档，AI 自动识别描述与标签，见「素材库」节）这类对系统的增删改查操作，
+  或提到 CRM、客户名单、渠道资产、产品目录、团队成员、成交、交付、资料、语料、素材库、找图、gb-crm、
   女商私域运营管理端，或要查/改客户时使用。
   Use when the user runs /gb-crm.
 metadata:
@@ -56,7 +57,7 @@ python3 "$SKILL_DIR/scripts/gb-crm.py" me    # 我是谁：id / username / nickn
 python3 "$SKILL_DIR/scripts/gb-crm.py" upload ./录音稿.pdf title="3月下午茶整场" deliveryId=12 customerIds='[3,5]' newTagNames='["下午茶"]'
 ```
 
-文件**必须小于 32MB**（超限请先压缩/拆分）；`title` 必填，`deliveryId` 是数字、`customerIds`/`tagIds`/`newTagNames` 是 JSON 数组字符串；同样需要 admin/operator + write scope。上传前先按「资料」一节的规则匹配/新建交付单拿到 `deliveryId`。
+文件**必须小于 32MB**（超限请先压缩/拆分）；`title` 必填，`deliveryId`/`folderId` 是数字、`customerIds`/`tagIds`/`newTagNames` 是 JSON 数组字符串；可选 `description=`（文字描述，可被全文搜索）、`folderPath="客户A/下午茶"`（逐级缺则自动建文件夹，优先于 folderId）、`aiEnrich=false`（agent 已自带描述/标签时关掉服务端 AI 识别）；同样需要 admin/operator + write scope。上传前先按「资料」一节的规则匹配/新建交付单拿到 `deliveryId`。图片入库自动采集像素宽高与 sha256；响应带 `duplicateOfId`（与既有素材同内容的 id，软提示不拦截）。
 
 Windows 上若命令 `python3` 不存在，用 `python` 或 `py`（如 `py "$SKILL_DIR/scripts/gb-crm.py" me`）。脚本本身无第三方依赖，跨平台。
 
@@ -140,6 +141,46 @@ python3 "$SKILL_DIR/scripts/gb-crm.py" GET "/api/v1/insights/topics"
 - **信号写入口**（write PAT + admin/operator）：`POST /api/v1/insights/signals`（人工补录，`topic` 词表没有会自动建词）；`POST /api/v1/insights/signals/<id>/reject`（看到错的随手否决）。**信号生成是自动的**：维护记录、文本类资料（transcript/text）、客户来历/备注经 REST 落库 → 系统即时入队抽取（LLM 未配置静默跳过）；SQL 直写不走钩子，靠管理员配的夜间扫尾 cron 兜底——所以整理资料请走 REST（见「复杂资料整理入库」节）。
 - **温度禁忌**：不要用 SQL 近似估算温度或自行加权——回答一律以端点数字为准；端点没给的口径就说没有，不要造。
 - **触发与指令**：用户说「客户温度/谁在降温/沉睡客户/全景/画像/信号/需求/撮合/缘分」等 → 走本节端点；说「补一条信号/否决这条信号」→ 走写入口。
+
+## 素材库（K63：图片等文件素材 / 文件夹归档 / AI 识别）
+
+`kind=file` 的资料构成素材库（绝大部分是图片）。管理端入口「素材库」页（文件夹树 + 相册）；agent 侧核心操作三条命令 + 一组 REST 过滤参数。
+
+**上传（一步带全元数据）**：agent 看得见图、知道上下文——描述/标签/归档自己带，质量比服务端 vision 识别高且零成本：
+
+```bash
+python3 "$SKILL_DIR/scripts/gb-crm.py" upload ./合影.png \
+  title="下午茶现场合影" description="第一排大合影，横幅写着闪光团队三周年" \
+  folderPath="客户A/下午茶" newTagNames='["现场图","合影"]' aiEnrich=false
+```
+
+- `folderPath` 逐级缺则自动建（`"客户A/下午茶"` 建两级），幂等；优先级高于 `folderId`
+- `aiEnrich=false`：agent 已自带描述/标签时关掉服务端 AI 识别；不传则图片自动入队识别（`aiStatus=pending` → ready；LLM 未配置/超 8MB 自动 skipped，不影响上传成功）
+- 防重约定：先算本地 sha256 → `GET /materials?checksum=<hex>`，已有同内容素材就别重复传；上传响应 `duplicateOfId` 非空 = 撞重复（已保留，自行决定删否）
+
+**下载**：
+
+```bash
+python3 "$SKILL_DIR/scripts/gb-crm.py" download <资料id> [输出路径]   # 缺省按服务端原始文件名落当前目录
+```
+
+**搜索（把自然语言拆成过滤参数再查，不要手写 SQL）**——`GET /api/v1/materials`（read PAT 即可）：
+
+| 参数 | 用法 |
+| --- | --- |
+| `kind=file` | 素材库固定前缀 |
+| `q=关键词` | 全文（标题/描述/正文 trigram 模糊，标签名/文件名/交付名 OR 命中） |
+| `folderPath=客户A/下午茶` | 按路径（未解析 → 空结果）；`folderId=0` = 未分类 |
+| `tagNames=海报,合影` | 标签**按名 AND**（免查 id；未知名 → 空结果） |
+| `tagIds=1,2` | 标签按 id AND |
+| `checksum=<sha256>` | 查重等值 |
+| `aiStatus=failed` | 筛识别失败的（配合重跑） |
+
+例：用户说「找上次下午茶那张大合影」→ `GET /materials?kind=file&q=大合影&tagNames=下午茶`；结果里每项带 `folder.path`、`imageWidth/Height`、`description`、`aiStatus`、下载走 `download` 子命令。
+
+**文件夹管理**（REST，admin/operator）：`GET /material-folders`（全量树 + 每夹计数）、`POST {name,parentId?}`、`PATCH /:id`（改名/移动，防环 422，OCC updatedAt）、`DELETE /:id`——**仅空文件夹可删**（有直接资料或子文件夹 → 409 带计数）。上传时用 `folderPath` 自动建链即可，不要为归档手写 INSERT 文件夹。
+
+**AI 识别（服务端 vision LLM，异步）**：上传后自动跑——描述只填空（人/agent 写过的不覆盖）、标签并集合并（新词免审批）、归档只匹配现有文件夹完整路径（AI 不建目录）。失败可重跑：`POST /materials/:id/enrich`（需 admin/operator + write；配置缺失 422）。识别配置在管理端「系统设置 → 素材识别」（专用 vision LLM，回退系统 LLM）。
 
 ## 复杂资料整理入库（主工作流）
 
@@ -450,7 +491,22 @@ python3 "$SKILL_DIR/scripts/gb-crm.py" GET "/api/v1/insights/topics"
 | original_filename | TEXT | 仅 `kind=file` |
 | url | TEXT | 媒体类必填 |
 | content | TEXT | **文本类全文**，可上万字 |
+| description | TEXT | K63 文字描述（入 FTS；AI 只填空不覆盖人写） |
+| folder_id | INTEGER | K63 可空 FK → material_folders.id；NULL = 未分类 |
+| image_width / image_height | INTEGER | K63 图片像素宽高（入库自动解析；非图片 NULL） |
+| checksum | TEXT | K63 sha256 hex（kind=file 恒算；查重用） |
+| ai_status | TEXT | K63 `pending/ready/failed/skipped`；NULL = 从未排队（非图片） |
+| enriched_at | INTEGER | K63 AI 识别完成时间 |
 <!-- /SCHEMA:delivery_materials -->
+
+<!-- SCHEMA:material_folders -->
+| 列 | 类型 | 含义 |
+| --- | --- | --- |
+| id | INTEGER PK | — |
+| parent_id | INTEGER | 自引用，NULL = 根；路径不落库由 API 推导 |
+| name | TEXT NOT NULL | 1..100 字，不含 `/`；live 唯一「同级不重名」 |
+| created_at/updated_at/created_by/updated_by/deleted_at | — | 审计 + 软删 |
+<!-- /SCHEMA:material_folders -->
 
 <!-- SCHEMA:delivery_material_customers -->
 | 列 | 类型 | 含义 |

@@ -181,3 +181,14 @@ export const copywritingLlmPatchSchema = z.object({
   apiKey: z.string().trim().min(1).max(500).nullable().optional(),
 });
 export type CopywritingLlmPatch = z.infer<typeof copywritingLlmPatchSchema>;
+
+// ── 素材识别 LLM（K63；system_configs code='assetsLlm'）──
+// 需 vision 能力：素材图片 AI 识别（描述/标签/归档建议）优先走这里；
+// 未配置或不完整 → 回退系统级 code='llm'（此时要求该模型支持图片输入）。
+// GET/PATCH 语义与 copywritingLlm 完全同构。
+
+export const assetsLlmGetSchema = copywritingLlmGetSchema;
+export type AssetsLlmGet = CopywritingLlmGet;
+
+export const assetsLlmPatchSchema = copywritingLlmPatchSchema;
+export type AssetsLlmPatch = CopywritingLlmPatch;

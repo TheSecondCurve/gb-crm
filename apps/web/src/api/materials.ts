@@ -26,6 +26,11 @@ export async function submitMaterial(
       if (!file) throw new Error("请选择要上传的文件");
       const form = new FormData();
       form.append("title", String(body.title ?? ""));
+      // K63：描述 / 归档文件夹（folderId=null 清空=未分类）；aiEnrich 缺省开，显式 false 才关
+      if (body.description != null && String(body.description) !== "") {
+        form.append("description", String(body.description));
+      }
+      if (body.folderId != null) form.append("folderId", String(body.folderId));
       if (body.deliveryId != null) form.append("deliveryId", String(body.deliveryId));
       if (Array.isArray(body.customerIds)) {
         form.append("customerIds", JSON.stringify(body.customerIds));
@@ -37,6 +42,7 @@ export async function submitMaterial(
       if (Array.isArray(body.newTagNames)) {
         form.append("newTagNames", JSON.stringify(body.newTagNames));
       }
+      if (body.aiEnrich === false) form.append("aiEnrich", "false");
       form.append("file", file);
       const res = await api.postForm<{ data: MaterialDetailDto }>("/materials/upload", form);
       return res?.data ?? null;
@@ -59,6 +65,9 @@ export async function submitMaterial(
       deliveryId: body.deliveryId,
       customerIds: body.customerIds,
     };
+    // K63：描述/归档键存在才透传（null=清空语义由 PATCH 内核保证）
+    if (body.description !== undefined) patch.description = body.description;
+    if (body.folderId !== undefined) patch.folderId = body.folderId;
     // K58：标签键缺席不动（调用方没动标签区就不透传）
     if (body.tagIds !== undefined) patch.tagIds = body.tagIds;
     if (body.newTagNames !== undefined) patch.newTagNames = body.newTagNames;
@@ -72,6 +81,23 @@ export async function submitMaterial(
   }
   const res = await api.post<{ data: MaterialDetailDto }>("/materials", body);
   return res?.data ?? null;
+}
+
+/** K63 素材库多文件上传（逐个串行 POST；duplicateOfId 软提示透传给调用方 toast） */
+export async function uploadAsset(
+  file: File,
+  meta: { title: string; description?: string; folderId?: number | null },
+): Promise<{ data: MaterialDetailDto; duplicateOfId: number | null }> {
+  const form = new FormData();
+  form.append("title", meta.title);
+  if (meta.description) form.append("description", meta.description);
+  if (meta.folderId != null) form.append("folderId", String(meta.folderId));
+  form.append("file", file);
+  const res = await api.postForm<{ data: MaterialDetailDto; duplicateOfId: number | null }>(
+    "/materials/upload",
+    form,
+  );
+  return { data: res!.data, duplicateOfId: res?.duplicateOfId ?? null };
 }
 
 export function shouldOpenEditor(kind: string): boolean {

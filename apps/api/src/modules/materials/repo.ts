@@ -2,7 +2,7 @@
 // K54：list 排除软删；COUNT 与列表同一 WHERE。
 // q 搜索（FTS5 trigram 实测：token ≥3 字符才命中）：tokens 按空白切分、AND 组合；
 // ≥3 字符 token 走 FTS（delivery_materials_fts，触发器同步、软删自动移出索引），
-// <3 字符 token 回退 LIKE（title/content OR，ESCAPE '\' 转义）。
+// <3 字符 token 回退 LIKE（title/description/content OR，ESCAPE '\' 转义）。
 // FTS 虚表不入 Drizzle schema，用 db.$client 原生查询拿 id 集合再 inArray（同 agent 模块先例）。
 import { and, asc, count, desc, eq, exists, inArray, isNull, not, or, sql, type SQL } from "drizzle-orm";
 
@@ -84,6 +84,7 @@ function searchWhere(db: Db, q: string): SQL | undefined {
     return or(
       sql`${deliveryMaterials.title} LIKE ${pattern} ESCAPE '\\'`,
       sql`${deliveryMaterials.content} LIKE ${pattern} ESCAPE '\\'`,
+      sql`${deliveryMaterials.description} LIKE ${pattern} ESCAPE '\\'`,
       tagHit,
       filenameHit,
       deliveryNameHit,
@@ -137,6 +138,40 @@ function listWhere(db: Db, query: MaterialListQuery): SQL | undefined {
           ),
       ),
     );
+  }
+  // K63 tagIds 逗号列表：AND（须全部挂有）；空列表 = 不过滤
+  if (query.tagIds !== undefined && query.tagIds.length > 0) {
+    for (const tagId of query.tagIds) {
+      conditions.push(
+        exists(
+          db
+            .select({ x: sql`1` })
+            .from(deliveryMaterialTags)
+            .where(
+              and(
+                eq(deliveryMaterialTags.materialId, deliveryMaterials.id),
+                eq(deliveryMaterialTags.tagId, tagId),
+              ),
+            ),
+        ),
+      );
+    }
+  }
+  // K63 归档文件夹：folderId=0 = 未分类；正数 = 等值
+  if (query.folderId !== undefined) {
+    conditions.push(
+      query.folderId === 0
+        ? isNull(deliveryMaterials.folderId)
+        : eq(deliveryMaterials.folderId, query.folderId),
+    );
+  }
+  // K63 sha256 等值（小写 hex 惯例；不做大小写归一）
+  if (query.checksum !== undefined) {
+    conditions.push(eq(deliveryMaterials.checksum, query.checksum));
+  }
+  // K63 AI 识别状态
+  if (query.aiStatus !== undefined) {
+    conditions.push(eq(deliveryMaterials.aiStatus, query.aiStatus));
   }
   // other 兜底：未关联或类型为 other（即命中非 consulting/activity/circle 的任何情况）
   if (query.deliveryKind !== undefined) {
@@ -311,6 +346,45 @@ export function findLiveCustomerIds(db: Db, ids: readonly number[]): Set<number>
     .where(and(inArray(customers.id, [...ids]), isNull(customers.deletedAt)))
     .all();
   return new Set(rows.map((r) => r.id));
+}
+
+/** K63：按名解析 live material 域标签 → id 映射（tagNames 过滤；解析不到的名字不在结果里） */
+export function findLiveMaterialTagIdsByNames(db: Db, names: readonly string[]): Map<string, number> {
+  if (names.length === 0) return new Map();
+  const rows = db
+    .select({ id: tags.id, name: tags.name })
+    .from(tags)
+    .where(
+      and(
+        inArray(tags.name, [...new Set(names)]),
+        eq(tags.domain, "material"),
+        isNull(tags.deletedAt),
+      ),
+    )
+    .all();
+  return new Map(rows.map((r) => [r.name, r.id]));
+}
+
+/** K63 软去重：同 checksum 的最早 live file 资料 id（排除自身；无 → null） */
+export function findLiveFileIdByChecksum(
+  db: Db,
+  checksum: string,
+  excludeId?: number,
+): number | null {
+  const rows = db
+    .select({ id: deliveryMaterials.id })
+    .from(deliveryMaterials)
+    .where(
+      and(
+        eq(deliveryMaterials.kind, "file"),
+        eq(deliveryMaterials.checksum, checksum),
+        isNull(deliveryMaterials.deletedAt),
+      ),
+    )
+    .orderBy(asc(deliveryMaterials.id))
+    .all();
+  const hit = rows.find((r) => r.id !== excludeId);
+  return hit?.id ?? null;
 }
 
 // ---- K54 客户总览用：某客户 M2M 关联的 live 资料 ----
