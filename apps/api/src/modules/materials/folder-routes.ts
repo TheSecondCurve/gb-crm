@@ -27,7 +27,7 @@ export function materialFolderRoutes(
   app.get(
     "/api/v1/material-folders",
     { preHandler: requireCan("materials", "list") },
-    async (req) => listFoldersResult(db),
+    async () => listFoldersResult(db),
   );
 
   app.get(

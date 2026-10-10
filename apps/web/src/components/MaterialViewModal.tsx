@@ -2,7 +2,12 @@
 // 调用方先 GET /materials/:id 拿 DetailDto 再打开；canUpdate + 文本类时底部给「编辑全文」入口。
 import { Fragment } from "react";
 import { useNavigate } from "react-router-dom";
-import { MATERIAL_FILE_KIND, MATERIAL_TEXT_KINDS, materialKindLabels } from "@gb-crm/shared";
+import {
+  MATERIAL_FILE_KIND,
+  MATERIAL_TEXT_KINDS,
+  materialAiStatusLabels,
+  materialKindLabels,
+} from "@gb-crm/shared";
 
 import { formatFileSize, materialFileUrl } from "../api/materials";
 import type { MaterialDetailDto } from "../api/types";
@@ -34,6 +39,18 @@ export function MaterialViewModal({ material, canUpdate = false, onClose }: Mate
         <span className="detail-label">类型</span>
         <span>{badge(materialKindLabels[material.kind as keyof typeof materialKindLabels] ?? material.kind)}</span>
       </div>
+      {material.description != null && material.description !== "" && (
+        <div className="detail-row">
+          <span className="detail-label">描述</span>
+          <span style={{ flex: 1, minWidth: 0 }}>{material.description}</span>
+        </div>
+      )}
+      {material.folder != null && (
+        <div className="detail-row">
+          <span className="detail-label">归档</span>
+          <span>{material.folder.path}</span>
+        </div>
+      )}
       <div className="detail-row">
         <span className="detail-label">关联交付</span>
         <span>{deliveryLabel ?? "未关联"}</span>
@@ -75,7 +92,24 @@ export function MaterialViewModal({ material, canUpdate = false, onClose }: Mate
             <div>
               {material.originalFilename ?? "文件"}
               {material.fileSize != null ? ` · ${formatFileSize(material.fileSize)}` : ""}
+              {material.imageWidth != null && material.imageHeight != null
+                ? ` · ${material.imageWidth}×${material.imageHeight}`
+                : ""}
+              {material.contentType ? ` · ${material.contentType}` : ""}
             </div>
+            {material.checksum != null && (
+              <div className="muted-text" style={{ fontSize: 12 }}>
+                sha256：{material.checksum.slice(0, 16)}…
+              </div>
+            )}
+            {material.aiStatus != null && (
+              <div className="muted-text" style={{ fontSize: 12 }}>
+                AI 识别：
+                {materialAiStatusLabels[material.aiStatus as keyof typeof materialAiStatusLabels] ??
+                  material.aiStatus}
+                {material.enrichedAt != null ? ` · ${formatDateTime(material.enrichedAt)}` : ""}
+              </div>
+            )}
             {material.isImage && (
               <img
                 className="material-file-preview"

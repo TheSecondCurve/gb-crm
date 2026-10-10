@@ -50,7 +50,8 @@ export const PAGE_REGISTRY: readonly PageDef[] = [
   { key: "delivery-matrix", path: "/deliveries/:id/matrix", label: "矩阵", group: "运营流程", order: 4, menu: false, parent: "deliveries", required: { resource: "deliveries", action: "read" } },
   { key: "delivery-types", path: "/delivery-types", label: "交付类型", group: "运营流程", order: 5, menu: true, required: { resource: "deliveries", action: "list" } },
   { key: "materials", path: "/materials", label: "资料专区", group: "运营流程", order: 6, menu: true, required: { resource: "materials", action: "list" } },
-  { key: "material-edit", path: "/materials/:id/edit", label: "资料全文编辑", group: "运营流程", order: 7, menu: false, parent: "materials", required: { resource: "materials", action: "read" } },
+  { key: "library", path: "/library", label: "素材库", group: "运营流程", order: 7, menu: true, required: { resource: "materials", action: "list" } },
+  { key: "material-edit", path: "/materials/:id/edit", label: "资料全文编辑", group: "运营流程", order: 8, menu: false, parent: "materials", required: { resource: "materials", action: "read" } },
   // ── 私域运营 ──
   { key: "copywriting", path: "/copywriting", label: "文案工作台", group: "私域运营", order: 0, menu: true, required: { resource: "copywriting", action: "list" } },
   // ── 客户洞察（K62）──

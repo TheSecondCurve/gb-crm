@@ -70,9 +70,9 @@ beforeEach(() => {
   }) as unknown as typeof fetch;
   // job runner 共用注入：按 URL 分发（enrich 任务里 S3 GET 与 LLM POST 走同一 ctx.fetchFn）
   const jobFetch = vi.fn(async (url: unknown, init?: unknown) => {
-    return String(url).includes("llm.example.com")
-      ? llmFetch(url, init)
-      : s3Fetch(url, init);
+    const target = String(url);
+    const args = [target, init] as Parameters<typeof fetch>;
+    return target.includes("llm.example.com") ? llmFetch(...args) : s3Fetch(...args);
   }) as unknown as typeof fetch;
   app = buildApp({
     env: testEnv(),

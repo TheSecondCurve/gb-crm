@@ -94,16 +94,14 @@ export function listMaterialsResult(
   if (query.folderPath !== undefined) {
     const folderId = resolveFolderPath(db, query.folderPath);
     if (folderId === null) return { data: [], total: 0 };
-    const { folderPath: _drop, ...rest } = effective;
-    effective = { ...rest, folderId };
+    effective = { ...effective, folderPath: undefined, folderId };
   }
   // K63 tagNames → tagIds（并入 AND）：任一名字解析不到 live material 域词 → 不可能全命中 → 空结果
   if (query.tagNames !== undefined) {
     const byName = findLiveMaterialTagIdsByNames(db, query.tagNames);
     if (query.tagNames.some((n) => !byName.has(n))) return { data: [], total: 0 };
     const merged = [...new Set([...(query.tagIds ?? []), ...query.tagNames.map((n) => byName.get(n)!)])];
-    const { tagNames: _drop, ...rest } = effective;
-    effective = { ...rest, tagIds: merged };
+    effective = { ...effective, tagNames: undefined, tagIds: merged };
   }
   const { rows, total } = listMaterials(db, effective);
   return { data: assembleMaterials(db, rows), total };

@@ -24,6 +24,9 @@ interface MaterialFormModalProps {
   material?: MaterialDetailDto;
   /** 交付单详情页内新增/修改：关联交付锁定为该单，表单不显示交付单选择 */
   fixedDeliveryId?: number;
+  /** K63：素材库入口预选 kind=file 与归档文件夹 */
+  defaultKind?: string;
+  defaultFolderId?: number;
   busy: boolean;
   onClose: () => void;
   onSubmit: (body: Record<string, unknown>, file?: File) => Promise<void>;
@@ -34,7 +37,7 @@ const normTagName = (s: string) => s.trim().toLowerCase();
 
 const MAX_NEW_TAGS = 10;
 
-export function MaterialFormModal({ title, material, fixedDeliveryId, busy, onClose, onSubmit }: MaterialFormModalProps) {
+export function MaterialFormModal({ title, material, fixedDeliveryId, defaultKind, defaultFolderId, busy, onClose, onSubmit }: MaterialFormModalProps) {
   const showToast = useToast();
   const navigate = useNavigate();
   const editing = material != null;
@@ -48,10 +51,15 @@ export function MaterialFormModal({ title, material, fixedDeliveryId, busy, onCl
     if (!customerLabelCache.has(c.id)) customerLabelCache.set(c.id, c.nickname);
   }
 
-  const [kind, setKind] = useState(material?.kind ?? "text");
+  const [kind, setKind] = useState(material?.kind ?? defaultKind ?? "text");
   const [materialTitle, setMaterialTitle] = useState(material?.title ?? "");
   const [content, setContent] = useState(material?.content ?? "");
   const [url, setUrl] = useState(material?.url ?? "");
+  // K63：文字描述（所有 kind 可用）+ 归档文件夹（"" = 未分类；nullish = 未动）
+  const [description, setDescription] = useState(material?.description ?? "");
+  const [folderId, setFolderId] = useState<string>(
+    material ? (material.folderId != null ? String(material.folderId) : "null") : defaultFolderId != null ? String(defaultFolderId) : "",
+  );
   const [file, setFile] = useState<File | null>(null);
   const [deliveryId, setDeliveryId] = useState<number | null>(material?.deliveryId ?? null);
   const [selected, setSelected] = useState<number[]>(material ? material.customers.map((c) => c.id) : []);
@@ -69,6 +77,13 @@ export function MaterialFormModal({ title, material, fixedDeliveryId, busy, onCl
     queryKey: ["tags", "material"],
     queryFn: async () =>
       (await api.get<{ data: TagDto[] }>("/tags?domain=material&pageSize=100"))?.data ?? [],
+  });
+
+  // K63 素材文件夹（下拉按 path 展示层级）
+  const { data: folderOptions = [] } = useQuery({
+    queryKey: ["material-folders"],
+    queryFn: async () =>
+      (await api.get<{ data: { id: number; path: string }[] }>("/material-folders"))?.data ?? [],
   });
 
   // 点击标签区外收起候选下拉
@@ -160,6 +175,8 @@ export function MaterialFormModal({ title, material, fixedDeliveryId, busy, onCl
           ...(material ? { updatedAt: material.updatedAt } : {}),
           kind,
           title: materialTitle.trim(),
+          description: description.trim() === "" ? (editing ? null : undefined) : description.trim(),
+          folderId: folderId === "" ? undefined : folderId === "null" ? null : Number(folderId),
           deliveryId: lockDelivery ? fixedDeliveryId : deliveryId,
           customerIds: selected,
           ...tagBody,
@@ -177,6 +194,8 @@ export function MaterialFormModal({ title, material, fixedDeliveryId, busy, onCl
       ...(material ? { updatedAt: material.updatedAt } : {}),
       kind,
       title: materialTitle.trim(),
+      description: description.trim() === "" ? (editing ? null : undefined) : description.trim(),
+      folderId: folderId === "" ? undefined : folderId === "null" ? null : Number(folderId),
       // content/url 总是成对提交：非本类的一律 null 清空，避免 kind 切换后残留脏值
       content: textKind ? content : null,
       url: textKind ? null : url.trim(),
@@ -202,6 +221,27 @@ export function MaterialFormModal({ title, material, fixedDeliveryId, busy, onCl
         <label className="field">
           标题<span className="req-star">*</span>
           <input autoComplete="off" value={materialTitle} onChange={(e) => setMaterialTitle(e.target.value)} />
+        </label>
+        <label className="field field-span">
+          描述
+          <textarea
+            rows={2}
+            value={description}
+            onChange={(e) => setDescription(e.target.value)}
+            placeholder="图片/资料的文字说明，可被全文搜索（≤2000 字）"
+          />
+        </label>
+        <label className="field">
+          归档文件夹
+          <select value={folderId} onChange={(e) => setFolderId(e.target.value)}>
+            {/* 编辑模式 value="null" = 显式移回未分类；新建 value="" = 不带键（缺省未分类） */}
+            <option value={editing ? "null" : ""}>未分类</option>
+            {folderOptions.map((f) => (
+              <option key={f.id} value={f.id}>
+                {f.path}
+              </option>
+            ))}
+          </select>
         </label>
         {textKind ? (
           <label className="field field-span">

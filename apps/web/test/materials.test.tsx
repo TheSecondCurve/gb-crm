@@ -1,7 +1,7 @@
 // 资料专区（K54）：列表渲染 / q+kind+orphan 请求参数 / 按关联交付类型分组 tab（deliveryKind）/
 // 新增（kind 切换显隐）/ 修改 OCC / assistant 只读 / 查看全文。
 // K58：标签列 / 标签筛选下拉（tagId）/ 表单词表选词 + newTagNames 新词 / 编辑清空标签。
-// 文件专区 tab：kind=file album 格子 / 图片缩略图 / 非图片占位 + 文件名 + 下载链接 / 专辑内搜索。
+// K63：文件专区 tab 已拆到独立「素材库」页 /library（见 library.test.tsx）；资料专区回归纯语料浏览。
 import { describe, expect, it } from "vitest";
 import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 
@@ -489,14 +489,18 @@ describe("资料专区", () => {
     const dialog = screen.getByRole("dialog", { name: "新增资料" });
     fireEvent.change(within(dialog).getByLabelText(/资料类型/), { target: { value: "file" } });
     expect(within(dialog).queryByLabelText(/链接/)).toBeNull();
-    expect(within(dialog).getByLabelText(/文件/)).toBeTruthy();
+    // K63 表单新增「归档文件夹」后 /文件/ 有歧义：按控件类型定位文件 input
+    const fileInput = within(dialog)
+      .getAllByLabelText(/文件/)
+      .find((el) => el instanceof HTMLInputElement && el.type === "file")!;
+    expect(fileInput).toBeTruthy();
     fireEvent.change(within(dialog).getByLabelText(/标题/), { target: { value: "现场照片" } });
     // K58：选一个词表标签，验证 multipart 以 JSON 数组字符串携带
     const tagInput = within(dialog).getByLabelText("搜索资料标签");
     fireEvent.focus(tagInput);
     fireEvent.mouseDown(await within(dialog).findByRole("option", { name: "话术" }));
     const file = new File([new Uint8Array([1, 2, 3])], "a.png", { type: "image/png" });
-    fireEvent.change(within(dialog).getByLabelText(/文件/), { target: { files: [file] } });
+    fireEvent.change(fileInput, { target: { files: [file] } });
     fireEvent.click(within(dialog).getByRole("button", { name: "创建" }));
     await waitFor(() => {
       const post = calls.find((c) => c.method === "POST" && c.url === "/api/v1/materials/upload");
@@ -516,97 +520,5 @@ describe("资料专区", () => {
     expect(screen.queryByRole("button", { name: "修改" })).toBeNull();
     expect(screen.queryByRole("button", { name: "删除" })).toBeNull();
     expect(screen.getAllByRole("button", { name: "查看" }).length).toBe(2);
-  });
-});
-
-describe("资料专区 · 文件专区 tab", () => {
-  it("切到文件专区：请求带 kind=file；图片卡片渲染缩略图，非图片给图标占位 + 文件名·大小 + 下载链接", async () => {
-    const calls = mockMaterialsApi(adminMe, [f1, f2]);
-    renderApp("/materials");
-
-    fireEvent.click(await screen.findByRole("tab", { name: "文件专区" }));
-    await waitFor(() => {
-      const hit = calls.find(
-        (c) => c.method === "GET" && c.url.startsWith("/api/v1/materials?") && c.url.includes("kind=file"),
-      );
-      expect(hit).toBeTruthy();
-    });
-
-    // 图片卡片：缩略图直出 /materials/:id/file
-    const img = await screen.findByAltText("合影.png");
-    expect(img.getAttribute("src")).toBe("/api/v1/materials/3/file");
-    // 非图片卡片：扩展名占位 + 文件名·大小
-    expect(screen.getByText("pdf")).toBeTruthy();
-    expect(screen.getByText(/手册\.pdf · 3\.0 MB/)).toBeTruthy();
-    // 两张卡片都有下载链接（download=1）
-    const downloads = screen.getAllByRole("link", { name: "下载" });
-    expect(downloads.map((a) => a.getAttribute("href"))).toEqual([
-      "/api/v1/materials/3/file?download=1",
-      "/api/v1/materials/4/file?download=1",
-    ]);
-    // 标签徽章 + 标题
-    expect(screen.getByText("复盘")).toBeTruthy();
-    expect(screen.getByText("复盘手册")).toBeTruthy();
-  });
-
-  it("文件专区搜索：q 与 kind=file 一起发出", async () => {
-    const calls = mockMaterialsApi(adminMe, [f1]);
-    renderApp("/materials");
-    fireEvent.click(await screen.findByRole("tab", { name: "文件专区" }));
-    await screen.findByAltText("合影.png");
-
-    fireEvent.change(screen.getByLabelText("搜索"), { target: { value: "合影" } });
-    await waitFor(
-      () => {
-        const hit = calls.find((c) => c.url.includes("kind=file") && c.url.includes("q=%E5%90%88%E5%BD%B1"));
-        expect(hit).toBeTruthy();
-      },
-      { timeout: 2000 },
-    );
-  });
-
-  it("assistant 文件专区：仅查看/下载，无修改/删除", async () => {
-    mockMaterialsApi(assistantMe, [f1, f2]);
-    renderApp("/materials");
-    fireEvent.click(await screen.findByRole("tab", { name: "文件专区" }));
-    await screen.findByAltText("合影.png");
-
-    expect(screen.getAllByRole("button", { name: "查看" }).length).toBe(2);
-    expect(screen.getAllByRole("link", { name: "下载" }).length).toBe(2);
-    expect(screen.queryByRole("button", { name: "修改" })).toBeNull();
-    expect(screen.queryByRole("button", { name: "删除" })).toBeNull();
-  });
-
-  it("按交付名定位交付并过滤：选中交付单后请求带 deliveryId，移除 chip 后不再带", async () => {
-    const calls = mockMaterialsApi(adminMe, [f2]);
-    renderApp("/materials");
-    fireEvent.click(await screen.findByRole("tab", { name: "文件专区" }));
-    await screen.findByText("复盘手册");
-
-    const input = screen.getByLabelText("按交付过滤");
-    fireEvent.focus(input);
-    fireEvent.change(input, { target: { value: "私董" } });
-    fireEvent.mouseDown(await screen.findByRole("option", { name: /私董圈子 #11/ }));
-    await waitFor(() => {
-      const hit = calls.find(
-        (c) =>
-          c.method === "GET" &&
-          c.url.startsWith("/api/v1/materials?") &&
-          c.url.includes("kind=file") &&
-          c.url.includes("deliveryId=11"),
-      );
-      expect(hit).toBeTruthy();
-    });
-
-    // chip × 移除 → 最新请求不再带 deliveryId
-    fireEvent.click(screen.getByRole("button", { name: /移除 私董圈子/ }));
-    await waitFor(() => {
-      const gets = calls.filter(
-        (c) => c.method === "GET" && c.url.startsWith("/api/v1/materials?") && c.url.includes("kind=file"),
-      );
-      const last = gets[gets.length - 1];
-      expect(last).toBeTruthy();
-      expect(last?.url).not.toContain("deliveryId");
-    });
   });
 });
