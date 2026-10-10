@@ -3,6 +3,7 @@
 import {
   bulkTagJobParamsSchema,
   materialAiEnrichJobParamsSchema,
+  materialMetaBackfillJobParamsSchema,
   signalExtractJobParamsSchema,
   type Action,
   type Resource,
@@ -12,6 +13,7 @@ import { z } from "zod";
 import type { Db } from "../../db/client.js";
 import { unprocessable } from "../../plugins/error-handler.js";
 import { assertAiReady, runBulkTaggingJob } from "../customers/service.js";
+import { runMaterialMetaBackfillJob } from "../materials/backfill.js";
 import { enrichMaterial, isAssetsLlmReady } from "../materials/enrich.js";
 import { runSignalExtractJob } from "../insights/extract.js";
 import { isLlmReady } from "../insights/repo.js";
@@ -148,6 +150,27 @@ export const JOB_TYPES: Record<string, JobTypeDef> = {
         { fetchFn: ctx.fetchFn },
       );
       ctx.finish("succeeded", { result });
+    },
+  },
+  // K63 存量素材元数据回填：老 kind=file 行补 checksum/图片宽高（可 enrich=true 顺带排队 AI 识别）。
+  // 一次性手动任务；未配置资料存储 → 422。
+  "material-file-meta-backfill": {
+    label: "素材元数据回填",
+    requiredPermission: { resource: "materials", action: "update" },
+    paramsSchema: materialMetaBackfillJobParamsSchema as unknown as z.ZodType<
+      Record<string, unknown>,
+      z.ZodTypeDef,
+      unknown
+    >,
+    run: async (ctx, params) => {
+      const result = await runMaterialMetaBackfillJob(
+        ctx.db,
+        params as { enrich?: boolean },
+        ctx.audit,
+        { fetchFn: ctx.fetchFn, isCancelled: ctx.isCancelled },
+      );
+      const status = result.failed === 0 ? "succeeded" : result.updated > 0 ? "partial" : "failed";
+      ctx.finish(status, { result });
     },
   },
   // 数据库备份：仅 admin（system.update）。备份到 <数据库目录>/backups/，gzip + 滚动保留 7 份；

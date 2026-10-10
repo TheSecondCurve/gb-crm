@@ -58,27 +58,28 @@ function setAiStatus(
     .run();
 }
 
-/** 上传/替换后调度：判定 + 置状态 + 入队（事务外调用；非图片/显式关闭不动 ai_status） */
+/** 上传/替换后调度：判定 + 置状态 + 入队（事务外调用）。
+ *  返回：pending=已入队；skipped=超限/LLM 未配置（已置状态）；null=非图片/显式关闭/清痕迹（不动状态）。 */
 export function scheduleMaterialEnrich(
   db: Db,
   row: MaterialRow,
   opts: { aiEnrich?: boolean; now: number; userId: number | null },
-): void {
-  if (opts.aiEnrich === false) return;
-  if (row.kind !== "file") return;
+): "pending" | "skipped" | null {
+  if (opts.aiEnrich === false) return null;
+  if (row.kind !== "file") return null;
   const isImage = isPreviewableImage(row.contentType, row.originalFilename);
   if (!isImage) {
     // 非图片（如替换成了 PDF）：清掉旧识别痕迹
     if (row.aiStatus !== null) setAiStatus(db, row.id, null, opts);
-    return;
+    return null;
   }
   if (row.fileSize === null || row.fileSize > MATERIAL_AI_ENRICH_MAX_BYTES) {
     setAiStatus(db, row.id, "skipped", opts);
-    return;
+    return "skipped";
   }
   if (!isAssetsLlmReady(db)) {
     setAiStatus(db, row.id, "skipped", opts);
-    return;
+    return "skipped";
   }
   setAiStatus(db, row.id, "pending", opts);
   db.insert(backgroundJobs)
@@ -92,6 +93,7 @@ export function scheduleMaterialEnrich(
       createdBy: opts.userId,
     })
     .run();
+  return "pending";
 }
 
 /** 手动重跑端点：显式请求 → 配置缺失报 422（区别于上传时的静默 skip） */

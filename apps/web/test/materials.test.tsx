@@ -64,54 +64,9 @@ const m2: MaterialDto = {
 
 const detail1: MaterialDetailDto = { ...m1, content: "各位好，欢迎来到开营仪式……（完整全文）" };
 
-// 文件专区（kind=file）：f1 图片（渲染缩略图）、f2 PDF（图标占位）
-const f1: MaterialDto = {
-  id: 3,
-  kind: "file",
-  title: "现场合影",
-  url: null,
-  contentLength: 0,
-  excerpt: null,
-  originalFilename: "合影.png",
-  contentType: "image/png",
-  fileSize: 2048,
-  isImage: true,
-  deliveryId: null,
-  delivery: null,
-  customers: [],
-  tags: [{ id: 1, name: "复盘" }],
-  createdAt: 1000,
-  updatedAt: 4000,
-  createdBy: null,
-  updatedBy: null,
-};
 
-const f2: MaterialDto = {
-  id: 4,
-  kind: "file",
-  title: "复盘手册",
-  url: null,
-  contentLength: 0,
-  excerpt: null,
-  originalFilename: "手册.pdf",
-  contentType: "application/pdf",
-  fileSize: 3 * 1024 * 1024,
-  isImage: false,
-  deliveryId: 11,
-  delivery: {
-    id: 11,
-    name: null,
-    deliveryType: { id: 5, name: "私董圈子", kind: "circle" },
-    startsAt: 1700000000000,
-    endsAt: null,
-  },
-  customers: [],
-  tags: [],
-  createdAt: 1000,
-  updatedAt: 5000,
-  createdBy: null,
-  updatedBy: null,
-};
+
+
 
 interface Call {
   url: string;

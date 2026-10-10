@@ -5,7 +5,7 @@
 // 文件夹管理：树底内联新建（父=当前选中）；选中节点可重命名/删除（仅空可删，409 由 toast 呈现）。
 // AI：失败/跳过的图片可单卡「重跑识别」（POST /materials/:id/enrich）。
 import { Fragment, useRef, useState } from "react";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   File as FileIcon,
   FileAudio,

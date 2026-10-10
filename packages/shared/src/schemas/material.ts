@@ -81,6 +81,12 @@ export const materialAiEnrichJobParamsSchema = z
   .strict();
 export type MaterialAiEnrichJobParams = z.infer<typeof materialAiEnrichJobParamsSchema>;
 
+/** material-file-meta-backfill 任务参数（存量回填；enrich=true 顺带给未识别图片排队 AI 识别） */
+export const materialMetaBackfillJobParamsSchema = z
+  .object({ enrich: z.boolean().optional() })
+  .strict();
+export type MaterialMetaBackfillJobParams = z.infer<typeof materialMetaBackfillJobParamsSchema>;
+
 // PATCH 内核（K24）：.partial() 只表示键可缺席；kind↔content/url 组合校验在 service 合并后重跑
 // （folderPath 不在 PATCH 白名单——移动/归档用 folderId）
 export const materialPatchSchema = materialBaseSchema.partial().extend({
