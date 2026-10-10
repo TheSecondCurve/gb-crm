@@ -2,6 +2,7 @@
 // 存储为 system_configs code='llm'/'s3'；GET 掩码返回；PATCH 单管理员、有意不做 OCC（见 service.ts 注释）。
 import {
   aiConfigPatchSchema,
+  assetsLlmPatchSchema,
   commissionDefaultPatchSchema,
   copywritingLlmPatchSchema,
   copywritingPromptsPatchSchema,
@@ -16,6 +17,7 @@ import type { Db } from "../../db/client.js";
 import { requireCan } from "../../plugins/rbac.js";
 import {
   getAiConfigResult,
+  getAssetsLlmResult,
   getCommissionDefaultResult,
   getCopywritingLlmResult,
   getCopywritingPromptsResult,
@@ -24,6 +26,7 @@ import {
   getS3ConfigResult,
   getWorkbenchS3ConfigResult,
   patchAiConfig,
+  patchAssetsLlm,
   patchCommissionDefault,
   patchCopywritingLlm,
   patchCopywritingPrompts,
@@ -31,6 +34,7 @@ import {
   patchPageAccess,
   patchS3Config,
   patchWorkbenchS3Config,
+  testAssetsLlmConnection,
   testCopywritingLlmConnection,
   testMaterialsS3Connection,
   testS3Connection,
@@ -205,6 +209,31 @@ export function systemRoutes(app: FastifyInstance, opts: SystemRoutesOptions): v
     async (req) => {
       const override = copywritingLlmPatchSchema.parse(req.body ?? {});
       return { data: await testCopywritingLlmConnection(db, override, { fetchFn: llmFetch }) };
+    },
+  );
+
+  // 素材识别 LLM（K63；仅 admin）。素材图片 AI 识别优先走这里（需 vision 模型），否则回退系统 code='llm'。
+  app.get(
+    "/api/v1/system/assets-llm-config",
+    { preHandler: requireCan("system", "read") },
+    async () => ({ data: getAssetsLlmResult(db) }),
+  );
+
+  app.patch(
+    "/api/v1/system/assets-llm-config",
+    { preHandler: requireCan("system", "update") },
+    async (req) => {
+      const patch = assetsLlmPatchSchema.parse(req.body ?? {});
+      return { data: patchAssetsLlm(db, patch, auditCtx(req)) };
+    },
+  );
+
+  app.post(
+    "/api/v1/system/assets-llm-config/test",
+    { preHandler: requireCan("system", "update") },
+    async (req) => {
+      const override = assetsLlmPatchSchema.parse(req.body ?? {});
+      return { data: await testAssetsLlmConnection(db, override, { fetchFn: llmFetch }) };
     },
   );
 }

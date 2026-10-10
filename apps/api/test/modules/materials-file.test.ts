@@ -422,3 +422,148 @@ describe("替换与删除", () => {
     ).toBe(422);
   });
 });
+
+// ── K63 素材库上传管线：description / folderPath 归档 / checksum / 图片宽高 / duplicateOfId ──
+
+describe("上传管线元数据（K63）", () => {
+  it("上传图片：description/folderPath 落库，checksum+宽高采集，文件夹自动建链", async () => {
+    const { cookie } = await loginAsRole("admin");
+    await enableStorage(cookie);
+    const { createHash } = await import("node:crypto");
+    const sha = createHash("sha256").update(PNG_1x1).digest("hex");
+
+    const mp = multipart(
+      {
+        title: "活动现场大合影",
+        description: "下午茶第一排横幅特写",
+        folderPath: "客户A/下午茶/现场图",
+        newTagNames: '["现场图"]',
+      },
+      { name: "photo.png", type: "image/png", body: PNG_1x1 },
+    );
+    const res = await app.inject({
+      method: "POST",
+      url: "/api/v1/materials/upload",
+      headers: { cookie, ...mp.headers },
+      payload: mp.payload,
+    });
+    expect(res.statusCode).toBe(201);
+    const body = res.json();
+    expect(body.duplicateOfId).toBeNull();
+    expect(body.data.checksum).toBe(sha);
+    expect(body.data.imageWidth).toBe(1);
+    expect(body.data.imageHeight).toBe(1);
+    expect(body.data.description).toBe("下午茶第一排横幅特写");
+    expect(body.data.folder).toMatchObject({ name: "现场图", path: "客户A/下午茶/现场图" });
+
+    const folders = await app.inject({ method: "GET", url: "/api/v1/material-folders", headers: { cookie } });
+    const paths = folders.json().data.map((f: { path: string }) => f.path);
+    expect(paths).toEqual(["客户A", "客户A/下午茶", "客户A/下午茶/现场图"]);
+  });
+
+  it("重复内容软提示 duplicateOfId；不同内容 null", async () => {
+    const { cookie } = await loginAsRole("admin");
+    await enableStorage(cookie);
+    const first = multipart({ title: "第一张" }, { name: "a.png", type: "image/png", body: PNG_1x1 });
+    const r1 = await app.inject({
+      method: "POST",
+      url: "/api/v1/materials/upload",
+      headers: { cookie, ...first.headers },
+      payload: first.payload,
+    });
+    expect(r1.json().duplicateOfId).toBeNull();
+
+    const dup = multipart({ title: "又传一次" }, { name: "b.png", type: "image/png", body: PNG_1x1 });
+    const r2 = await app.inject({
+      method: "POST",
+      url: "/api/v1/materials/upload",
+      headers: { cookie, ...dup.headers },
+      payload: dup.payload,
+    });
+    expect(r2.statusCode).toBe(201); // 不拦截
+    expect(r2.json().duplicateOfId).toBe(r1.json().data.id);
+
+    const other = Buffer.concat([PNG_1x1, Buffer.from([0x00])]);
+    const third = multipart({ title: "另一张" }, { name: "c.png", type: "image/png", body: other });
+    const r3 = await app.inject({
+      method: "POST",
+      url: "/api/v1/materials/upload",
+      headers: { cookie, ...third.headers },
+      payload: third.payload,
+    });
+    expect(r3.json().duplicateOfId).toBeNull();
+  });
+
+  it("非图片文件：checksum 采集，宽高为 null", async () => {
+    const { cookie } = await loginAsRole("admin");
+    await enableStorage(cookie);
+    const doc = Buffer.from("%PDF-1.4 not really a pdf but bytes");
+    const mp = multipart({ title: "讲义" }, { name: "a.pdf", type: "application/pdf", body: doc });
+    const res = await app.inject({
+      method: "POST",
+      url: "/api/v1/materials/upload",
+      headers: { cookie, ...mp.headers },
+      payload: mp.payload,
+    });
+    expect(res.statusCode).toBe(201);
+    expect(res.json().data.checksum).toMatch(/^[0-9a-f]{64}$/);
+    expect(res.json().data.imageWidth).toBeNull();
+    expect(res.json().data.imageHeight).toBeNull();
+  });
+
+  it("替换文件：checksum 与宽高随之更新", async () => {
+    const { cookie } = await loginAsRole("admin");
+    await enableStorage(cookie);
+    const mp = multipart({ title: "原图" }, { name: "a.png", type: "image/png", body: PNG_1x1 });
+    const created = await app.inject({
+      method: "POST",
+      url: "/api/v1/materials/upload",
+      headers: { cookie, ...mp.headers },
+      payload: mp.payload,
+    });
+    const m = created.json().data;
+
+    const wider = Buffer.concat([
+      Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+      (() => {
+        const b = Buffer.alloc(16);
+        b.writeUInt32BE(13, 0);
+        b.write("IHDR", 4, "ascii");
+        b.writeUInt32BE(1920, 8);
+        b.writeUInt32BE(1080, 12);
+        return b;
+      })(),
+    ]);
+    const rep = multipart(
+      { updatedAt: String(m.updatedAt) },
+      { name: "wide.png", type: "image/png", body: wider },
+    );
+    const res = await app.inject({
+      method: "POST",
+      url: `/api/v1/materials/${m.id}/file`,
+      headers: { cookie, ...rep.headers },
+      payload: rep.payload,
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.json().data.imageWidth).toBe(1920);
+    expect(res.json().data.imageHeight).toBe(1080);
+    expect(res.json().data.checksum).not.toBe(m.checksum);
+  });
+
+  it("上传带非法 folderId → 422（S3 对象不残留 PUT 失败前置校验之外的场景）", async () => {
+    const { cookie } = await loginAsRole("admin");
+    await enableStorage(cookie);
+    const mp = multipart(
+      { title: "坏归档", folderId: "99999" },
+      { name: "a.png", type: "image/png", body: PNG_1x1 },
+    );
+    const res = await app.inject({
+      method: "POST",
+      url: "/api/v1/materials/upload",
+      headers: { cookie, ...mp.headers },
+      payload: mp.payload,
+    });
+    expect(res.statusCode).toBe(422);
+    expect(res.json().error.message).toContain("文件夹");
+  });
+});

@@ -17,6 +17,8 @@ CRED_PATH = pathlib.Path.home() / ".gb-crm" / "credentials.json"
 # 与服务端 MATERIAL_FILE_MAX_BYTES 对齐：资料文件必须小于 32MB
 UPLOAD_MAX_BYTES = 32 * 1024 * 1024
 UPLOAD_TIMEOUT = 120
+# Content-Disposition 的 RFC 5987 文件名（服务端 contentDisposition() 双 filename 里的带 * 形态）
+RE_DISPOSITION_REGEX = "filename\\*=UTF-8''([^;\"]+)"
 
 
 def _login_hint(base: str) -> str:
@@ -106,7 +108,8 @@ def parse_args(argv: list[str]) -> tuple[str, str, dict[str, str], str | None]:
             "用法:\n"
             "  gb-crm.py me\n"
             "  gb-crm.py sql \"SELECT id, nickname FROM customers WHERE deleted_at IS NULL\"\n"
-            "  gb-crm.py upload ./录音稿.pdf title=\"3月下午茶整场\" deliveryId=12 customerIds='[3,5]'\n"
+            "  gb-crm.py upload ./合影.png title=\"现场合影\" description=\"第一排大合影\" folderPath=\"客户A/下午茶\"\n"
+            "  gb-crm.py download 3 ./合影.png\n"
             "  gb-crm.py GET /api/v1/customers q=闪光 pageSize=50\n"
             "  gb-crm.py POST /api/v1/customers --json '{\"nickname\":\"未命名客户\"}'\n"
             "  gb-crm.py PATCH /api/v1/customers/1 --json '{\"nickname\":\"x\",\"updatedAt\":1}'\n"
@@ -196,10 +199,11 @@ def report(status: int, text: str, base: str) -> None:
 def cmd_upload(argv: list[str]) -> None:
     if not argv or argv[0] in ("-h", "--help"):
         die(
-            "用法: gb-crm.py upload <文件> title=\"标题\" [deliveryId=12] "
-            "[customerIds='[3,5]'] [tagIds='[1]'] [newTagNames='[\"词\"]']\n"
+            "用法: gb-crm.py upload <文件> title=\"标题\" [description=\"描述\"] [folderPath=\"客户A/下午茶\"] "
+            "[folderId=5] [deliveryId=12] [customerIds='[3,5]'] [tagIds='[1]'] [newTagNames='[\"词\"]'] [aiEnrich=false]\n"
             "上传本地文件为 kind=file 的资料（POST /api/v1/materials/upload），文件必须小于 32MB。\n"
-            "title 必填；customerIds/tagIds/newTagNames 是 JSON 数组字符串。",
+            "title 必填；customerIds/tagIds/newTagNames 是 JSON 数组字符串；folderPath 逐级缺则自动建文件夹；\n"
+            "图片入库自动采宽高+sha256；aiEnrich 缺省开（服务端 AI 识别），agent 自带描述/标签时传 aiEnrich=false 省一次识别。",
             0 if argv[:1] in (["-h"], ["--help"]) else 2,
         )
     file_path = pathlib.Path(argv[0])
@@ -224,9 +228,55 @@ def cmd_upload(argv: list[str]) -> None:
     report(status, text, base)
 
 
+def cmd_download(argv: list[str]) -> None:
+    if not argv or argv[0] in ("-h", "--help"):
+        die(
+            "用法: gb-crm.py download <资料id> [输出路径]\n"
+            "下载 kind=file 资料的原文件（GET /api/v1/materials/:id/file?download=1）。\n"
+            "输出路径缺省 = 服务端原始文件名（拿不到则 material-<id>）写在当前目录。",
+            0 if argv[:1] in (["-h"], ["--help"]) else 2,
+        )
+    if not re.fullmatch(r"\d+", argv[0]):
+        die("第一个参数必须是资料 id（正整数）。")
+    material_id = argv[0]
+    out_path = pathlib.Path(argv[1]) if len(argv) > 1 else None
+    base, token, _scope = load_creds()
+    req = urllib.request.Request(
+        base + f"/api/v1/materials/{material_id}/file?download=1",
+        method="GET",
+        headers={"Authorization": f"Bearer {token}", "User-Agent": "gb-crm-agent/1.0"},
+    )
+    handlers: list = [urllib.request.ProxyHandler({})]
+    if os.environ.get("GB_CRM_INSECURE", "1") != "0":
+        import ssl
+
+        ctx = ssl.create_default_context()
+        ctx.check_hostname = False
+        ctx.verify_mode = ssl.CERT_NONE
+        handlers.append(urllib.request.HTTPSHandler(context=ctx))
+    opener = urllib.request.build_opener(*handlers)
+    try:
+        with opener.open(req, timeout=UPLOAD_TIMEOUT) as resp:
+            data = resp.read()
+            disposition = resp.headers.get("Content-Disposition", "")
+    except urllib.error.HTTPError as exc:
+        report(exc.code, exc.read().decode("utf-8", "replace"), base)
+    except Exception as exc:
+        die(f"无法连接: {exc}")
+    if out_path is None:
+        m = re.search(RE_DISPOSITION_REGEX, disposition)
+        name = urllib.parse.unquote(m.group(1)) if m else f"material-{material_id}"
+        out_path = pathlib.Path(name)
+    out_path.write_bytes(data)
+    print(json.dumps({"saved": str(out_path), "bytes": len(data)}, ensure_ascii=False))
+
+
 def main() -> None:
     if len(sys.argv) > 1 and sys.argv[1].lower() == "upload":
         cmd_upload(sys.argv[2:])
+        return
+    if len(sys.argv) > 1 and sys.argv[1].lower() == "download":
+        cmd_download(sys.argv[2:])
         return
     method, path, query, payload = parse_args(sys.argv)
     base, token, _scope = load_creds()

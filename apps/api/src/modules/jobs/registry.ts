@@ -2,6 +2,8 @@
 // 新增任务类型只需在此注册（未来定时任务也是同一套 type，只是 trigger='scheduled'）。
 import {
   bulkTagJobParamsSchema,
+  materialAiEnrichJobParamsSchema,
+  materialMetaBackfillJobParamsSchema,
   signalExtractJobParamsSchema,
   type Action,
   type Resource,
@@ -11,6 +13,8 @@ import { z } from "zod";
 import type { Db } from "../../db/client.js";
 import { unprocessable } from "../../plugins/error-handler.js";
 import { assertAiReady, runBulkTaggingJob } from "../customers/service.js";
+import { runMaterialMetaBackfillJob } from "../materials/backfill.js";
+import { enrichMaterial, isAssetsLlmReady } from "../materials/enrich.js";
 import { runSignalExtractJob } from "../insights/extract.js";
 import { isLlmReady } from "../insights/repo.js";
 import { runDbBackup, type DbBackupJobResult, uploadBackupToS3 } from "./backup.js";export interface JobProgress {
@@ -119,6 +123,53 @@ export const JOB_TYPES: Record<string, JobTypeDef> = {
         return;
       }
       const status = result.failed === 0 ? "succeeded" : result.succeeded > 0 ? "partial" : "failed";
+      ctx.finish(status, { result });
+    },
+  },
+  "material-ai-enrich": {
+    label: "素材图片 AI 识别",
+    requiredPermission: { resource: "materials", action: "update" },
+    paramsSchema: materialAiEnrichJobParamsSchema as unknown as z.ZodType<
+      Record<string, unknown>,
+      z.ZodTypeDef,
+      unknown
+    >,
+    validate: (db) => {
+      if (!isAssetsLlmReady(db)) {
+        throw unprocessable("请先在「系统设置」配置素材识别 LLM（或系统 LLM）", [
+          { path: "llm", message: "assetsLlm 或系统 llm 至少一个完整可用" },
+        ]);
+      }
+    },
+    // 单资料一次识别；enrichMaterial 内部已把 ready/skipped/failed 落到资料行 ai_status
+    run: async (ctx, params) => {
+      const result = await enrichMaterial(
+        ctx.db,
+        (params as { materialId: number }).materialId,
+        ctx.audit,
+        { fetchFn: ctx.fetchFn },
+      );
+      ctx.finish("succeeded", { result });
+    },
+  },
+  // K63 存量素材元数据回填：老 kind=file 行补 checksum/图片宽高（可 enrich=true 顺带排队 AI 识别）。
+  // 一次性手动任务；未配置资料存储 → 422。
+  "material-file-meta-backfill": {
+    label: "素材元数据回填",
+    requiredPermission: { resource: "materials", action: "update" },
+    paramsSchema: materialMetaBackfillJobParamsSchema as unknown as z.ZodType<
+      Record<string, unknown>,
+      z.ZodTypeDef,
+      unknown
+    >,
+    run: async (ctx, params) => {
+      const result = await runMaterialMetaBackfillJob(
+        ctx.db,
+        params as { enrich?: boolean },
+        ctx.audit,
+        { fetchFn: ctx.fetchFn, isCancelled: ctx.isCancelled },
+      );
+      const status = result.failed === 0 ? "succeeded" : result.updated > 0 ? "partial" : "failed";
       ctx.finish(status, { result });
     },
   },

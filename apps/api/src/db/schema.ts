@@ -645,8 +645,28 @@ export const deliveryTasks = sqliteTable(
   ],
 );
 
+// K63 素材文件夹：自引用树（parent_id NULL = 根），路径不落库由读取时推导；
+// live 唯一 (coalesce(parent_id,0), name) 在迁移里以表达式索引实现，不入 Drizzle。
+export const materialFolders = sqliteTable(
+  "material_folders",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    parentId: integer("parent_id").references((): AnySQLiteColumn => materialFolders.id, {
+      onDelete: "set null",
+    }),
+    name: text("name").notNull(),
+    createdAt: integer("created_at").notNull(),
+    updatedAt: integer("updated_at").notNull(),
+    createdBy: integer("created_by").references(() => users.id, { onDelete: "set null" }),
+    updatedBy: integer("updated_by").references(() => users.id, { onDelete: "set null" }),
+    deletedAt: integer("deleted_at"),
+  },
+  (t) => [index("material_folders_parent_idx").on(t.parentId)],
+);
+
 // K54 交付资料：delivery_id 可空（孤儿资料）；文本类全文入 content，媒体类只存 url；
 // K57：kind=file 对象存储，object_key/content_type/file_size/original_filename。
+// K63：description（入 FTS）/ folder_id / image_width / image_height / checksum / ai_status / enriched_at。
 // content/url 声明在末尾（overflow 页惰性读）。FTS5 虚表 delivery_materials_fts 由触发器同步，
 // 不入 Drizzle schema（repo 用 db.$client 原生查询，同 agent 模块先例）。
 export const deliveryMaterials = sqliteTable(
@@ -665,6 +685,15 @@ export const deliveryMaterials = sqliteTable(
     contentType: text("content_type"),
     fileSize: integer("file_size"),
     originalFilename: text("original_filename"),
+    description: text("description"),
+    folderId: integer("folder_id").references(() => materialFolders.id, {
+      onDelete: "set null",
+    }),
+    imageWidth: integer("image_width"),
+    imageHeight: integer("image_height"),
+    checksum: text("checksum"),
+    aiStatus: text("ai_status"),
+    enrichedAt: integer("enriched_at"),
     url: text("url"),
     content: text("content"),
   },
@@ -673,7 +702,13 @@ export const deliveryMaterials = sqliteTable(
       "delivery_materials_kind_check",
       sql`"kind" IN ('transcript','text','audio','video','link','file')`,
     ),
+    check(
+      "delivery_materials_ai_status_check",
+      sql`"ai_status" IS NULL OR "ai_status" IN ('pending','ready','failed','skipped')`,
+    ),
     index("delivery_materials_delivery_idx").on(t.deliveryId),
+    index("delivery_materials_folder_idx").on(t.folderId),
+    index("delivery_materials_checksum_idx").on(t.checksum),
   ],
 );
 

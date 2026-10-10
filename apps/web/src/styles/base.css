@@ -738,3 +738,104 @@ textarea { resize: vertical; }
 .material-editor-input { flex: 1 1 0%; min-width: 0; resize: none; font-family: inherit; line-height: 1.7; }
 
 .material-editor-preview { flex: 1 1 0%; min-width: 0; overflow-y: auto; padding: 10px 12px; border: 1px solid var(--hairline); border-radius: 6px; background: var(--surface); }
+
+/* ── K63 素材库 ── */
+.library-layout {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+}
+.library-tree {
+  width: 220px;
+  flex-shrink: 0;
+  padding: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.library-tree-item {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 6px 8px;
+  border: none;
+  background: none;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 13px;
+  color: inherit;
+}
+.library-tree-item:hover {
+  background: rgba(0, 0, 0, 0.04);
+}
+.library-tree-item.active {
+  background: #1c1c1c;
+  color: #edeae3;
+}
+.library-tree-manage {
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid rgba(0, 0, 0, 0.08);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.library-main {
+  flex: 1;
+  min-width: 0;
+}
+.lib-tag-filter {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 0 0 12px;
+}
+.chip-clickable {
+  cursor: pointer;
+  background: none;
+}
+.chip-active {
+  cursor: pointer;
+  background: #1c1c1c;
+  color: #edeae3;
+}
+.lib-batch-bar {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  padding: 8px 12px;
+  margin-bottom: 10px;
+  background: rgba(28, 28, 28, 0.05);
+  border-radius: 8px;
+  font-size: 13px;
+}
+.lib-desc {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  color: rgba(0, 0, 0, 0.55);
+}
+.lib-dims {
+  font-variant-numeric: tabular-nums;
+  color: rgba(0, 0, 0, 0.5);
+}
+.lib-ai {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 12px;
+  color: rgba(0, 0, 0, 0.55);
+}
+.lib-check {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  color: rgba(0, 0, 0, 0.55);
+  padding: 2px 8px;
+}
+.album-card.selected {
+  outline: 2px solid #ce1432;
+  outline-offset: -2px;
+}

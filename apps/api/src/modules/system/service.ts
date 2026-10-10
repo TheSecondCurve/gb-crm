@@ -5,6 +5,8 @@
 import type {
   AiConfigGet,
   AiConfigPatch,
+  AssetsLlmGet,
+  AssetsLlmPatch,
   CommissionDefaultGet,
   CommissionDefaultPatch,
   CopywritingLlmGet,
@@ -41,6 +43,7 @@ import {
 } from "../copywriting/prompts.js";
 import {
   getAiConfig,
+  getAssetsLlmConfig,
   getCommissionDefault,
   getCopywritingLlmConfig,
   getCopywritingPromptsConfig,
@@ -51,6 +54,7 @@ import {
   isLlmConfigReady,
   isS3RemoteReady,
   upsertAiConfig,
+  upsertAssetsLlmConfig,
   upsertCommissionDefault,
   upsertCopywritingLlmConfig,
   upsertCopywritingPromptsConfig,
@@ -459,6 +463,75 @@ export function patchCopywritingLlm(
     updatedBy: ctx.userId,
   });
   return getCopywritingLlmResult(db);
+}
+
+// ---- 素材识别 LLM（code='assetsLlm'，K63；仅 admin；语义与 copywritingLlm 同构）----
+// 素材图片 AI 识别优先走专用配置（需 vision 能力）；未配置或不完整 → 回退系统级 code='llm'。
+
+export function getAssetsLlmResult(db: Db): AssetsLlmGet {
+  const row = getAssetsLlmConfig(db);
+  const apiKey = row?.apiKey ?? null;
+  return {
+    provider: row?.provider ?? null,
+    baseUrl: row?.baseUrl ?? null,
+    model: row?.model ?? null,
+    apiKeySet: apiKey !== null && apiKey !== "",
+    apiKeyMasked: maskSecret(apiKey),
+    dedicatedReady: isLlmConfigReady(row),
+    updatedAt: row?.updatedAt ?? null,
+    updatedBy: row?.updatedBy ?? null,
+  };
+}
+
+export function patchAssetsLlm(
+  db: Db,
+  patch: AssetsLlmPatch,
+  ctx: { now: number; userId: number },
+): AssetsLlmGet {
+  const current = getAssetsLlmConfig(db);
+  upsertAssetsLlmConfig(db, {
+    provider: patch.provider !== undefined ? patch.provider : (current?.provider ?? null),
+    baseUrl: patch.baseUrl !== undefined ? patch.baseUrl : (current?.baseUrl ?? null),
+    model: patch.model !== undefined ? patch.model : (current?.model ?? null),
+    // 非空串更新；缺席保留旧值；null 显式清除（撤掉专用配置，回退系统 LLM）
+    apiKey: patch.apiKey !== undefined ? patch.apiKey : (current?.apiKey ?? null),
+    updatedAt: ctx.now,
+    updatedBy: ctx.userId,
+  });
+  return getAssetsLlmResult(db);
+}
+
+/** 连通性测试：body 体现值覆盖在已保存配置之上；不完整 → 422；探测失败 → 502 */
+export async function testAssetsLlmConnection(
+  db: Db,
+  override: AssetsLlmPatch = {},
+  opts: { fetchFn?: typeof fetch } = {},
+): Promise<{ ok: true }> {
+  const current = getAssetsLlmConfig(db);
+  const candidate = {
+    provider: override.provider !== undefined ? override.provider : (current?.provider ?? null),
+    baseUrl: override.baseUrl !== undefined ? override.baseUrl : (current?.baseUrl ?? null),
+    model: override.model !== undefined ? override.model : (current?.model ?? null),
+    apiKey: override.apiKey !== undefined ? override.apiKey : (current?.apiKey ?? null),
+  };
+  if (!isLlmConfigReady(candidate)) {
+    throw unprocessable("请先完整填写素材识别 LLM 配置（Base URL / 模型 / API Key）");
+  }
+  try {
+    await chatJson({
+      settings: candidate,
+      fetchFn: opts.fetchFn,
+      temperature: 0,
+      messages: [
+        { role: "system", content: "你是连通性测试端点，只输出 {\"ok\":true} 形状的 JSON，不要输出任何其他内容。" },
+        { role: "user", content: "ping" },
+      ],
+    });
+    return { ok: true };
+  } catch (err) {
+    if (err instanceof LlmError) throw llmError(err.message);
+    throw err;
+  }
 }
 
 /** 连通性测试：body 体现值覆盖在已保存配置之上，合并后三要素不齐 → 422；发最小 chat 探测，失败 → 502 */

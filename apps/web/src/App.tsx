@@ -24,6 +24,7 @@ import { DeliveryGanttPage } from "./pages/DeliveryGanttPage";
 import { DeliveryMatrixPage } from "./pages/DeliveryMatrixPage";
 import { DeliveryCirclePage } from "./pages/DeliveryCirclePage";
 import { DeliveryTypesPage } from "./pages/DeliveryTypesPage";
+import { LibraryPage } from "./pages/LibraryPage";
 import { MaterialsPage } from "./pages/MaterialsPage";
 import { MaterialEditPage } from "./pages/MaterialEditPage";
 import { CopywritingPage } from "./pages/CopywritingPage";
@@ -206,6 +207,14 @@ export default function App() {
           element={
             <PageGuard pageKey="materials">
               <MaterialsPage />
+            </PageGuard>
+          }
+        />
+        <Route
+          path="/library"
+          element={
+            <PageGuard pageKey="library">
+              <LibraryPage />
             </PageGuard>
           }
         />

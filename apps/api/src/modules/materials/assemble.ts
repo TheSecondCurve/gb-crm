@@ -10,6 +10,7 @@ import type { Db } from "../../db/client.js";
 import { customers, deliveries, deliveryTypes, users } from "../../db/schema.js";
 import type { CustomerRef } from "../deliveries/assemble.js";
 import type { UserRef } from "../users/assemble.js";
+import { folderPathIndex, pathOfFolder } from "./folder-service.js";
 import { isPreviewableImage } from "./file-meta.js";
 import { listMaterialCustomerRows, listMaterialTagRows, type MaterialRow } from "./repo.js";
 
@@ -23,11 +24,32 @@ export interface MaterialDeliveryRef {
   endsAt: number | null;
 }
 
+/** K63 归档文件夹引用（路径根到本级） */
+export interface MaterialFolderRef {
+  id: number;
+  name: string;
+  path: string;
+}
+
 export interface MaterialDto {
   id: number;
   kind: string;
   title: string;
   url: string | null;
+  /** K63 文字描述（≤2000 字，入 FTS） */
+  description: string | null;
+  /** K63 归档文件夹 id（null = 未分类） */
+  folderId: number | null;
+  /** K63 文件夹展开（软删文件夹 → null；「仅空可删」保证 live 资料不挂已删文件夹，此处仍防御） */
+  folder: MaterialFolderRef | null;
+  /** K63 图片像素宽（非图片 / 未解析 → null） */
+  imageWidth: number | null;
+  imageHeight: number | null;
+  /** K63 sha256 hex（非 file → null） */
+  checksum: string | null;
+  /** K63 AI 识别状态（非图片 / 未排队 → null） */
+  aiStatus: string | null;
+  enrichedAt: number | null;
   /** content 字符数（content 为 null → 0） */
   contentLength: number;
   /** content 前 100 字符（content 为 null → null） */
@@ -104,6 +126,19 @@ function assembleInternal(db: Db, rows: readonly MaterialRow[]): MaterialDto[] {
       .all();
     for (const c of found) customerRefs.set(c.id, c);
   }
+
+  // K63 文件夹展开（live only；路径批量推导）
+  const folderIds = new Set<number>();
+  for (const row of rows) if (row.folderId !== null) folderIds.add(row.folderId);
+  const folderRefs = new Map<number, MaterialFolderRef>();
+  if (folderIds.size > 0) {
+    const index = folderPathIndex(db);
+    for (const id of folderIds) {
+      const f = index.get(id);
+      if (!f) continue; // 软删/不存在不展开（K9）
+      folderRefs.set(id, { id: f.id, name: f.name, path: pathOfFolder(f, index) });
+    }
+  }
   const tagRows = listMaterialTagRows(db, materialIds);
   const tagsByMaterial = new Map<number, { id: number; name: string }[]>();
   for (const r of tagRows) {
@@ -144,6 +179,14 @@ function assembleInternal(db: Db, rows: readonly MaterialRow[]): MaterialDto[] {
     kind: row.kind,
     title: row.title,
     url: row.url,
+    description: row.description,
+    folderId: row.folderId,
+    folder: row.folderId === null ? null : (folderRefs.get(row.folderId) ?? null),
+    imageWidth: row.imageWidth,
+    imageHeight: row.imageHeight,
+    checksum: row.checksum,
+    aiStatus: row.aiStatus,
+    enrichedAt: row.enrichedAt,
     contentLength: row.content?.length ?? 0,
     excerpt: row.content === null ? null : row.content.slice(0, EXCERPT_LEN),
     originalFilename: row.originalFilename,
