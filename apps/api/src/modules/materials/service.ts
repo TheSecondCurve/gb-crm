@@ -26,8 +26,10 @@ import {
   type MaterialDto,
 } from "./assemble.js";
 import { deleteStoredObjectIfAny } from "./file.js";
+import { assertLiveFolder, ensureFolderPath, resolveFolderPath } from "./folder-service.js";
 import {
   findLiveCustomerIds,
+  findLiveMaterialTagIdsByNames,
   getMaterialByIdAny,
   insertMaterial,
   listMaterialCustomerRows,
@@ -87,7 +89,23 @@ export function listMaterialsResult(
   db: Db,
   query: MaterialListQuery,
 ): { data: MaterialDto[]; total: number } {
-  const { rows, total } = listMaterials(db, query);
+  let effective: MaterialListQuery = query;
+  // K63 folderPath → folderId：解析不到 live 链 → 空结果（搜索语义，不报错）
+  if (query.folderPath !== undefined) {
+    const folderId = resolveFolderPath(db, query.folderPath);
+    if (folderId === null) return { data: [], total: 0 };
+    const { folderPath: _drop, ...rest } = effective;
+    effective = { ...rest, folderId };
+  }
+  // K63 tagNames → tagIds（并入 AND）：任一名字解析不到 live material 域词 → 不可能全命中 → 空结果
+  if (query.tagNames !== undefined) {
+    const byName = findLiveMaterialTagIdsByNames(db, query.tagNames);
+    if (query.tagNames.some((n) => !byName.has(n))) return { data: [], total: 0 };
+    const merged = [...new Set([...(query.tagIds ?? []), ...query.tagNames.map((n) => byName.get(n)!)])];
+    const { tagNames: _drop, ...rest } = effective;
+    effective = { ...rest, tagIds: merged };
+  }
+  const { rows, total } = listMaterials(db, effective);
   return { data: assembleMaterials(db, rows), total };
 }
 
@@ -113,11 +131,14 @@ export function createMaterial(
   ctx: AuditContext,
 ): MaterialDetailDto {
   const dto = inTx(db, (tx) => {
-    const { customerIds, tagIds, newTagNames, ...fields } = body;
+    const { customerIds, tagIds, newTagNames, folderPath, ...fields } = body;
     // Zod 已挡组合违规，此处与 PATCH 共用同一规则兜底
     assertKindCombo(fields.kind, fields.url ?? null);
     assertLiveDelivery(tx, fields.deliveryId);
     assertLiveCustomers(tx, customerIds);
+    // K63 归档：folderId 校验；folderPath 逐级缺则建（优先级高于 folderId，同事务）
+    assertLiveFolder(tx, fields.folderId);
+    if (folderPath !== undefined) fields.folderId = ensureFolderPath(tx, folderPath, ctx);
 
     const id = insertMaterial(tx, { ...fields, ...createAudit(ctx) });
     if (customerIds !== undefined) replaceMaterialCustomers(tx, id, customerIds);
@@ -135,7 +156,7 @@ export function createMaterial(
 }
 
 /** PATCH 可写标量键（updatedAt 是 OCC 凭证；customerIds 关系键走整表替换） */
-const PATCHABLE_KEYS = new Set(["title", "kind", "url", "content", "deliveryId"]);
+const PATCHABLE_KEYS = new Set(["title", "kind", "url", "content", "description", "folderId", "deliveryId"]);
 
 export function patchMaterial(
   db: Db,
@@ -165,6 +186,8 @@ export function patchMaterial(
     }
     assertLiveDelivery(tx, patch.deliveryId);
     assertLiveCustomers(tx, patch.customerIds);
+    // K63 归档移动：folderId null = 移回未分类（合法），非 null 必须 live 文件夹
+    assertLiveFolder(tx, patch.folderId);
 
     // 标量内核：键存在才 SET + 行级 OCC；409 data 带当前完整行（DetailDto）
     applyScalarPatch(patch, ctx, {

@@ -132,6 +132,17 @@ export const MATERIAL_FILE_KIND: MaterialKind = "file";
 /** 对象存储资料文件大小上限（32MB） */
 export const MATERIAL_FILE_MAX_BYTES = 32 * 1024 * 1024;
 
+/**
+ * AI 识别状态（K63，仅 kind=file 图片有意义）：
+ * pending=已入队待识别 / ready=识别完成 / failed=识别失败可重跑 / skipped=跳过（未配置 LLM 或超尺寸阈值）；
+ * NULL = 从未排队（非图片 / 旧数据未回填）。
+ */
+export const materialAiStatusSchema = z.enum(["pending", "ready", "failed", "skipped"]);
+export type MaterialAiStatus = z.infer<typeof materialAiStatusSchema>;
+
+/** AI 识别可送模型的最大图片字节数（base64 体积膨胀，超过则跳过识别只采静态元数据） */
+export const MATERIAL_AI_ENRICH_MAX_BYTES = 8 * 1024 * 1024;
+
 /** 客户维护记录类型（K55：跟进联系 / 状态变化 / 线索意向 / 一般备注 / 其他） */
 export const maintenanceKindSchema = z.enum([
   "follow_up",

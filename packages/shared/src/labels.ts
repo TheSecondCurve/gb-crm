@@ -13,6 +13,7 @@ import type {
   EmploymentStatus,
   JobTitle,
   MaintenanceKind,
+  MaterialAiStatus,
   MaterialKind,
   Platform,
   PayoutBatchStatus,
@@ -169,6 +170,14 @@ export const materialKindLabels: Record<MaterialKind, string> = {
   video: "视频",
   link: "其他链接",
   file: "对象存储",
+};
+
+/** AI 识别状态（K63） */
+export const materialAiStatusLabels: Record<MaterialAiStatus, string> = {
+  pending: "识别中",
+  ready: "已识别",
+  failed: "识别失败",
+  skipped: "已跳过",
 };
 
 export const maintenanceKindLabels: Record<MaintenanceKind, string> = {

@@ -22,6 +22,7 @@ import {
   uploadMaterialFile,
   type UploadedFile,
 } from "./file.js";
+import { materialFolderRoutes } from "./folder-routes.js";
 import {
   createMaterial,
   deleteMaterial,
@@ -127,6 +128,9 @@ export function materialsRoutes(app: FastifyInstance, opts: MaterialsRoutesOptio
     now: now(),
     userId: req.user!.id, // requireCan 已保证非空
   });
+
+  // K63 素材文件夹（权限复用 materials 资源）
+  materialFolderRoutes(app, { db, now });
 
   app.get(
     "/api/v1/materials",
