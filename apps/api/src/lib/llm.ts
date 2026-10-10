@@ -8,9 +8,29 @@ export interface LlmSettings {
   model: string;
 }
 
+/** multimodal 文本分片（OpenAI 协议 content 数组） */
+export interface LlmTextPart {
+  type: "text";
+  text: string;
+}
+
+/** multimodal 图片分片：url 为 data: URL（base64）或可访问 http(s) 地址 */
+export interface LlmImagePart {
+  type: "image_url";
+  image_url: { url: string };
+}
+
+export type LlmContentPart = LlmTextPart | LlmImagePart;
+
 export interface LlmMessage {
   role: "system" | "user" | "assistant";
-  content: string;
+  /** 纯文本或 multimodal 分片数组（vision，K63） */
+  content: string | LlmContentPart[];
+}
+
+/** 便捷构造：base64 → data URL 图片分片 */
+export function imagePart(base64: string, contentType: string): LlmImagePart {
+  return { type: "image_url", image_url: { url: `data:${contentType};base64,${base64}` } };
 }
 
 export interface ChatJsonOptions {

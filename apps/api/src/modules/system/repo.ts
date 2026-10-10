@@ -159,6 +159,42 @@ export function upsertCopywritingLlmConfig(
   );
 }
 
+// ---- 素材识别 LLM（code='assetsLlm'，K63）----
+
+export const ASSETS_LLM_CODE = "assetsLlm";
+
+export function getAssetsLlmConfig(db: Db): AiConfigRow | undefined {
+  const row = getConfigRow(db, ASSETS_LLM_CODE);
+  if (!row) return undefined;
+  return { ...parseLlmValue(row.value), updatedAt: row.updatedAt, updatedBy: row.updatedBy };
+}
+
+/** 素材识别 LLM upsert（value 形状同 code='llm'） */
+export function upsertAssetsLlmConfig(
+  db: Db,
+  values: {
+    provider: string | null;
+    baseUrl: string | null;
+    model: string | null;
+    apiKey: string | null;
+    updatedAt: number;
+    updatedBy: number | null;
+  },
+): void {
+  upsertConfigRow(
+    db,
+    ASSETS_LLM_CODE,
+    JSON.stringify({
+      provider: values.provider,
+      baseUrl: values.baseUrl,
+      apiKey: values.apiKey,
+      model: values.model,
+    }),
+    values.updatedAt,
+    values.updatedBy,
+  );
+}
+
 // ---- 角色→页面权限（code='pageAccess'）编解码 ----
 // value = { operator: string[], assistant: string[] }（admin 固定全量，不存）。
 

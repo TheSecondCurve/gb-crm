@@ -18,6 +18,7 @@ import {
   type S3CredentialsValue,
 } from "../system/repo.js";
 import { assembleMaterialDetail, type MaterialDetailDto } from "./assemble.js";
+import { scheduleMaterialEnrich } from "./enrich.js";
 import { assertLiveFolder, ensureFolderPath } from "./folder-service.js";
 import { isPreviewableImage } from "./file-meta.js";
 import { parseImageDimensions } from "./image-meta.js";
@@ -153,6 +154,7 @@ export async function uploadMaterialFile(
     customerIds?: number[];
     tagIds?: number[];
     newTagNames?: string[];
+    aiEnrich?: boolean;
   },
   file: UploadedFile,
   ctx: AuditContext,
@@ -173,11 +175,11 @@ export async function uploadMaterialFile(
   await putFile(cfg, key, file, opts.fetchFn);
 
   try {
-    const data = inTx(db, (tx) => {
+    const id = inTx(db, (tx) => {
       // K63 归档：folderPath 逐级缺则建（优先级高于 folderId，同事务）
       let folderId = meta.folderId ?? null;
       if (meta.folderPath !== undefined) folderId = ensureFolderPath(tx, meta.folderPath, ctx);
-      const id = insertMaterial(tx, {
+      const inserted = insertMaterial(tx, {
         kind: MATERIAL_FILE_KIND,
         title: meta.title,
         description: meta.description ?? null,
@@ -194,13 +196,21 @@ export async function uploadMaterialFile(
         content: null,
         ...createAudit(ctx),
       });
-      if (meta.customerIds !== undefined) replaceMaterialCustomers(tx, id, meta.customerIds);
+      if (meta.customerIds !== undefined) replaceMaterialCustomers(tx, inserted, meta.customerIds);
       // K58 资料标签：tagIds/newTagNames 合并去重（与建单同事务；失败回滚并尽力删远端对象）
-      applyMaterialTags(tx, id, meta, ctx);
-      return assembleMaterialDetail(tx, getMaterialByIdAny(tx, id)!);
+      applyMaterialTags(tx, inserted, meta, ctx);
+      return inserted;
     });
+    // K63 AI 识别调度（事务外）：图片 → pending 入队；超限/未配置 LLM → skipped；agent 可 aiEnrich=false 关
+    scheduleMaterialEnrich(db, getMaterialByIdAny(db, id)!, {
+      aiEnrich: meta.aiEnrich,
+      now: ctx.now,
+      userId: ctx.userId,
+    });
+    // 调度后再组装响应（让 aiStatus 反映最终状态）
+    const data = assembleMaterialDetail(db, getMaterialByIdAny(db, id)!);
     // K63 软去重提示：同 checksum 的更早 live file 资料存在 → 提示不拦截
-    const duplicateOfId = findLiveFileIdByChecksum(db, checksum, data.id);
+    const duplicateOfId = findLiveFileIdByChecksum(db, checksum, id);
     return { data, duplicateOfId };
   } catch (err) {
     await deleteObjectBestEffort(cfg, key, opts.fetchFn);
@@ -247,6 +257,11 @@ export async function replaceMaterialFile(
     throw conflict("数据已被他人修改，请刷新后重试", assembleMaterialDetail(db, again));
   }
   await deleteObjectBestEffort(cfg, existing.objectKey, opts.fetchFn);
+  // K63 替换了新内容：图片重新调度识别；替换成非图片则清掉旧识别痕迹
+  scheduleMaterialEnrich(db, getMaterialByIdAny(db, id)!, {
+    now: ctx.now,
+    userId: ctx.userId,
+  });
   return {
     data: assembleMaterialDetail(db, getMaterialByIdAny(db, id)!),
     duplicateOfId: findLiveFileIdByChecksum(db, checksum, id),

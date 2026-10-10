@@ -67,8 +67,19 @@ export const materialUploadMetaSchema = z.object({
   customerIds: idArraySchema.optional(),
   tagIds: idArraySchema.optional(),
   newTagNames: z.array(z.string().trim().min(1).max(50)).max(10).optional(),
+  /**
+   * K63 AI 识别开关：缺席/true → 图片自动入队 vision 识别（LLM 未配置静默跳过 aiStatus=skipped）；
+   * false → 完全不碰（aiStatus 保持 null）。agent 自带元数据时可显式关闭省一次识别。
+   */
+  aiEnrich: z.boolean().optional(),
 });
 export type MaterialUploadMeta = z.infer<typeof materialUploadMetaSchema>;
+
+/** material-ai-enrich 任务参数（单资料识别；重跑= 再入队一个） */
+export const materialAiEnrichJobParamsSchema = z
+  .object({ materialId: z.number().int().positive() })
+  .strict();
+export type MaterialAiEnrichJobParams = z.infer<typeof materialAiEnrichJobParamsSchema>;
 
 // PATCH 内核（K24）：.partial() 只表示键可缺席；kind↔content/url 组合校验在 service 合并后重跑
 // （folderPath 不在 PATCH 白名单——移动/归档用 folderId）

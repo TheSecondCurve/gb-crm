@@ -30,6 +30,7 @@ import {
   listMaterialsResult,
   patchMaterial,
 } from "./service.js";
+import { requestMaterialEnrich } from "./enrich.js";
 
 export interface MaterialsRoutesOptions {
   db: Db;
@@ -69,6 +70,12 @@ function parseOptionalString(raw: string | undefined): string | null | undefined
 function parsePathString(raw: string | undefined): string | undefined {
   const v = parseOptionalString(raw);
   return v === null ? undefined : v;
+}
+
+/** K63：multipart 布尔字段（缺席=未提供→默认开；"false"/"0" → false，其余 → true） */
+function parseBoolDefaultTrue(raw: string | undefined): boolean | undefined {
+  if (raw === undefined || raw.trim() === "") return undefined;
+  return !(raw.trim() === "false" || raw.trim() === "0");
 }
 
 function parseIdArray(raw: string | undefined, fieldName: string): number[] | undefined {
@@ -182,6 +189,7 @@ export function materialsRoutes(app: FastifyInstance, opts: MaterialsRoutesOptio
         customerIds: parseIdArray(fields.customerIds, "customerIds"),
         tagIds: parseIdArray(fields.tagIds, "tagIds"),
         newTagNames: parseNewTagNames(fields.newTagNames),
+        aiEnrich: parseBoolDefaultTrue(fields.aiEnrich),
       });
       const { data, duplicateOfId } = await uploadMaterialFile(db, meta, file, auditCtx(req), {
         fetchFn: s3Fetch,
@@ -240,6 +248,16 @@ export function materialsRoutes(app: FastifyInstance, opts: MaterialsRoutesOptio
       const { id } = idParamSchema.parse(req.params);
       const patch = materialPatchSchema.parse(req.body ?? {});
       return { data: patchMaterial(db, id, patch, auditCtx(req)) };
+    },
+  );
+
+  // K63 AI 识别重跑：显式请求 → 配置缺失 422（区别于上传时的静默 skip）
+  app.post(
+    "/api/v1/materials/:id/enrich",
+    { preHandler: requireCan("materials", "update") },
+    async (req) => {
+      const { id } = idParamSchema.parse(req.params);
+      return { data: requestMaterialEnrich(db, id, auditCtx(req)) };
     },
   );
 
