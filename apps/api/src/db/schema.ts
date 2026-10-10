@@ -2,7 +2,7 @@
 // 0000_init.sql 为历史迁移，0002 起删除了客户表部分字段，本文件以最终态为准）。
 // Migration 以手写 SQL 为准（设计要求）；本文件的 CHECK / partial unique 用于类型与 drizzle-kit 对齐，
 // 若 drizzle-kit 生成结果与迁移 SQL 有出入，以手写 SQL 为准并人工对齐本文件。
-import { sql, type AnyColumn } from "drizzle-orm";
+import { sql } from "drizzle-orm";
 import {
   check,
   index,
@@ -651,7 +651,7 @@ export const materialFolders = sqliteTable(
   "material_folders",
   {
     id: integer("id").primaryKey({ autoIncrement: true }),
-    parentId: integer("parent_id").references((): AnyColumn => materialFolders.id, {
+    parentId: integer("parent_id").references((): AnySQLiteColumn => materialFolders.id, {
       onDelete: "set null",
     }),
     name: text("name").notNull(),

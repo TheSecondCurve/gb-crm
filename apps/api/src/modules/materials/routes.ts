@@ -58,6 +58,19 @@ function parseOptionalInt(raw: string | undefined): number | null | undefined {
   return n;
 }
 
+/** K63：multipart 可空字符串字段（"" / "null" → null；缺席 → undefined） */
+function parseOptionalString(raw: string | undefined): string | null | undefined {
+  if (raw === undefined) return undefined;
+  const t = raw;
+  return t === "" || t === "null" ? null : t;
+}
+
+/** K63：multipart 路径字段（"" → undefined=未提供） */
+function parsePathString(raw: string | undefined): string | undefined {
+  const v = parseOptionalString(raw);
+  return v === null ? undefined : v;
+}
+
 function parseIdArray(raw: string | undefined, fieldName: string): number[] | undefined {
   if (raw === undefined) return undefined;
   const t = raw.trim();
@@ -162,13 +175,19 @@ export function materialsRoutes(app: FastifyInstance, opts: MaterialsRoutesOptio
       const { file, fields } = await readMultipart(req);
       const meta = materialUploadMetaSchema.parse({
         title: fields.title,
+        description: parseOptionalString(fields.description),
+        folderId: parseOptionalInt(fields.folderId),
+        folderPath: parsePathString(fields.folderPath),
         deliveryId: parseOptionalInt(fields.deliveryId),
         customerIds: parseIdArray(fields.customerIds, "customerIds"),
         tagIds: parseIdArray(fields.tagIds, "tagIds"),
         newTagNames: parseNewTagNames(fields.newTagNames),
       });
-      const data = await uploadMaterialFile(db, meta, file, auditCtx(req), { fetchFn: s3Fetch });
-      return reply.code(201).send({ data });
+      const { data, duplicateOfId } = await uploadMaterialFile(db, meta, file, auditCtx(req), {
+        fetchFn: s3Fetch,
+      });
+      // K63 软去重提示（不拦截）：同 checksum 的既有资料 id，无则 null
+      return reply.code(201).send({ data, duplicateOfId });
     },
   );
 
@@ -207,10 +226,10 @@ export function materialsRoutes(app: FastifyInstance, opts: MaterialsRoutesOptio
       const { id } = idParamSchema.parse(req.params);
       const { file, fields } = await readMultipart(req);
       const { updatedAt } = replaceFileFieldsSchema.parse({ updatedAt: fields.updatedAt });
-      const data = await replaceMaterialFile(db, id, file, updatedAt, auditCtx(req), {
+      const { data, duplicateOfId } = await replaceMaterialFile(db, id, file, updatedAt, auditCtx(req), {
         fetchFn: s3Fetch,
       });
-      return { data };
+      return { data, duplicateOfId };
     },
   );
 

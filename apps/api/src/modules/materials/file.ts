@@ -1,6 +1,8 @@
 // K57 资料对象存储：kind=file 的上传/替换/读取/尽力删除。
 // 远端配置走 system_configs code='materialsS3'；文件体量上限 MATERIAL_FILE_MAX_BYTES。
-import { randomUUID } from "node:crypto";
+// K63：入库时采集静态元数据——sha256 checksum（防重）+ 图片宽高（image-meta 零依赖解析）；
+// description/folderId/folderPath 同事务落库（folderPath 逐级缺则建）。
+import { createHash, randomUUID } from "node:crypto";
 
 import { MATERIAL_FILE_KIND, MATERIAL_FILE_MAX_BYTES } from "@gb-crm/shared";
 
@@ -16,8 +18,11 @@ import {
   type S3CredentialsValue,
 } from "../system/repo.js";
 import { assembleMaterialDetail, type MaterialDetailDto } from "./assemble.js";
+import { assertLiveFolder, ensureFolderPath } from "./folder-service.js";
 import { isPreviewableImage } from "./file-meta.js";
+import { parseImageDimensions } from "./image-meta.js";
 import {
+  findLiveFileIdByChecksum,
   findLiveCustomerIds,
   getMaterialByIdAny,
   insertMaterial,
@@ -141,6 +146,9 @@ export async function uploadMaterialFile(
   db: Db,
   meta: {
     title: string;
+    description?: string | null;
+    folderId?: number | null;
+    folderPath?: string;
     deliveryId?: number | null;
     customerIds?: number[];
     tagIds?: number[];
@@ -149,26 +157,39 @@ export async function uploadMaterialFile(
   file: UploadedFile,
   ctx: AuditContext,
   opts: { fetchFn?: typeof fetch } = {},
-): Promise<MaterialDetailDto> {
+): Promise<{ data: MaterialDetailDto; duplicateOfId: number | null }> {
   assertFileSize(file);
   const cfg = assertMaterialsStorageReady(db);
   assertLiveDelivery(db, meta.deliveryId);
   assertLiveCustomers(db, meta.customerIds);
+  assertLiveFolder(db, meta.folderId);
+
+  // K63 静态元数据：checksum 恒算；图片解析宽高（非图片 → null）
+  const checksum = createHash("sha256").update(file.buffer).digest("hex");
+  const dims = parseImageDimensions(file.buffer);
 
   const filename = sanitizeFilename(file.filename);
   const key = objectKeyFor(cfg, filename);
   await putFile(cfg, key, file, opts.fetchFn);
 
   try {
-    return inTx(db, (tx) => {
+    const data = inTx(db, (tx) => {
+      // K63 归档：folderPath 逐级缺则建（优先级高于 folderId，同事务）
+      let folderId = meta.folderId ?? null;
+      if (meta.folderPath !== undefined) folderId = ensureFolderPath(tx, meta.folderPath, ctx);
       const id = insertMaterial(tx, {
         kind: MATERIAL_FILE_KIND,
         title: meta.title,
+        description: meta.description ?? null,
+        folderId,
         deliveryId: meta.deliveryId ?? null,
         objectKey: key,
         contentType: file.contentType || "application/octet-stream",
         fileSize: file.buffer.length,
         originalFilename: filename,
+        checksum,
+        imageWidth: dims?.width ?? null,
+        imageHeight: dims?.height ?? null,
         url: null,
         content: null,
         ...createAudit(ctx),
@@ -178,6 +199,9 @@ export async function uploadMaterialFile(
       applyMaterialTags(tx, id, meta, ctx);
       return assembleMaterialDetail(tx, getMaterialByIdAny(tx, id)!);
     });
+    // K63 软去重提示：同 checksum 的更早 live file 资料存在 → 提示不拦截
+    const duplicateOfId = findLiveFileIdByChecksum(db, checksum, data.id);
+    return { data, duplicateOfId };
   } catch (err) {
     await deleteObjectBestEffort(cfg, key, opts.fetchFn);
     throw err;
@@ -191,7 +215,7 @@ export async function replaceMaterialFile(
   expectedUpdatedAt: number,
   ctx: AuditContext,
   opts: { fetchFn?: typeof fetch } = {},
-): Promise<MaterialDetailDto> {
+): Promise<{ data: MaterialDetailDto; duplicateOfId: number | null }> {
   assertFileSize(file);
   const existing = getMaterialByIdAny(db, id);
   if (!existing || existing.deletedAt !== null) throw notFound("资料不存在");
@@ -199,6 +223,8 @@ export async function replaceMaterialFile(
     throw unprocessable("只有对象存储类型的资料可以替换文件");
   }
   const cfg = assertMaterialsStorageReady(db);
+  const checksum = createHash("sha256").update(file.buffer).digest("hex");
+  const dims = parseImageDimensions(file.buffer);
   const filename = sanitizeFilename(file.filename);
   const key = objectKeyFor(cfg, filename);
   await putFile(cfg, key, file, opts.fetchFn);
@@ -208,6 +234,9 @@ export async function replaceMaterialFile(
     contentType: file.contentType || "application/octet-stream",
     fileSize: file.buffer.length,
     originalFilename: filename,
+    checksum,
+    imageWidth: dims?.width ?? null,
+    imageHeight: dims?.height ?? null,
     ...updateAudit(ctx),
   };
   const changes = occUpdateMaterial(db, id, expectedUpdatedAt, set);
@@ -218,7 +247,10 @@ export async function replaceMaterialFile(
     throw conflict("数据已被他人修改，请刷新后重试", assembleMaterialDetail(db, again));
   }
   await deleteObjectBestEffort(cfg, existing.objectKey, opts.fetchFn);
-  return assembleMaterialDetail(db, getMaterialByIdAny(db, id)!);
+  return {
+    data: assembleMaterialDetail(db, getMaterialByIdAny(db, id)!),
+    duplicateOfId: findLiveFileIdByChecksum(db, checksum, id),
+  };
 }
 
 export async function readMaterialFile(

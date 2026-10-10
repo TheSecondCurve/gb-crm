@@ -365,6 +365,28 @@ export function findLiveMaterialTagIdsByNames(db: Db, names: readonly string[]):
   return new Map(rows.map((r) => [r.name, r.id]));
 }
 
+/** K63 软去重：同 checksum 的最早 live file 资料 id（排除自身；无 → null） */
+export function findLiveFileIdByChecksum(
+  db: Db,
+  checksum: string,
+  excludeId?: number,
+): number | null {
+  const rows = db
+    .select({ id: deliveryMaterials.id })
+    .from(deliveryMaterials)
+    .where(
+      and(
+        eq(deliveryMaterials.kind, "file"),
+        eq(deliveryMaterials.checksum, checksum),
+        isNull(deliveryMaterials.deletedAt),
+      ),
+    )
+    .orderBy(asc(deliveryMaterials.id))
+    .all();
+  const hit = rows.find((r) => r.id !== excludeId);
+  return hit?.id ?? null;
+}
+
 // ---- K54 客户总览用：某客户 M2M 关联的 live 资料 ----
 
 /** 该客户的 live 资料（updatedAt desc，并列 id DESC） */
