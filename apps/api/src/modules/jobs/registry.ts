@@ -4,6 +4,7 @@ import {
   bulkTagJobParamsSchema,
   materialAiEnrichJobParamsSchema,
   materialMetaBackfillJobParamsSchema,
+  miniprogramSyncJobParamsSchema,
   signalExtractJobParamsSchema,
   type Action,
   type Resource,
@@ -17,6 +18,8 @@ import { runMaterialMetaBackfillJob } from "../materials/backfill.js";
 import { enrichMaterial, isAssetsLlmReady } from "../materials/enrich.js";
 import { runSignalExtractJob } from "../insights/extract.js";
 import { isLlmReady } from "../insights/repo.js";
+import { assertMiniprogramSyncReady } from "../miniprogram-sync/config.js";
+import { runMiniprogramSyncJob } from "../miniprogram-sync/sync.js";
 import { runDbBackup, type DbBackupJobResult, uploadBackupToS3 } from "./backup.js";export interface JobProgress {
   processed: number;
   total: number;
@@ -150,6 +153,34 @@ export const JOB_TYPES: Record<string, JobTypeDef> = {
         { fetchFn: ctx.fetchFn },
       );
       ctx.finish("succeeded", { result });
+    },
+  },
+  // K64 小程序客户同步：CRM 侧拉模式——经小程序后端 /agent/sql（read 档 PAT）按水印增量拉
+  // users，upsert 进 customers（openid → phone 链接 → 新建；只填空不覆盖人工值；软删不复活）。
+  // 连接配置在 system_configs code='miniprogramSync'（含水印），创建/执行两侧都校验就绪。
+  // params：full=true 重置水印全量重扫（幂等）；缺省增量。日常由「定时任务」配 cron 调度。
+  "miniprogram-users-sync": {
+    label: "小程序客户同步",
+    requiredPermission: { resource: "customers", action: "create" },
+    paramsSchema: miniprogramSyncJobParamsSchema,
+    validate: (db) => {
+      assertMiniprogramSyncReady(db);
+    },
+    run: async (ctx, params) => {
+      const result = await runMiniprogramSyncJob(
+        ctx.db,
+        params as { full?: boolean },
+        ctx.audit,
+        { fetchFn: ctx.fetchFn, isCancelled: ctx.isCancelled, onProgress: ctx.reportProgress },
+      );
+      if (result.cancelled) {
+        ctx.finish("cancelled", { result });
+        return;
+      }
+      const succeeded = result.created + result.linked + result.filled;
+      const status =
+        result.failed === 0 ? "succeeded" : succeeded > 0 ? "partial" : "failed";
+      ctx.finish(status, { result });
     },
   },
   // K63 存量素材元数据回填：老 kind=file 行补 checksum/图片宽高（可 enrich=true 顺带排队 AI 识别）。
