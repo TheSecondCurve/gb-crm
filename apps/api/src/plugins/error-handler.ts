@@ -16,6 +16,7 @@ export type ErrorCode =
   | "SQL_ERROR"
   | "LLM_ERROR"
   | "S3_ERROR"
+  | "UPSTREAM_ERROR"
   | "INTERNAL";
 
 export class ApiError extends Error {
@@ -53,6 +54,9 @@ export const llmError = (message: string): ApiError => new ApiError(502, "LLM_ER
 /** S3 兼容对象存储上游失败（K53：网络/超时/拒绝），502 网关语义 */
 export const s3Error = (message: string): ApiError => new ApiError(502, "S3_ERROR", message);
 
+/** 小程序后端等内部上游失败（K64：网络/超时/非 2xx/返回格式异常），502 网关语义 */
+export const upstreamError = (message: string): ApiError =>
+  new ApiError(502, "UPSTREAM_ERROR", message);
 // Fastify 自带错误（限流 429、body 解析 400 等）→ 信封映射；400 统一归并到 422 VALIDATION。
 const STATUS_MAP: Record<number, { code: ErrorCode; message: string }> = {
   400: { code: "VALIDATION", message: "请求参数不合法" },
