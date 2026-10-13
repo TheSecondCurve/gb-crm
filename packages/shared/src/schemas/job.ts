@@ -42,6 +42,16 @@ export const bulkTagJobParamsSchema = customerListQuerySchema
   .strict();
 export type BulkTagJobParams = z.infer<typeof bulkTagJobParamsSchema>;
 
+/**
+ * K64 小程序客户同步任务参数：缺省 = 按水印增量；full=true 重置水印全量重扫（幂等，不重复建行）。
+ * strict 拒绝未知键；同步连接配置（baseUrl/PAT/渠道/标签/水印）不在 params，
+ * 存 system_configs code='miniprogramSync'，由任务执行侧读取。
+ */
+export const miniprogramSyncJobParamsSchema = z
+  .object({ full: z.boolean().optional() })
+  .strict();
+export type MiniprogramSyncJobParams = z.infer<typeof miniprogramSyncJobParamsSchema>;
+
 // ---- K52 定时任务：调度定义（cron 表达式 + 任务类型 + params + 启停）。仅 admin 维护（ACL jobSchedules）----
 // 调度器把到期 next_run_at 物化成 background_jobs（trigger='scheduled'）行；执行器无感知。
 
