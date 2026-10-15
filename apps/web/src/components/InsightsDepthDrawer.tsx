@@ -2,6 +2,7 @@
 import { ArrowSquareOut, X } from "@phosphor-icons/react";
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
+import { createPortal } from "react-dom";
 
 import { fetchDepth, type DepthDto } from "../api/insights";
 import { formatDateTime } from "../columns/common";
@@ -61,7 +62,8 @@ export function InsightsDepthDrawer({
     staleTime: 60_000,
   });
 
-  return (
+  // portal 到 body：与 Modal 同因——页面树内祖先 transform 会劫持 fixed 定位
+  return createPortal(
     <div
       className="drawer-backdrop"
       role="presentation"
@@ -161,6 +163,7 @@ export function InsightsDepthDrawer({
           </>
         )}
       </aside>
-    </div>
+    </div>,
+    document.body,
   );
 }

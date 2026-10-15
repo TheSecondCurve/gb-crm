@@ -50,9 +50,14 @@ button:disabled { color: var(--text-3); cursor: not-allowed; border-color: var(-
 
 .content { flex: 1 1 0%; min-width: 0; display: flex; flex-direction: column; background-image: radial-gradient(circle at 88% -10%, rgba(52, 79, 196, 0.05), transparent 30rem); background-repeat: no-repeat; }
 
-.main { flex: 1 1 0%; padding: 26px 32px 40px; min-width: 0; animation: page-enter 180ms cubic-bezier(0, 0, 0.38, 0.9) both; }
+.main { flex: 1 1 0%; padding: 26px 32px 40px; min-width: 0; animation: page-enter 180ms cubic-bezier(0, 0, 0.38, 0.9); }
 
-@keyframes page-enter { from { opacity: 0; transform: translateY(7px); } to { opacity: 1; transform: translateY(0); } }
+/* 不用 fill-mode：动画结束后 computed transform 必须回到 none，
+   否则残留矩阵会让 .main 变成 fixed 后代的包含块（弹窗定位劫持） */
+
+/* 终态必须是 transform: none（而非 translateY(0)）：fill-mode both 会保留最后一帧，
+   非 none 的 computed transform 会把 .main 变成 fixed 后代的包含块（弹窗定位劫持） */
+@keyframes page-enter { from { opacity: 0; transform: translateY(7px); } to { opacity: 1; transform: none; } }
 
 /* 编辑化页首：重墨上缘线 + 宋体大标题（h1），右侧操作区随 .page-head 布局保持 */
 .page-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; margin-bottom: 24px; padding-top: 14px; border-top: 2px solid var(--ink); flex-wrap: wrap; }
@@ -296,7 +301,7 @@ button:disabled { color: var(--text-3); cursor: not-allowed; border-color: var(-
 /* 登录页：编辑化双栏封面（左纸格封面 + 右表单） */
 .login-page { min-height: 100vh; display: grid; grid-template-columns: 1.15fr 0.85fr; background: var(--surface); }
 
-.login-cover { position: relative; display: flex; flex-direction: column; justify-content: space-between; overflow: hidden; padding: 40px 48px; border-right: 1px solid var(--hairline); background-color: var(--bg); background-image: linear-gradient(to right, rgba(32, 35, 31, 0.035) 1px, transparent 1px), radial-gradient(circle at 16% 12%, rgba(52, 79, 196, 0.07), transparent 30rem); background-size: calc(100% / 6) 100%, 100% 100%; animation: page-enter 200ms cubic-bezier(0, 0, 0.38, 0.9) both; }
+.login-cover { position: relative; display: flex; flex-direction: column; justify-content: space-between; overflow: hidden; padding: 40px 48px; border-right: 1px solid var(--hairline); background-color: var(--bg); background-image: linear-gradient(to right, rgba(32, 35, 31, 0.035) 1px, transparent 1px), radial-gradient(circle at 16% 12%, rgba(52, 79, 196, 0.07), transparent 30rem); background-size: calc(100% / 6) 100%, 100% 100%; animation: page-enter 200ms cubic-bezier(0, 0, 0.38, 0.9); }
 
 .login-cover-brand { display: flex; align-items: center; gap: 12px; font-family: var(--font-display); font-size: 17px; font-weight: 600; }
 
@@ -310,7 +315,7 @@ button:disabled { color: var(--text-3); cursor: not-allowed; border-color: var(-
 
 .login-cover-watermark { position: absolute; right: -24px; bottom: -60px; font-family: var(--font-display); font-size: 240px; line-height: 1; color: var(--ink); opacity: 0.03; pointer-events: none; }
 
-.login-side { display: flex; align-items: center; justify-content: center; padding: 48px 32px; animation: page-enter 200ms cubic-bezier(0, 0, 0.38, 0.9) 40ms both; }
+.login-side { display: flex; align-items: center; justify-content: center; padding: 48px 32px; animation: page-enter 200ms cubic-bezier(0, 0, 0.38, 0.9) 40ms backwards; }
 
 .login-card { width: 360px; background: transparent; border: none; border-top: none; border-radius: 0; padding: 0; display: flex; flex-direction: column; gap: 16px; }
 
@@ -324,9 +329,12 @@ button:disabled { color: var(--text-3); cursor: not-allowed; border-color: var(-
 
 .field { display: flex; flex-direction: column; gap: 6px; color: var(--text-2); font-size: 13px; }
 
-.modal-mask { position: fixed; inset: 0; background: rgba(23, 25, 20, 0.45); display: flex; align-items: center; justify-content: center; animation: fade-in 160ms ease-out; }
+.modal-mask { position: fixed; inset: 0; z-index: 40; background: rgba(23, 25, 20, 0.45); display: flex; align-items: center; justify-content: center; padding: 24px; overflow-y: auto; animation: fade-in 160ms ease-out; }
 
-.modal { width: 420px; max-width: 90vw; max-height: 85vh; overflow-y: auto; background: var(--surface); border-radius: 8px; padding: 24px; border-top: 3px solid var(--ink); box-shadow: var(--shadow-editorial); animation: pop-in 180ms cubic-bezier(0, 0, 0.38, 0.9); }
+.modal { width: 420px; max-width: 100%; max-height: min(85vh, calc(100dvh - 48px)); overflow-y: auto; background: var(--surface); border-radius: 8px; padding: 24px; border-top: 3px solid var(--ink); box-shadow: var(--shadow-editorial); animation: pop-in 180ms cubic-bezier(0, 0, 0.38, 0.9); flex-shrink: 0; }
+
+/* 弹窗标题：展示字体与页级标题同源，与正文拉开层级 */
+.modal h2 { font-family: var(--font-display); font-size: 19px; font-weight: 600; letter-spacing: -0.01em; margin: 0 0 14px; }
 
 .modal-wide { width: 560px; }
 
@@ -470,7 +478,7 @@ textarea { resize: vertical; }
 
 /* ---- RecordFormModal：新增/修改全字段表单（多列近全屏弹窗） ---- */
 
-.modal-form { width: min(1120px, 94vw); max-height: 88vh; }
+.modal-form { width: min(1120px, 100%); max-height: 88vh; }
 
 /* 多列网格：短字段（text/select）自适应多列；textarea/multi/relation 占满整行 */
 .form-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); column-gap: 16px; }
