@@ -1,31 +1,46 @@
-/* 视觉 token（docs/design.md §4，与女商运营管理端快照一致，小写 hex）。
-   --on-ink 来自 style.md 辅助约定，mhtml :root 无。 */
+/* 视觉 token — 项目刊物编辑化风格（K66，与 gb-pmo 参考实现同源）。
+   token 名保持女商快照命名（--bg/--surface/--ink/--accent…），组件层零改动换肤。
+   语义约定：--accent 是唯一品牌色（钴蓝），错误/危险语义一律用 --bad，两者不再混用。 */
 :root {
-  --bg: #f1f1ef; /* 冷灰底 paper — 主底，永不改成暖象牙 */
-  --surface: #ffffff; /* 白卡/弹层表面（收敛纯白，禁止散落 rgb(255,255,255)） */
-  --ink: #141210; /* 玄黑 — 侧栏 / 主按钮 / 主文字；禁整页铺黑 */
-  --cream: #edeae3; /* 奶白 — 玄黑底上的字；不用纯白 */
-  --accent: #ce1432; /* 冷漆红 — 面积 ≤5%，永不铺底 */
-  --text-2: #5a544c;
-  --text-3: #9a948c;
-  --hairline: #d8d6d1;
-  --note: #a39d93; /* 玄黑底注释 */
-  --line-dark: #3a3530;
-  --on-ink: #dcd7ce; /* 玄黑底亮字（style.md 辅助） */
+  --bg: #f3f2ed; /* 暖纸底 — 主底 */
+  --surface: #fbfaf6; /* 纸卡/弹层表面 */
+  --panel: #eeece5; /* 区块底、表头底、hover 底 */
+  --ink: #20231f; /* 墨色 — 主文字、重结构线、主按钮 */
+  --cream: #fbfaf6; /* 墨底上的文字（同 surface） */
+  --accent: #344fc4; /* 品牌钴蓝 — 链接/选中/进度/大数字点睛，永不铺底 */
+  --brand-deep: #243884;
+  --brand-soft: #e8eaf5;
+  --text-2: #6c7068;
+  --text-3: #989b93;
+  --hairline: #dcded6;
+  --line-strong: #bec2b7;
+  --line-dark: #bec2b7; /* 兼容旧引用：重分隔线 */
+  --note: #989b93; /* 兼容旧引用 */
+  --on-ink: #fbfaf6; /* 墨底亮字 */
+  --ok: #327158;
+  --ok-soft: #e7efe9;
+  --warn: #9a641e;
+  --warn-soft: #f5eddd;
+  --bad: #a8483c;
+  --bad-soft: #f5e7e3;
+
+  --font-display: "Songti SC", "Noto Serif CJK SC", "Source Han Serif SC", "STSong", "SimSun", Georgia, serif;
+  --shadow-float: 0 10px 28px rgba(32, 35, 31, 0.1);
+  --shadow-editorial: 0 18px 50px rgba(32, 35, 31, 0.07);
 }
 
 /* ── K62 客户全景驾驶舱 token ──
-   温度色阶（冷→热）：冰点灰蓝 → 燧石灰 → 琥珀；漆红仍只给警报/行动项，不参与温度渐变。 */
+   温度色阶（冷→热）：冰点灰蓝 → 燧石灰 → 琥珀；警报/行动项一律 --bad，不参与温度渐变。 */
 :root {
   --temp-frozen: #8fa3b0; /* 冰点 <25° */
   --temp-mild: #a39d93;   /* 低温带 25-40°（燧石灰） */
   --temp-warm: #c98a3d;   /* 温和 40-60°（琥珀前段） */
-  --temp-hot: #b35c1f;    /* 活跃 ≥60°（琥珀后段，接近漆红但不是漆红） */
+  --temp-hot: #b35c1f;    /* 活跃 ≥60°（琥珀后段，接近警报红但不是警报红） */
   --insight-gap: 20px;
   --insight-card-pad: 18px;
   --insight-headline: 26px; /* 人话结论行 */
-  --insight-heat-min: rgba(20, 18, 16, 0.06); /* 矩阵格子热度最低 */
-  --insight-heat-max: rgba(20, 18, 16, 0.55); /* 矩阵格子热度最高（玄黑浓度表达密度） */
+  --insight-heat-min: rgba(32, 35, 31, 0.06); /* 矩阵格子热度最低 */
+  --insight-heat-max: rgba(32, 35, 31, 0.55); /* 矩阵格子热度最高（墨色浓度表达密度） */
   --drawer-ease: cubic-bezier(0.22, 1, 0.36, 1);
   --drawer-dur: 240ms;
 }
