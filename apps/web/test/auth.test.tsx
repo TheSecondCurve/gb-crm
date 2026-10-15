@@ -10,7 +10,7 @@ describe("认证与路由", () => {
       if (url === "/api/v1/auth/me") return unauthorized();
     });
     renderApp("/customers");
-    expect(await screen.findByRole("heading", { name: "女商 私域运营管理端" })).toBeTruthy();
+    expect(await screen.findByRole("heading", { name: "欢迎回来" })).toBeTruthy();
     expect(screen.queryByRole("link", { name: "客户信息" })).toBeNull();
   });
 
@@ -59,7 +59,7 @@ describe("认证与路由", () => {
 
     expect(await screen.findByText("用户名或密码错误")).toBeTruthy();
     // 仍在登录页
-    expect(screen.getByRole("heading", { name: "女商 私域运营管理端" })).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "欢迎回来" })).toBeTruthy();
   });
 
   it("已登录访问 /login → 跳 /customers", async () => {
@@ -87,7 +87,7 @@ describe("认证与路由", () => {
 
     fireEvent.click(await screen.findByRole("button", { name: "退出" }));
 
-    expect(await screen.findByRole("heading", { name: "女商 私域运营管理端" })).toBeTruthy();
+    expect(await screen.findByRole("heading", { name: "欢迎回来" })).toBeTruthy();
   });
 });
 
@@ -104,7 +104,7 @@ describe("会话失效 401 分流（H4）", () => {
     // 切到产品目录触发一次会 401 的请求
     fireEvent.click(screen.getByRole("link", { name: "产品目录" }));
 
-    expect(await screen.findByRole("heading", { name: "女商 私域运营管理端" })).toBeTruthy();
+    expect(await screen.findByRole("heading", { name: "欢迎回来" })).toBeTruthy();
   });
 
   it("POST /auth/login 自身的 401 不触发未授权回调；其它路径 401 触发一次", async () => {
