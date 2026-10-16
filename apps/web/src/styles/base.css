@@ -422,6 +422,11 @@ textarea { resize: vertical; }
 
 .data-grid-table { width: max-content; min-width: 100%; font-size: 13px; }
 
+/* K67 修复：overflow:hidden 会让表格自身成为 td/th sticky 的最近滚动容器，内联轴冻结
+   （首列 left:0 / 操作列 right:0）随之失效——圆角裁切由外层 .data-grid-scroll（auto + radius）承担，
+   DataGrid 表格恒在其内，此处放开无视觉代价。注意裸 .data-table（无 sticky 需求）保留 hidden。 */
+.data-grid-table { overflow: visible; }
+
 /* 紧凑密度：padding 从 12px/16px 收到 4px/8px；长文本省略，不撑爆列宽 */
 .data-grid-table th, .data-grid-table td { padding: 4px 8px; white-space: nowrap; max-width: 320px; overflow: hidden; text-overflow: ellipsis; }
 
@@ -939,4 +944,146 @@ textarea { resize: vertical; }
     transition-duration: 0.01ms !important;
   }
   .main, .login-cover, .login-side { animation: none !important; transform: none !important; }
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   K67 移动端响应式
+   断点约定（与 tokens.css 注记 / useMediaQuery.ts / docs/style.md 一致；
+   @media 不支持 CSS 变量，代码一律用字面值）：
+   ≤767px 手机 · 768–1023px 平板（轻量微调） · ≥1024px 桌面（即上方全部既有样式）。
+   原则：只做窄屏覆写，不改桌面选择器与几何；触屏基建（touch-action 等）全端生效。
+   ───────────────────────────────────────────────────────────────────────────── */
+
+/* 触屏基建（全端）：touch-action 在 html 上对全部触点生效——
+   禁双击缩放劫持（DataGrid 双击编辑在触屏才能稳定触发），保留捏合缩放 */
+html {
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* 裸 <table> 的横向滚动兜底容器（授权管理 / 客户总览消费记录 / 文案列表等） */
+.table-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+
+.table-scroll .data-table { min-width: 640px; }
+
+/* 重度工具页（甘特/矩阵/圈子工作台）移动端提示条（DesktopHint 仅手机断点渲染） */
+.desktop-hint { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 8px 12px; margin-bottom: 12px; border: 1px dashed var(--warn); border-radius: 6px; background: var(--warn-soft); color: var(--warn); font-size: 12px; }
+
+.desktop-hint button { padding: 3px 12px; font-size: 12px; flex-shrink: 0; }
+
+/* 顶栏搜索按钮（K67）：触屏没有 Cmd/Ctrl+K，给常驻入口；样式与 .sidebar-toggle 同款 */
+.header-search { border: none; background: transparent; padding: 6px 8px; font-size: 15px; line-height: 1; border-radius: 4px; display: inline-flex; align-items: center; justify-content: center; }
+
+.header-search:hover { background: var(--panel); border-color: transparent; }
+
+/* ── 手机 ≤767px ── */
+@media (max-width: 767px) {
+  h1 { font-size: 20px; }
+
+  /* 外壳：主区 padding 收窄，底部避让安全区 */
+  .main { padding: 16px 16px 32px; padding-bottom: max(32px, env(safe-area-inset-bottom)); }
+  .page-head { margin-bottom: 16px; }
+
+  /* 侧栏 → 遮罩抽屉：fixed 覆盖 + 滑入；桌面态的负 margin 折叠在此断点不参与 */
+  .sidebar { position: fixed; left: 0; top: 0; bottom: 0; height: auto; z-index: 55; transform: translateX(-100%); transition: transform 0.25s ease-out; }
+
+  .sidebar.sidebar-drawer-open { transform: none; box-shadow: var(--shadow-float); }
+
+  .sidebar-mask { position: fixed; inset: 0; z-index: 54; background: rgba(23, 25, 20, 0.45); animation: fade-in 160ms ease-out; }
+
+  /* 顶栏：面包屑可收缩省略，扮演徽标允许换行 */
+  .app-header { gap: 10px; padding: 0 12px; }
+  .breadcrumb { flex: 1 1 0%; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .navbar-user { gap: 8px; }
+  .impersonate-badge { white-space: normal; }
+
+  /* 输入控件 16px：防 iOS Safari 聚焦自动放大；触控目标同时加大 */
+  input, select, textarea { font-size: 16px; padding: 10px 12px; }
+  .command-palette > input, .batch-bar select, .row-actions input, .task-remark, .matrix-cell-editing input { font-size: 16px; }
+  .data-grid-table td input, .data-grid-table td textarea, .data-grid-table td select { font-size: 16px; padding: 6px 8px; }
+
+  /* 按钮：触控目标加大（只覆写有更小特异性/显式规则的常用钮） */
+  button { padding: 9px 18px; }
+  .btn-small { padding: 6px 14px; font-size: 13px; }
+  .row-actions button { padding: 8px 14px; }
+  .navbar-logout, .navbar-menu-trigger { padding: 8px 14px; }
+  .data-grid-table th, .data-grid-table td { padding: 10px 10px; }
+  .matrix-table th, .matrix-table td { padding: 10px 10px; }
+
+  /* DataGrid：竖滚交还页面（弃 210px 魔法数），横滚 + 冻结首列保留；行尾操作列右冻结 */
+  .data-grid-scroll { max-height: none; }
+  .data-grid-table.has-actions th:last-child,
+  .data-grid-table.has-actions td:last-child {
+    position: sticky; right: 0; z-index: 2; background: var(--surface);
+    box-shadow: inset 1px 0 0 var(--hairline);
+  }
+  .data-grid-table.has-actions thead th:last-child {
+    z-index: 3; background: var(--panel);
+    box-shadow: inset 1px 0 0 var(--hairline), inset 0 -1px 0 var(--hairline);
+  }
+  .data-grid-table.has-actions tbody tr:hover td:last-child { background: var(--panel); }
+
+  /* 分页：允许换行；页码跳转在窄屏收起（DOM 不变） */
+  .pagination { flex-wrap: wrap; row-gap: 8px; }
+  .pagination-jump { display: none; }
+
+  /* 搜索条 / 筛选组：可收缩、组内可换行，防 DealFilterBar 撑破整页宽度 */
+  .page-head > .search-bar { flex: 1 1 100%; min-width: 0; }
+  .search-bar input, .search-bar select { min-width: 0; }
+  .filter-group { flex-wrap: wrap; min-width: 0; max-width: 100%; }
+
+  /* 弹窗：近全屏；动作钮拉宽便于点按 */
+  .modal-mask { padding: 12px; }
+  .modal { width: 100%; max-height: calc(100dvh - 24px); }
+  .modal-form { width: 100%; max-height: calc(100dvh - 24px); }
+  .modal-actions { flex-wrap: wrap; }
+  .modal-actions button { flex: 1 1 auto; }
+
+  /* Toast：左右贴边 */
+  .toast-list { left: 16px; right: 16px; bottom: max(16px, env(safe-area-inset-bottom)); }
+
+  /* 快速搜索：键盘提示无意义，收起 */
+  .palette-footer { display: none; }
+  .palette-mask { padding-top: 10vh; }
+
+  /* Tabs：横向滑动 */
+  .tabs { overflow-x: auto; flex-wrap: nowrap; }
+  .tabs button { flex-shrink: 0; white-space: nowrap; }
+
+  /* 列表项行：右侧操作可下坠换行 */
+  .item-row { flex-wrap: wrap; }
+
+  /* 登录页：单栏，封面退场 */
+  .login-page { grid-template-columns: 1fr; }
+  .login-cover { display: none; }
+  .login-side { padding: 32px 20px; }
+  .login-card { width: min(360px, 100%); }
+  .login-title { font-size: 26px; }
+
+  /* 资料全文编辑页：分屏上下堆叠 */
+  .material-editor { height: calc(100dvh - 130px); }
+  .material-editor-body { flex-direction: column; }
+
+  /* 素材库：纵向堆叠，文件夹树变横排胶囊 */
+  .library-layout { flex-direction: column; }
+  .library-tree { width: 100%; flex-direction: row; flex-wrap: wrap; gap: 4px; }
+  .library-tree-item { width: auto; border: 1px solid var(--hairline); border-radius: 999px; padding: 5px 12px; }
+  .library-tree-manage { margin-top: 4px; padding-top: 4px; border-top: none; flex-direction: row; flex-wrap: wrap; }
+
+  /* 设置表单两列 → 单列 */
+  .settings-form { grid-template-columns: 1fr; }
+
+  /* 甘特：左列收窄，行内日期/元信息/删除收起（编辑走桌面端或表单弹窗），保底可横滚查看 */
+  .gantt-head-label, .gantt-row-label { width: 140px; min-width: 140px; padding: 6px 8px; }
+  .gantt-item-dates, .gantt-item-meta, .gantt-item-delete { display: none; }
+
+  /* 文案六维度：模板下拉占满整行 */
+  .copy-dim-head select { max-width: none; min-width: 0; width: 100%; }
+}
+
+/* ── 平板 768–1023px：轻量微调 ── */
+@media (min-width: 768px) and (max-width: 1023px) {
+  .main { padding: 20px 24px 32px; }
+  .settings-form { grid-template-columns: 1fr; }
+  .library-tree { width: 180px; }
 }

@@ -66,7 +66,19 @@ function NavGroup({ group, items }: { group: string; items: PageDef[] }) {
   );
 }
 
-export function Sidebar({ hidden }: { hidden: boolean }) {
+/**
+ * 侧栏（K67）：桌面端 hidden 走负 margin 折叠；手机断点 drawerOpen 时变遮罩抽屉，
+ * 遮罩由本组件渲染、点击回调 onCloseDrawer。
+ */
+export function Sidebar({
+  hidden,
+  drawerOpen = false,
+  onCloseDrawer,
+}: {
+  hidden: boolean;
+  drawerOpen?: boolean;
+  onCloseDrawer?: () => void;
+}) {
   const { me } = useAuth();
   const visible = menuPagesSorted((me?.pages ?? []) as PageKey[]);
   const byGroup = PAGE_GROUPS.map((group) => ({
@@ -74,17 +86,26 @@ export function Sidebar({ hidden }: { hidden: boolean }) {
     items: visible.filter((p) => p.group === group),
   })).filter((g) => g.items.length > 0);
 
+  const className = drawerOpen
+    ? "sidebar sidebar-drawer-open"
+    : hidden
+      ? "sidebar sidebar-hidden"
+      : "sidebar";
+
   return (
-    <aside className={hidden ? "sidebar sidebar-hidden" : "sidebar"}>
-      <div className="sidebar-brand">
-        <span className="brand-mark" aria-hidden="true" />
-        {BRAND_NAME}
-      </div>
-      <nav className="sidebar-nav">
-        {byGroup.map((g) => (
-          <NavGroup key={g.group} group={g.group} items={g.items} />
-        ))}
-      </nav>
-    </aside>
+    <>
+      {drawerOpen && <div className="sidebar-mask" aria-hidden="true" onClick={onCloseDrawer} />}
+      <aside className={className}>
+        <div className="sidebar-brand">
+          <span className="brand-mark" aria-hidden="true" />
+          {BRAND_NAME}
+        </div>
+        <nav className="sidebar-nav">
+          {byGroup.map((g) => (
+            <NavGroup key={g.group} group={g.group} items={g.items} />
+          ))}
+        </nav>
+      </aside>
+    </>
   );
 }
