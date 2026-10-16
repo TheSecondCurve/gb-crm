@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { CaretDown, List } from "@phosphor-icons/react";
+import { CaretDown, List, MagnifyingGlass } from "@phosphor-icons/react";
 import { can, systemRoleLabels } from "@gb-crm/shared";
 import { useLocation } from "react-router-dom";
 
@@ -7,7 +7,14 @@ import { useAuth } from "../auth/AuthProvider";
 import { ImpersonateModal } from "../components/ImpersonateModal";
 import { breadcrumbLabel } from "./breadcrumb";
 
-export function Header({ onToggleSidebar }: { onToggleSidebar: () => void }) {
+interface HeaderProps {
+  onToggleSidebar: () => void;
+  /** 打开全局快速搜索（K67：触屏没有 Cmd/Ctrl+K，顶栏给常驻入口） */
+  onOpenSearch: () => void;
+  sidebarToggleLabel?: string;
+}
+
+export function Header({ onToggleSidebar, onOpenSearch, sidebarToggleLabel = "折叠侧栏" }: HeaderProps) {
   const { me, logout, stopImpersonation } = useAuth();
   const [menuOpen, setMenuOpen] = useState(false);
   const [impersonateOpen, setImpersonateOpen] = useState(false);
@@ -15,16 +22,24 @@ export function Header({ onToggleSidebar }: { onToggleSidebar: () => void }) {
   const label = breadcrumbLabel(location.pathname);
 
   const canImpersonate = can(me?.systemRole ?? null, "auth", "impersonate");
+  // 与 CommandPalette 的权限门控一致：有客户页可见才给搜索入口
+  const canSearch =
+    (me?.pages ?? []).includes("customers") || (me?.pages ?? []).includes("my-customers");
   const impersonating = me?.impersonatedBy != null;
   const roleLabel = me?.systemRole ? systemRoleLabels[me.systemRole] : "";
 
   return (
     <header className="app-header">
-      <button type="button" className="sidebar-toggle" aria-label="折叠侧栏" onClick={onToggleSidebar}>
+      <button type="button" className="sidebar-toggle" aria-label={sidebarToggleLabel} onClick={onToggleSidebar}>
         <List size={18} weight="bold" aria-hidden="true" />
       </button>
       <div className="breadcrumb">{label}</div>
       <div className="navbar-user">
+        {canSearch && (
+          <button type="button" className="header-search" aria-label="搜索客户" onClick={onOpenSearch}>
+            <MagnifyingGlass size={18} weight="bold" aria-hidden="true" />
+          </button>
+        )}
         {impersonating ? (
           <>
             {/* K49：扮演中 —— 显示被扮演者身份 + 退出扮演；不提供再次切换入口（单层） */}

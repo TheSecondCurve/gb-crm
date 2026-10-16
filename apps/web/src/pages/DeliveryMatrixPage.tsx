@@ -7,6 +7,7 @@ import { useNavigate, useParams } from "react-router-dom";
 import { api } from "../api/client";
 import type { DeliverableDto, DeliveryDto } from "../api/types";
 import { useAuth } from "../auth/AuthProvider";
+import { DesktopHint } from "../components/DesktopHint";
 import { DeliveryMatrix } from "../components/DeliveryMatrix";
 
 export function DeliveryMatrixPage() {
@@ -37,6 +38,8 @@ export function DeliveryMatrixPage() {
           </button>
         </div>
       </div>
+
+      <DesktopHint />
 
       <div className="card">
         <div className="card-body-flush">

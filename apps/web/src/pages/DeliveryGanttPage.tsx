@@ -7,6 +7,7 @@ import { useNavigate, useParams } from "react-router-dom";
 import { api } from "../api/client";
 import type { DeliverableDto, DeliveryDto } from "../api/types";
 import { useAuth } from "../auth/AuthProvider";
+import { DesktopHint } from "../components/DesktopHint";
 import { DeliveryGantt } from "../components/DeliveryGantt";
 
 export function DeliveryGanttPage() {
@@ -37,6 +38,7 @@ export function DeliveryGanttPage() {
           </button>
         </div>
       </div>
+      <DesktopHint />
       <DeliveryGantt
         deliveryId={deliveryId}
         delivery={delivery}

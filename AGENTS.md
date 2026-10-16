@@ -152,6 +152,7 @@ Workspace 依赖写法：`"@gb-crm/shared": "*"`（npm 不支持 `workspace:*`�
 - 主底永远冷灰 `#F1F1EF`，禁整页铺玄黑。冷漆红 `#CE1432` 只点睛（面积 ≤5%）。玄黑底上的字用奶白 `#EDEAE3`，别用纯白。
 - 表格：**双击**进入编辑（单击只选中）；文本 debounce 300ms；Tab/Enter **先 flush 再导航**。不是完整 spreadsheet，不要上 AG Grid Enterprise。
 - 列表页：`q` + pageSize 25/50/100 + 至多一个类型/状态下拉。API 上的 `ownerId`/`channelId` 过滤可以有，**UI 不做**（例外：「我的运营」固定 ownerId=当前用户不加下拉；客户页一个标签下拉——`useResourceList` 的 `secondaryFilterKey`，仅客户页用；成交页 `/deals` 与 `/my/deals` 用多维筛选条 `DealFilterBar`）。
+- 响应式（K67）：断点手机 ≤767px / 平板 768–1023px（字面值真相在 `tokens.css` 注记 + `hooks/useMediaQuery.ts`）。手机端侧栏是遮罩抽屉、顶栏有常驻搜索按钮（CommandPalette 受控）；DataGrid 手机端行尾操作列右冻结（`has-actions`）。新增响应式样式只追加在 `base.css` 末尾 K67 块，不改桌面几何；重度工具页（甘特/矩阵/圈子）保底横滚 + `DesktopHint`，不做移动专属布局。
 
 ### 环境变量
 

@@ -32,6 +32,13 @@
 - **图标**：统一 `@phosphor-icons/react`，一处一个 family；小控件用 `weight="bold"` + `aria-hidden`，正文用默认 weight。禁用字符 glyph（`☰ ▾ × ✓ +`）充当控件图标。
 - **键盘手感（K66 不动）**：DataGrid 保持单击选中 / 双击·Enter 编辑 / Enter 下移 / Tab 右移 / Shift+Tab 左移 / Esc 取消；列表页搜索框按 `/` 聚焦，全局按 `Ctrl/Cmd+K` 打开快速搜索；侧栏分组折叠、列选择器、行多选批量操作交互全部原样。
 
+## 响应式（K67）
+
+- **断点**：手机 ≤767px / 平板 768–1023px（轻量微调）/ 桌面 ≥1024px（= 全部默认样式）。`@media` 不支持 CSS 变量，断点字面值的单一真相注记在 `tokens.css`，JS 侧统一用 `hooks/useMediaQuery.ts` 的 `MOBILE_BREAKPOINT`，三方不得各写各的。
+- **原则**：CSS 优先——响应式样式只在 `base.css` 末尾「K67 移动端响应式」块内追加窄屏覆写，禁止改写桌面选择器与几何；触屏基建（`html { touch-action: manipulation }`、去点按高亮、移动端输入 16px、触控目标加大）全端生效。
+- **手机端形态**：侧栏 = 遮罩抽屉（路由变更/点遮罩自动收起），顶栏常驻搜索按钮；DataGrid 竖滚交还页面、横滚 + 冻结首列保留、行尾操作列右冻结（`has-actions`）；弹窗近全屏；登录页单栏（封面退场）；设置表单单列、tabs 横滑；素材库树变横排胶囊、素材编辑分屏改堆叠；裸宽表包 `.table-scroll` 横滚兜底。
+- **重度桌面工具页（甘特 / 状态矩阵 / 圈子工作台）保底可用**：维持横向滚动，甘特左列收窄、行内日期输入收起；页面顶部 `DesktopHint` 提示「建议桌面端」（可关，localStorage 记忆）。不为它们做移动专属布局。
+
 ## 例子
 
 example/example_page.html.mhtml（旧女商快照，仅存档参考，不再是实现依据）；现行参考实现见 gb-pmo 仓库。

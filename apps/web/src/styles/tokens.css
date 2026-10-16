@@ -49,3 +49,8 @@
 .temp-band-frozen { color: var(--temp-frozen); }
 .temp-band-warm { color: var(--temp-warm); }
 .temp-band-hot { color: var(--temp-hot); }
+
+/* ── K67 响应式断点注记 ──
+   @media 不支持 CSS 变量，断点在 base.css / useMediaQuery.ts 里用字面值，此处为单一真相注记：
+   手机 ≤767px（侧栏抽屉化） / 平板 768–1023px（轻量微调） / 桌面 ≥1024px（默认样式）。 */
+
