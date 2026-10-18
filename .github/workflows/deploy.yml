@@ -32,8 +32,12 @@ jobs:
           for i in 1 2 3; do docker compose pull && break; echo "pull 失败,第 $i 次重试"; sleep 8; done
           docker compose up -d
 
-      - name: 冒烟验证
+      - name: 冒烟验证(tsx 直跑 TS 启动需 20-40s,轮询等待)
         run: |
-          sleep 3
-          curl -sf -o /dev/null http://127.0.0.1:18085/
+          for i in $(seq 20); do
+            C=$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:18085/ || true)
+            case "$C" in 200|302|401) echo "gbcrm 就绪($C,第 $i 轮)"; exit 0;; esac
+            sleep 3
+          done
+          echo "gbcrm 60s 内未就绪"; docker logs gbcrm --tail 20; exit 1
           echo "gb-crm 部署完成,容器 $(docker inspect gbcrm --format '{{.Image}}' | cut -c8-19)"
