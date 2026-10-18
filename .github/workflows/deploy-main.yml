@@ -31,6 +31,7 @@ jobs:
           tags: |
             ${{ secrets.ACR_REGISTRY }}/girlboss/gb-crm:${{ github.sha }}
             ${{ secrets.ACR_REGISTRY }}/girlboss/gb-crm:main
+          provenance: false
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
