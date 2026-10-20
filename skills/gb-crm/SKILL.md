@@ -1,6 +1,6 @@
 ---
 name: gb-crm
-version: 0.16.0
+version: 0.16.1
 description: >
   女商 私域运营管理端（gb-crm）本机 HTTP 客户端。用 ~/.gb-crm/credentials.json 的 PAT
   通过单一 SQL 端点查询或维护客户、渠道、产品、团队成员、成交记录、交付管理与资料。
@@ -57,7 +57,7 @@ python3 "$SKILL_DIR/scripts/gb-crm.py" me    # 我是谁：id / username / nickn
 python3 "$SKILL_DIR/scripts/gb-crm.py" upload ./录音稿.pdf title="3月下午茶整场" deliveryId=12 customerIds='[3,5]' newTagNames='["下午茶"]'
 ```
 
-文件**必须小于 32MB**（超限请先压缩/拆分）；`title` 必填，`deliveryId`/`folderId` 是数字、`customerIds`/`tagIds`/`newTagNames` 是 JSON 数组字符串；可选 `description=`（文字描述，可被全文搜索）、`folderPath="客户A/下午茶"`（逐级缺则自动建文件夹，优先于 folderId）、`aiEnrich=false`（agent 已自带描述/标签时关掉服务端 AI 识别）；同样需要 admin/operator + write scope。上传前先按「资料」一节的规则匹配/新建交付单拿到 `deliveryId`。图片入库自动采集像素宽高与 sha256；响应带 `duplicateOfId`（与既有素材同内容的 id，软提示不拦截）。
+文件**必须小于 32MB**（超限请先压缩/拆分）；`title` 必填，`deliveryId`/`folderId` 是数字、`customerIds`/`tagIds`/`newTagNames` 是 JSON 数组字符串；可选 `description=`（文字描述，可被全文搜索）、`folderPath="客户A/下午茶"`（逐级缺则自动建文件夹，优先于 folderId）、`aiEnrich=false`（agent 已自带描述/标签时关掉服务端 AI 识别）；同样需要 admin/operator + write scope。`deliveryId`/`customerIds` 只在资料明确属于某场次/交付时才带（按「资料」一节的规则匹配/新建交付单，主要服务「复杂资料整理入库」场景）；**用户说管理素材/传素材库/归档图片 → 不匹配、不新建、不追问交付单**，按「素材库」节上传。图片入库自动采集像素宽高与 sha256；响应带 `duplicateOfId`（与既有素材同内容的 id，软提示不拦截）。
 
 Windows 上若命令 `python3` 不存在，用 `python` 或 `py`（如 `py "$SKILL_DIR/scripts/gb-crm.py" me`）。脚本本身无第三方依赖，跨平台。
 
@@ -146,7 +146,9 @@ python3 "$SKILL_DIR/scripts/gb-crm.py" GET "/api/v1/insights/topics"
 
 `kind=file` 的资料构成素材库（绝大部分是图片）。管理端入口「素材库」页（文件夹树 + 相册）；agent 侧核心操作三条命令 + 一组 REST 过滤参数。
 
-**上传（一步带全元数据）**：agent 看得见图、知道上下文——描述/标签/归档自己带，质量比服务端 vision 识别高且零成本：
+**触发与指令**：用户说「管理素材 / 传素材 / 传（到）素材库 / 归档图片 / 找图」→ 走本节链路：上传 → 识别图 → 标签并集（用户给的 ∪ 识别得出的）。**不匹配、不新建交付单，也不追问交付**——素材的组织维度是文件夹+标签，`deliveryId` 留空是常态；只有用户明确说「这张属于某场次/交付」时才带 `deliveryId=`。
+
+**上传（一步带全元数据）**：agent 看得见图、知道上下文——先看图，把描述/标签/归档自己带上（质量比服务端 vision 识别高且零成本）：
 
 ```bash
 python3 "$SKILL_DIR/scripts/gb-crm.py" upload ./合影.png \
@@ -155,8 +157,10 @@ python3 "$SKILL_DIR/scripts/gb-crm.py" upload ./合影.png \
 ```
 
 - `folderPath` 逐级缺则自动建（`"客户A/下午茶"` 建两级），幂等；优先级高于 `folderId`
-- `aiEnrich=false`：agent 已自带描述/标签时关掉服务端 AI 识别；不传则图片自动入队识别（`aiStatus=pending` → ready；LLM 未配置/超 8MB 自动 skipped，不影响上传成功）
+- 用户给的标签直接并进 `newTagNames`（与 agent 看图得出的标签合成一组传入）
+- `aiEnrich=false` 的**前提是 agent 确实看过图、且 `description=` 与标签都已自带**——此时关掉服务端识别省一次调用；没看图或只带了用户标签 → **不传 `aiEnrich`**（缺省开），图片自动入队识别（`aiStatus=pending` → ready；LLM 未配置/超 8MB 自动 skipped，不影响上传成功），识别结果**描述只填空、标签并集合并**，用户/agent 标签不会被覆盖
 - 防重约定：先算本地 sha256 → `GET /materials?checksum=<hex>`，已有同内容素材就别重复传；上传响应 `duplicateOfId` 非空 = 撞重复（已保留，自行决定删否）
+- **上传后维护**（管理素材的收尾）：改描述 / 移文件夹 / 换标签 → `PATCH /api/v1/materials/:id`（`description`、`folderId`=目标文件夹 id、`tagIds`=整表替换 或 `newTagNames`=追加建词，带 `updatedAt` OCC）；识别失败或要重跑 → `POST /materials/:id/enrich`
 
 **下载**：
 
@@ -526,11 +530,11 @@ python3 "$SKILL_DIR/scripts/gb-crm.py" download <资料id> [输出路径]   # �
 
 组合约束（管理端 Zod 强制，写 SQL 时自觉遵守）：`transcript`/`text` 必须有 `content`，`audio`/`video`/`link` 必须有 `url`，`file` 必须有 `object_key`（**kind=file 走脚本的 `upload` 子命令**（见「用法」），不要手写 SQL 塞二进制——手写 INSERT 没有真实对象存储文件，管理端下载会坏）。
 
-**新增资料先落交付单**（按语义匹配，不限咨询类）：
+**新增资料先落交付单**（按语义匹配，不限咨询类；**素材库 kind=file 归档除外**——见「素材库」节）：
 
 1. **匹配**：按交付名（deliveries.name）/ 交付类型名 / 起止日期 / 关联客户收窄，查 live 交付单（`deliveries` JOIN `delivery_types`，两边都 `deleted_at IS NULL`），列出候选让用户确认后填 `delivery_id`；
 2. **新建**：没有合适的交付单就新建一条——先查 `delivery_types`（`deleted_at IS NULL AND status='active'`）选语义贴合的类型（kind 不限 consulting，活动/圈子/其他都可以）；连类型都不贴切就先跟用户确认，不要硬塞。新交付单补审计四列，参与客户走 `delivery_customers`；
-3. 不要主动造孤儿资料；只有用户明确说「先不关联交付」时才留 `delivery_id = NULL`。
+3. 不要主动造孤儿资料；只有用户明确说「先不关联交付」时才留 `delivery_id = NULL`。这条约束的是咨询/场次类资料——素材库 kind=file 归档不走本节流程，`delivery_id` 留空是常态。
 
 全文搜索（FTS5，`trigram` 分词，中文子串友好）：
 
