@@ -478,32 +478,34 @@ export function CustomerOverviewPage() {
         <div className="card-body-flush">
           {overview.deals.length === 0 && <div className="task-empty">暂无成交记录</div>}
           {overview.deals.length > 0 && (
-            <table className="data-table">
-              <thead>
-                <tr>
-                  <th>意向产品</th>
-                  <th>阶段</th>
-                  <th>金额（元）</th>
-                  <th>订单号</th>
-                  <th>成交日期</th>
-                  <th>交付日期</th>
-                  <th>成交时间</th>
-                </tr>
-              </thead>
-              <tbody>
-                {overview.deals.map((d) => (
-                  <tr key={d.id}>
-                    <td>{d.product?.name ?? "—"}</td>
-                    <td>{badge(d.stage, DEAL_STAGE_TONES[d.stage] ?? "plain")}</td>
-                    <td>{centsToYuan(d.amountCents) || "—"}</td>
-                    <td>{d.orderNo || "—"}</td>
-                    <td>{epochMsToDate(d.dealDate) || "—"}</td>
-                    <td>{epochMsToDate(d.deliveryDate) || "—"}</td>
-                    <td>{formatDateTime(d.createdAt)}</td>
+            <div className="table-scroll">
+              <table className="data-table">
+                <thead>
+                  <tr>
+                    <th>意向产品</th>
+                    <th>阶段</th>
+                    <th>金额（元）</th>
+                    <th>订单号</th>
+                    <th>成交日期</th>
+                    <th>交付日期</th>
+                    <th>成交时间</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {overview.deals.map((d) => (
+                    <tr key={d.id}>
+                      <td>{d.product?.name ?? "—"}</td>
+                      <td>{badge(d.stage, DEAL_STAGE_TONES[d.stage] ?? "plain")}</td>
+                      <td>{centsToYuan(d.amountCents) || "—"}</td>
+                      <td>{d.orderNo || "—"}</td>
+                      <td>{epochMsToDate(d.dealDate) || "—"}</td>
+                      <td>{epochMsToDate(d.deliveryDate) || "—"}</td>
+                      <td>{formatDateTime(d.createdAt)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           )}
         </div>
       </div>

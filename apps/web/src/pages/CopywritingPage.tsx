@@ -550,40 +550,42 @@ function SavedTab({ role }: { role: SystemRole | null }) {
           {items.length === 0 ? (
             <div className="empty">暂无保存的文案</div>
           ) : (
-            <table className="data-table">
-              <thead>
-                <tr>
-                  <th>标题</th>
-                  <th>产出类型</th>
-                  <th>更新时间</th>
-                  <th>操作</th>
-                </tr>
-              </thead>
-              <tbody>
-                {items.map((item) => (
-                  <tr key={item.id}>
-                    <td>{item.title}</td>
-                    <td>{item.outputType ?? "—"}</td>
-                    <td>{formatDateTime(item.updatedAt)}</td>
-                    <td className="row-actions">
-                      <button type="button" onClick={() => setViewing(item)}>
-                        查看
-                      </button>
-                      {canUpdate && (
-                        <button type="button" onClick={() => setEditing(item)}>
-                          编辑
-                        </button>
-                      )}
-                      {canDelete && (
-                        <button type="button" className="btn-danger" onClick={() => setDeleting(item)}>
-                          删除
-                        </button>
-                      )}
-                    </td>
+            <div className="table-scroll">
+              <table className="data-table">
+                <thead>
+                  <tr>
+                    <th>标题</th>
+                    <th>产出类型</th>
+                    <th>更新时间</th>
+                    <th>操作</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {items.map((item) => (
+                    <tr key={item.id}>
+                      <td>{item.title}</td>
+                      <td>{item.outputType ?? "—"}</td>
+                      <td>{formatDateTime(item.updatedAt)}</td>
+                      <td className="row-actions">
+                        <button type="button" onClick={() => setViewing(item)}>
+                          查看
+                        </button>
+                        {canUpdate && (
+                          <button type="button" onClick={() => setEditing(item)}>
+                            编辑
+                          </button>
+                        )}
+                        {canDelete && (
+                          <button type="button" className="btn-danger" onClick={() => setDeleting(item)}>
+                            删除
+                          </button>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           )}
         </div>
         {total > 0 && (
@@ -802,47 +804,49 @@ function TemplatesTab({ role }: { role: SystemRole | null }) {
             {byDimension[dim].length === 0 ? (
               <div className="task-empty">暂无模板</div>
             ) : (
-              <table className="data-table">
-                <thead>
-                  <tr>
-                    <th>名称</th>
-                    <th>正文预览</th>
-                    <th>排序</th>
-                    <th>状态</th>
-                    {canWrite && <th>操作</th>}
-                  </tr>
-                </thead>
-                <tbody>
-                  {byDimension[dim].map((t) => (
-                    <tr key={t.id} className={t.enabled ? undefined : "row-disabled"}>
-                      <td>
-                        {t.name}
-                        {!t.enabled && (
-                          <>
-                            {" "}
-                            <span className="badge badge-muted">停用</span>
-                          </>
-                        )}
-                      </td>
-                      <td>
-                        {t.content.length > 60 ? `${t.content.slice(0, 60)}…` : t.content}
-                      </td>
-                      <td>{t.sort}</td>
-                      <td>{t.enabled ? "启用" : "停用"}</td>
-                      {canWrite && (
-                        <td className="row-actions">
-                          <button type="button" onClick={() => setEditing(t)}>
-                            编辑
-                          </button>
-                          <button type="button" className="btn-danger" onClick={() => setDeleting(t)}>
-                            删除
-                          </button>
-                        </td>
-                      )}
+              <div className="table-scroll">
+                <table className="data-table">
+                  <thead>
+                    <tr>
+                      <th>名称</th>
+                      <th>正文预览</th>
+                      <th>排序</th>
+                      <th>状态</th>
+                      {canWrite && <th>操作</th>}
                     </tr>
-                  ))}
-                </tbody>
-              </table>
+                  </thead>
+                  <tbody>
+                    {byDimension[dim].map((t) => (
+                      <tr key={t.id} className={t.enabled ? undefined : "row-disabled"}>
+                        <td>
+                          {t.name}
+                          {!t.enabled && (
+                            <>
+                              {" "}
+                              <span className="badge badge-muted">停用</span>
+                            </>
+                          )}
+                        </td>
+                        <td>
+                          {t.content.length > 60 ? `${t.content.slice(0, 60)}…` : t.content}
+                        </td>
+                        <td>{t.sort}</td>
+                        <td>{t.enabled ? "启用" : "停用"}</td>
+                        {canWrite && (
+                          <td className="row-actions">
+                            <button type="button" onClick={() => setEditing(t)}>
+                              编辑
+                            </button>
+                            <button type="button" className="btn-danger" onClick={() => setDeleting(t)}>
+                              删除
+                            </button>
+                          </td>
+                        )}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             )}
           </div>
         </div>

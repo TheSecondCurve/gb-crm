@@ -27,6 +27,7 @@ import { ConfirmDialog } from "../components/ConfirmDialog";
 import { DeliveryFormModal } from "../components/DeliveryFormModal";
 import { DeliveryGantt } from "../components/DeliveryGantt";
 import { DeliveryMatrix } from "../components/DeliveryMatrix";
+import { DesktopHint } from "../components/DesktopHint";
 import { ItemEditModal } from "../components/ItemEditModal";
 import { ItemFormModal } from "../components/ItemFormModal";
 import { ItemModal } from "../components/ItemModal";
@@ -379,6 +380,8 @@ export function DeliveryCirclePage() {
           )}
         </div>
       </div>
+
+      <DesktopHint />
 
       {/* 圈子基本信息 */}
       <div className="card">

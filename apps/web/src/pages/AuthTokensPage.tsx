@@ -121,61 +121,64 @@ export function AuthTokensPage() {
           </div>
         </div>
         <div className="card-body-flush">
-          <table className="data-table">
-            <thead>
-              <tr>
-                <th>ID</th>
-                <th>用户</th>
-                <th>授权</th>
-                <th>权限</th>
-                <th>状态</th>
-                <th>创建时间</th>
-                <th>过期时间</th>
-                <th>最近使用</th>
-                <th>吊销人</th>
-                <th>操作</th>
-              </tr>
-            </thead>
-            <tbody>
-              {tokens.length === 0 && (
+          {/* K67：10 列宽表，窄屏横向滚动兜底 */}
+          <div className="table-scroll">
+            <table className="data-table">
+              <thead>
                 <tr>
-                  <td colSpan={10} className="task-empty">
-                    本次筛选无令牌
-                  </td>
+                  <th>ID</th>
+                  <th>用户</th>
+                  <th>授权</th>
+                  <th>权限</th>
+                  <th>状态</th>
+                  <th>创建时间</th>
+                  <th>过期时间</th>
+                  <th>最近使用</th>
+                  <th>吊销人</th>
+                  <th>操作</th>
                 </tr>
-              )}
-              {tokens.map((token) => (
-                <tr key={token.id}>
-                  <td>#{token.id}</td>
-                  <td>{token.user.nickname}</td>
-                  <td>
-                    <code>{token.prefix}</code>
-                    {token.name ? (
-                      <span className="token-name" title={token.name}>
-                        {token.name}
-                      </span>
-                    ) : null}
-                  </td>
-                  <td>{badge(tokenScopeLabels[token.scope] ?? token.scope, SCOPE_TONES[token.scope] ?? "plain")}</td>
-                  <td>{badge(STATUS_LABELS[token.status] ?? token.status, STATUS_TONES[token.status] ?? "muted")}</td>
-                  <td>{formatDateTime(token.createdAt)}</td>
-                  <td>{formatDateTime(token.expiresAt) || "—"}</td>
-                  <td>{formatDateTime(token.lastUsedAt) || "—"}</td>
-                  <td>
-                    {token.revokedBy?.nickname ??
-                      (token.revokedAt !== null ? "系统" : "—")}
-                  </td>
-                  <td className="row-actions">
-                    {token.revokedAt === null && (
-                      <button type="button" className="btn-danger" onClick={() => setRevoking(token)}>
-                        吊销
-                      </button>
-                    )}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {tokens.length === 0 && (
+                  <tr>
+                    <td colSpan={10} className="task-empty">
+                      本次筛选无令牌
+                    </td>
+                  </tr>
+                )}
+                {tokens.map((token) => (
+                  <tr key={token.id}>
+                    <td>#{token.id}</td>
+                    <td>{token.user.nickname}</td>
+                    <td>
+                      <code>{token.prefix}</code>
+                      {token.name ? (
+                        <span className="token-name" title={token.name}>
+                          {token.name}
+                        </span>
+                      ) : null}
+                    </td>
+                    <td>{badge(tokenScopeLabels[token.scope] ?? token.scope, SCOPE_TONES[token.scope] ?? "plain")}</td>
+                    <td>{badge(STATUS_LABELS[token.status] ?? token.status, STATUS_TONES[token.status] ?? "muted")}</td>
+                    <td>{formatDateTime(token.createdAt)}</td>
+                    <td>{formatDateTime(token.expiresAt) || "—"}</td>
+                    <td>{formatDateTime(token.lastUsedAt) || "—"}</td>
+                    <td>
+                      {token.revokedBy?.nickname ??
+                        (token.revokedAt !== null ? "系统" : "—")}
+                    </td>
+                    <td className="row-actions">
+                      {token.revokedAt === null && (
+                        <button type="button" className="btn-danger" onClick={() => setRevoking(token)}>
+                          吊销
+                        </button>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </div>
       </div>
 

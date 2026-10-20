@@ -363,7 +363,17 @@ export function DataGrid<Row extends GridRow>({
     <div className="data-grid" ref={containerRef}>
       {toolbar}
       <div className="data-grid-scroll">
-        <table className={selectable ? "data-table data-grid-table has-select" : "data-table data-grid-table"}>
+        {/* has-actions（K67）：行尾操作列存在时打标，移动端右冻结该列，免横滚到底才能点到 */}
+        <table
+          className={[
+            "data-table",
+            "data-grid-table",
+            selectable ? "has-select" : "",
+            renderRowActions ? "has-actions" : "",
+          ]
+            .filter(Boolean)
+            .join(" ")}
+        >
           <thead>
             <tr>
               {selectable && (

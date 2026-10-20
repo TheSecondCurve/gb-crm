@@ -9,15 +9,21 @@ const SEARCH_DEBOUNCE_MS = 200;
 const RESULT_LIMIT = 8;
 
 /**
- * 全局快速搜索（Cmd/Ctrl+K）：跨实体定位客户，回车/点击进入客户总览。
+ * 全局快速搜索（Cmd/Ctrl+K / 顶栏搜索按钮）：跨实体定位客户，回车/点击进入客户总览。
  * 目前聚焦客户（主数据第一实体），结构可扩展成交/资料等资源。
+ * 开关状态受控于 AppLayout（K67：触屏无键盘快捷键，顶栏搜索按钮也要能打开）。
  */
-export function CommandPalette() {
+export function CommandPalette({
+  open,
+  onOpenChange,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+}) {
   const navigate = useNavigate();
   const { me } = useAuth();
   const canSearch = (me?.pages ?? []).includes("customers") || (me?.pages ?? []).includes("my-customers");
 
-  const [open, setOpen] = useState(false);
   const [q, setQ] = useState("");
   const [results, setResults] = useState<CustomerDto[]>([]);
   const [loading, setLoading] = useState(false);
@@ -30,12 +36,12 @@ export function CommandPalette() {
     const onKey = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
         e.preventDefault();
-        setOpen(true);
+        onOpenChange(true);
       }
     };
     window.addEventListener("keydown", onKey, true);
     return () => window.removeEventListener("keydown", onKey, true);
-  }, []);
+  }, [onOpenChange]);
 
   // 打开时重置并聚焦输入框
   useEffect(() => {
@@ -50,11 +56,11 @@ export function CommandPalette() {
   useEffect(() => {
     if (!open) return;
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setOpen(false);
+      if (e.key === "Escape") onOpenChange(false);
     };
     window.addEventListener("keydown", onKey, true);
     return () => window.removeEventListener("keydown", onKey, true);
-  }, [open]);
+  }, [open, onOpenChange]);
 
   useEffect(
     () => () => {
@@ -82,7 +88,7 @@ export function CommandPalette() {
   }, []);
 
   const select = (c: CustomerDto) => {
-    setOpen(false);
+    onOpenChange(false);
     navigate(`/customers/${c.id}`);
   };
 
@@ -110,7 +116,7 @@ export function CommandPalette() {
     <div
       className="modal-mask palette-mask"
       onMouseDown={(e) => {
-        if (e.target === e.currentTarget) setOpen(false);
+        if (e.target === e.currentTarget) onOpenChange(false);
       }}
     >
       <div className="command-palette" role="dialog" aria-label="快速搜索">
