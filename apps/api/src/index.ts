@@ -12,7 +12,12 @@ const env = parseAppEnv();
 const { db, sqlite, close } = createDb(env.DATABASE_PATH);
 migrateDb(sqlite);
 
-const app = buildApp({ env, db, logger: { level: env.LOG_LEVEL } });
+const app = buildApp({
+  env,
+  db,
+  logger: { level: env.LOG_LEVEL },
+  rateLimitMax: env.LOGIN_RATE_LIMIT_MAX,
+});
 
 const jobRunner = createJobRunner({ db, now: () => Date.now() });
 jobRunner.start();

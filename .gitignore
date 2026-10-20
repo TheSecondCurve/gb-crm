@@ -6,6 +6,8 @@ coverage/
 data/
 .env.production
 e2e/.tmp/
+e2e/report/
+e2e/test-results/
 test-results/
 __pycache__/
 *.pyc

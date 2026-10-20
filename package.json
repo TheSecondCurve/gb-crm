@@ -15,7 +15,8 @@
     "typecheck": "npm run typecheck --workspaces",
     "lint": "npm run lint --workspaces",
     "db:migrate": "npm run db:migrate -w @gb-crm/api",
-    "e2e": "npm run build -w @gb-crm/web && playwright test --config e2e/playwright.config.ts"
+    "e2e": "npm run build -w @gb-crm/web && playwright test --config e2e/playwright.config.ts",
+    "e2e:report": "npm run build -w @gb-crm/web && (playwright test --config e2e/playwright.config.ts; node e2e/scripts/report.mjs)"
   },
   "devDependencies": {
     "@eslint/js": "^9.35.0",

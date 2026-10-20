@@ -39,6 +39,8 @@ export const scriptEnvSchema = z.object({
   ADMIN_USERNAME: z.string().min(1).optional(),
   ADMIN_PASSWORD: z.string().min(1).optional(),
   ADMIN_BOOTSTRAP_RESET_PASSWORD: boolString(false),
+  // 登录限流阈值（次/分钟/IP），默认 10；e2e 等多账号并发场景可调高
+  LOGIN_RATE_LIMIT_MAX: z.coerce.number().int().min(1).max(100000).default(10),
   CORS_ORIGIN: z.string().min(1).default("http://localhost:5173"),
   LOG_LEVEL: z
     .enum(["fatal", "error", "warn", "info", "debug", "trace", "silent"])
