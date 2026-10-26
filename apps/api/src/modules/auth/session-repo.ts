@@ -1,5 +1,5 @@
 // sessions 表 CRUD（K5）。所有时间戳一律 epoch 毫秒（integer，对齐 Data Model 的 epoch ms UTC）。
-// created_at = 登录时刻（7d 绝对上限锚点）；expires_at = idle 12h 截止；last_touched_at = 上次 touch。
+// created_at = 登录时刻（10 年绝对上限锚点）；expires_at = idle 1 年滑动截止；last_touched_at = 上次 touch。
 import { randomBytes } from "node:crypto";
 
 import { eq, lt, or } from "drizzle-orm";
@@ -7,10 +7,10 @@ import { eq, lt, or } from "drizzle-orm";
 import type { Db } from "../../db/client.js";
 import { sessions } from "../../db/schema.js";
 
-export const SESSION_IDLE_TTL_MS = 12 * 60 * 60 * 1000; // idle 12h（cookie maxAge 按其秒数对齐）
-export const SESSION_ABSOLUTE_TTL_MS = 7 * 24 * 60 * 60 * 1000; // 绝对上限 7d
+export const SESSION_IDLE_TTL_MS = 365 * 24 * 60 * 60 * 1000; // idle 1 年滑动窗口（cookie Max-Age 与其对齐：浏览器保留登录后 ≥1 年）
+export const SESSION_ABSOLUTE_TTL_MS = 10 * SESSION_IDLE_TTL_MS; // 绝对上限 10 年（滑动窗口锚点）
 export const SESSION_TOUCH_INTERVAL_MS = 30 * 60 * 1000; // touch 节流：30min 内不重复写
-export const SESSION_TOUCH_REMAINING_MS = 11 * 60 * 60 * 1000; // 剩余 idle < 11h 也触发 touch
+export const SESSION_TOUCH_REMAINING_MS = SESSION_IDLE_TTL_MS - 60 * 60 * 1000; // 剩余 idle < 1 年-1h（即距上次 touch 超 1h 的回访）也触发 touch
 
 export type Session = typeof sessions.$inferSelect;
 
