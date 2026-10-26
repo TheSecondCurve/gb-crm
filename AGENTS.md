@@ -115,7 +115,7 @@ Workspace 依赖写法：`"@gb-crm/shared": "*"`（npm 不支持 `workspace:*`�
 ### 认证与权限
 
 - 服务端 session + 签名 httpOnly cookie（HMAC = `SESSION_SECRET`）。不做 JWT、不做飞书登录。密码 argon2id；登录要求 `system_role ∈ {admin, operator, assistant}`。
-- Session 最多每 30 分钟 touch 一次（或剩余 idle < 11h）。禁用账户立即删 session **并撤销 PAT**。
+- Session idle 1 年滑动 + 10 年绝对上限（cookie Max-Age 与 idle 对齐，浏览器保留 ≥1 年）；最多每 30 分钟 touch 一次（或距上次 touch 超 1h 的回访）。禁用账户立即删 session **并撤销 PAT**。
 - **Agent PAT（K35）与 cookie 并行**：`Authorization: Bearer`，有 Bearer 不回落 cookie。数据访问走单一自由 SQL 端点 `POST /api/v1/agent/sql`（仅 Bearer，cookie 403）：better-sqlite3 `stmt.readonly` 判读写——只读语句任意 scope/角色放行（含渠道密钥列）；写语句必须 write scope + admin/operator；DDL（CREATE/ALTER/DROP）对任何令牌一律 403；单语句；读上限 1000 行截断。
 - **PAT 治理**（`/tokens` 授权管理，admin）：`GET /api/v1/auth/tokens/admin`（分页 + `status=active|revoked|expired`/`scope`/`userId` 过滤）+ `DELETE /api/v1/auth/tokens/admin/:id`（吊销任意），ACL `auth.list`/`auth.revoke` 仅 admin；吊销置 `revoked_at`+`revoked_by`，行不删、历史可查。
 - **Skill 下发改装（渠道 A，内网免 GitHub）**：一条命令 `curl -fsSL http://<host>/agent/skill/gb-crm/install.sh | sh`（Windows 用 `install.ps1`），装到项目级 `./.agents/skills`（否则 `~/.agents/skills`）+ codex/claude 全局技能目录，再引导 `login.sh`/`login.ps1` 授权（`~/.gb-crm/credentials.json`）；**更新 = 重跑同一条命令**（现取安装器覆盖 `SKILL.md`/`gb-crm.py`）。版本号单一真相源 = `skills/gb-crm/SKILL.md` front-matter `version`；技能源 = 仓库 `skills/gb-crm`（生产容器已 `COPY skills ./skills`）；`GB_CRM_FORCE_LOGIN=1` 强制重签、`GB_CRM_SKIP_LOGIN=1` 只装文件。Skill 不含密钥。

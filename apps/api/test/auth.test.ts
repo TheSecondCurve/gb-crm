@@ -26,7 +26,7 @@ const login = (username: string, password: string, headers: Record<string, strin
   app.inject({ method: "POST", url: "/api/v1/auth/login", payload: { username, password }, headers });
 
 describe("POST /api/v1/auth/login", () => {
-  it("成功 → 204 + 签名 Set-Cookie（HttpOnly/Path=/ /SameSite=Lax/Max-Age=12h）", async () => {
+  it("成功 → 204 + 签名 Set-Cookie（HttpOnly/Path=/ /SameSite=Lax/Max-Age=1y）", async () => {
     await seedUser(tmp.db);
     const res = await login("alice", "password123");
     expect(res.statusCode).toBe(204);
@@ -38,7 +38,7 @@ describe("POST /api/v1/auth/login", () => {
     expect(setCookie).toContain("HttpOnly");
     expect(setCookie).toContain("Path=/");
     expect(setCookie).toContain("SameSite=Lax");
-    expect(setCookie).toContain("Max-Age=43200");
+    expect(setCookie).toContain("Max-Age=31536000");
     expect(setCookie).not.toContain("Secure");
 
     // sessions 行已创建
@@ -50,7 +50,7 @@ describe("POST /api/v1/auth/login", () => {
     }[];
     expect(rows).toHaveLength(1);
     expect(rows[0]!.created_at).toBe(clock.t);
-    expect(rows[0]!.expires_at).toBe(clock.t + 12 * 3600 * 1000); // idle 12h，epoch ms
+    expect(rows[0]!.expires_at).toBe(clock.t + 365 * 24 * 3600 * 1000); // idle 1y，epoch ms
     expect(rows[0]!.last_touched_at).toBe(clock.t);
   });
 
@@ -362,12 +362,12 @@ describe("session GC", () => {
         "INSERT INTO sessions (id, user_id, created_at, expires_at, last_touched_at) VALUES (?, ?, ?, ?, ?)",
       )
       .run("expired-session", id, clock.t - 100_000_000, clock.t - 50_000_000, clock.t - 50_000_000);
-    // 插入一条超 7d 绝对上限但 idle 未到期的
+    // 插入一条超 10y 绝对上限但 idle 未到期的
     tmp.sqlite
       .prepare(
         "INSERT INTO sessions (id, user_id, created_at, expires_at, last_touched_at) VALUES (?, ?, ?, ?, ?)",
       )
-      .run("ancient-session", id, clock.t - 8 * 86400 * 1000, clock.t + 3600 * 1000, clock.t);
+      .run("ancient-session", id, clock.t - 11 * 365 * 86400 * 1000, clock.t + 3600 * 1000, clock.t);
 
     await loginAs(app, "alice", "password123");
     const ids = (tmp.sqlite.prepare("SELECT id FROM sessions").all() as { id: string }[]).map(

@@ -112,7 +112,7 @@ Phase 2 表（本设计不建表、不导入）：活动交付 12、内容资产
 | K2 | **npm workspaces monorepo**：`apps/web`、`apps/api`、`packages/shared`；v1 **不抽 `packages/ui`** | 两端共享 Zod；视觉 token 直接放 `apps/web/src/styles/tokens.css`，避免过早设计系统化。 |
 | K3 | 后端选 **Fastify**，不用 Express / Hono | `app.inject()` 适合 TDD 且不绑端口；插件封装匹配模块化；session / cookie / helmet 生态成熟。Hono 偏 edge，本系统是单 Node + SQLite。 |
 | K4 | ORM 选 **Drizzle + better-sqlite3**，不用 Prisma | SQL 一等公民、migration 是真实 SQL、无 client generate 守护进程；单连接同步 API 与 Fastify 事件循环兼容。Prisma 对临时库 TDD 更重。 |
-| K5 | 认证：**服务端 session + 签名 httpOnly cookie**，密码 **argon2id**；不做 JWT、不做飞书登录。Session **最多每 30 分钟 touch 一次**（或剩余 idle < 11h 时）。 | 第一方可作废 session。禁止每个 GET 都 UPDATE `sessions`。`SESSION_SECRET` 用于 cookie 签名，不是摆设。 |
+| K5 | 认证：**服务端 session + 签名 httpOnly cookie**，密码 **argon2id**；不做 JWT、不做飞书登录。Session **最多每 30 分钟 touch 一次**（或距上次 touch 超 1h 的回访时）。 | 第一方可作废 session。禁止每个 GET 都 UPDATE `sessions`。`SESSION_SECRET` 用于 cookie 签名，不是摆设。 |
 | K6 | Bootstrap：**仅当需要创建或 reset 时才要求 `ADMIN_PASSWORD`**。已有 live admin 时密码可省略，进程仍启动。默认不覆盖已有密码。 | 避免 systemd 永远挂一份用不到的密码，又与「拒绝无密码启动」死锁。reset flag 缺密码则 **拒绝启动**。 |
 | K7 | API：**REST `/api/v1`**，信封 `{ data, meta }`，校验两端共用 Zod | 资源少、表格编辑是 PATCH；GraphQL 无收益。 |
 | K8 | 表格：TanStack Table；**双击进入编辑**（单击只选中）；**单格 PATCH** + 行级 `updatedAt` OCC；**每行一条 PATCH 队列**；文本 debounce 300ms；Tab/Enter **先 flush 再导航** | 单击即编会在 20+ 列 PII 表上误提交。无队列时 Tab 两格会用同一个 `updatedAt` 打出 409 并丢掉第二格。 |
@@ -438,16 +438,16 @@ sequenceDiagram
 #### Cookie 与 TTL
 
 - 名 `gb_crm_sid`。值为 **`@fastify/cookie` 签名**后的 `sessions.id`（32 字节 CSPRNG hex）。`SESSION_SECRET` 是 HMAC 密钥；启动时 < 32 字符拒绝启动。未签名的 raw id 一律 401。
-- 属性：`HttpOnly; Path=/; SameSite=Lax; Secure` 由 `COOKIE_SECURE` 控制。`maxAge` = **12h**（与 idle TTL 对齐）。浏览器过期与服务器过期以服务器 `expires_at` 为准；cookie 先丢只是提前登出。
+- 属性：`HttpOnly; Path=/; SameSite=Lax; Secure` 由 `COOKIE_SECURE` 控制。`maxAge` = **1 年**（与 idle TTL 对齐；2026-10-26 产品要求浏览器保留 cookie ≥1 年）。浏览器过期与服务器过期以服务器 `expires_at` 为准；cookie 先丢只是提前登出。
 - 表字段：`created_at`（登录时刻，绝对上限锚点）、`expires_at`（idle 截止）、`last_touched_at`。
-- **判定**（每次认证）：`now < created_at + 7d AND now < expires_at`，且用户仍 enabled、未删、`system_role` 非空。
-- **Touch**（避免每个 GET 都写库）：仅当 `now - last_touched_at >= 30min` **或** `expires_at - now < 11h` 时才 `UPDATE expires_at = min(now+12h, created_at+7d), last_touched_at = now`，并刷新 cookie `maxAge` 为剩余 idle。列表轮询不触发写。
+- **判定**（每次认证）：`now < created_at + 10y AND now < expires_at`，且用户仍 enabled、未删、`system_role` 非空。
+- **Touch**（避免每个 GET 都写库）：仅当 `now - last_touched_at >= 30min` **或** `expires_at - now < 1y - 1h`（即距上次 touch 超 1h 的回访）时才 `UPDATE expires_at = min(now+1y, created_at+10y), last_touched_at = now`，并刷新 cookie `maxAge` 为剩余 idle。列表轮询不触发写。
 - 登出：删当前 session + 清 cookie。禁用账户 / 软删用户：删该用户全部 session **并撤销**其 PAT。改自己密码：删 session，**不**撤销 PAT（Agent 不因改密掉线）。
-- **GC**：login 时 `DELETE FROM sessions WHERE expires_at < now OR created_at < now - 7d`；其它带 cookie 的请求以 1% 概率做同样删除。
+- **GC**：login 时 `DELETE FROM sessions WHERE expires_at < now OR created_at < now - 10y`；其它带 cookie 的请求以 1% 概率做同样删除。
 
 #### Agent 个人令牌（K35）
 
-浏览器 session 对 CLI / Agent 不可用（HttpOnly cookie、idle 12h）。并行一条 **PAT**，不替换 cookie，不做 JWT。
+浏览器 session 对 CLI / Agent 不可用（HttpOnly cookie、idle 1 年滑动）。并行一条 **PAT**，不替换 cookie，不做 JWT。
 
 **签发（无项目代码、只要能访问已部署 CRM）**：
 
@@ -1027,8 +1027,8 @@ CREATE UNIQUE INDEX users_username_live_uq
 CREATE TABLE sessions (
   id               TEXT PRIMARY KEY,
   user_id          INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-  created_at       INTEGER NOT NULL,  -- 绝对 7d 锚点
-  expires_at       INTEGER NOT NULL,  -- idle 12h 截止
+  created_at       INTEGER NOT NULL,  -- 绝对 10y 锚点
+  expires_at       INTEGER NOT NULL,  -- idle 1y 滑动截止
   last_touched_at  INTEGER NOT NULL,
   ip               TEXT,
   user_agent       TEXT
@@ -1278,7 +1278,7 @@ K20 最终是 Fastify 托管静态。开发期 Vite `:5173` + 代理保留 HMR�
 | 弱口令 / 撞库 | 高 | 登录 10 次/分钟/IP；argon2id；账户禁用立即删 session |
 | env 里的管理员密码泄漏 | 高 | 有 live admin 后可不设 `ADMIN_PASSWORD`；gitignore；日志打码；reset 不得长期为 true |
 | SQLite 文件被拷走 | 高 | `HOST=127.0.0.1`；创建时 chmod 600；**at-rest 加密 = 非目标**（依赖 OS） |
-| 会话窃取 | 中 | 签名 HttpOnly + SameSite=Lax；idle 12h；禁用即删 session |
+| 会话窃取 | 中 | 签名 HttpOnly + SameSite=Lax；idle 1 年滑动 + 10y 绝对上限（2026-10-26 产品要求浏览器保留 cookie ≥1 年）；禁用即删 session |
 | 兼职助手越权改产品 / 删客户 / 改归属人 | 中 | `can()` 矩阵；助手不能 create/delete 客户、不能 updateOwners |
 | 助手改渠道登录资产（手机号/设备/账号ID） | 中 | 密钥字段 GET 对助手为 null，PATCH 要 `updateChannelSecrets` |
 | 非 loopback 明文 HTTP | 中 | `HOST=0.0.0.0` 且未 `COOKIE_SECURE` 时启动 warn；应用层不强制 TLS |
