@@ -12,6 +12,7 @@ let app: FastifyInstance;
 // 全库时间戳一律 epoch 毫秒
 const HOUR = 3_600_000;
 const DAY = 24 * HOUR;
+const YEAR = 365 * DAY;
 
 beforeEach(() => {
   tmp = createTmpDb();
@@ -56,7 +57,7 @@ describe("session touch 节流（K5）", () => {
     expect(sessionRow()).toEqual(before); // 一次都没写
   });
 
-  it("30min 后 touch：expires_at=min(now+12h, created_at+7d)，last_touched_at=now，并刷新 cookie", async () => {
+  it("30min 后 touch：expires_at=min(now+1y, created_at+10y)，last_touched_at=now，并刷新 cookie", async () => {
     await seedUser(tmp.db);
     const cookie = await loginAs(app, "alice", "password123");
     const before = sessionRow();
@@ -67,42 +68,42 @@ describe("session touch 节流（K5）", () => {
 
     const after = sessionRow();
     expect(after.last_touched_at).toBe(clock.t);
-    expect(after.expires_at).toBe(Math.min(clock.t + 12 * HOUR, before.created_at + 7 * DAY));
-    expect(after.expires_at).toBe(clock.t + 12 * HOUR); // 距 7d 还远
-    // cookie 刷新为剩余 idle（cookie 规范单位是秒：43200 = 12h）
-    expect(res.headers["set-cookie"] as string).toContain("Max-Age=43200");
+    expect(after.expires_at).toBe(Math.min(clock.t + YEAR, before.created_at + 10 * YEAR));
+    expect(after.expires_at).toBe(clock.t + YEAR); // 距 10y 绝对上限还远
+    // cookie 刷新为剩余 idle（cookie 规范单位是秒：31536000 = 1y）
+    expect(res.headers["set-cookie"] as string).toContain("Max-Age=31536000");
   });
 
-  it("剩余 idle < 11h 也触发 touch（即使 30min 内刚摸过）", async () => {
+  it("剩余 idle < 1y-1h 也触发 touch（即使 30min 内刚摸过）", async () => {
     await seedUser(tmp.db);
     const cookie = await loginAs(app, "alice", "password123");
     const row = sessionRow();
-    // 直接操纵：刚 touch 过（30min 内不触发第一条），但 expires_at 只剩 10h59m
+    // 直接操纵：刚 touch 过（30min 内不触发第一条），但 expires_at 只剩 1y-1h-1min
     tmp.sqlite
       .prepare("UPDATE sessions SET last_touched_at = ?, expires_at = ? WHERE id = ?")
-      .run(clock.t, clock.t + 11 * HOUR - 60_000, row.id);
+      .run(clock.t, clock.t + YEAR - HOUR - 60_000, row.id);
 
     const res = await me(cookie);
     expect(res.statusCode).toBe(200);
     const after = sessionRow();
     expect(after.last_touched_at).toBe(clock.t);
-    expect(after.expires_at).toBe(clock.t + 12 * HOUR);
+    expect(after.expires_at).toBe(clock.t + YEAR);
   });
 
-  it("touch 受 7d 绝对上限封顶：expires_at 不超过 created_at + 7d", async () => {
+  it("touch 受 10y 绝对上限封顶：expires_at 不超过 created_at + 10y", async () => {
     await seedUser(tmp.db);
     const cookie = await loginAs(app, "alice", "password123");
     const row = sessionRow();
-    // 创建于 6.9 天前：绝对上限只剩 2.4h（0.1 * DAY = 8640000ms，整数无舍入）
+    // 创建于 10 年前差 2 天：绝对上限只剩 2 天（2 * DAY = 172800000ms，整数无舍入）
     tmp.sqlite
       .prepare("UPDATE sessions SET created_at = ?, last_touched_at = ? WHERE id = ?")
-      .run(clock.t - 6.9 * DAY, clock.t - 31 * 60 * 1000, row.id);
+      .run(clock.t - (10 * YEAR - 2 * DAY), clock.t - 31 * 60 * 1000, row.id);
 
     const res = await me(cookie);
     expect(res.statusCode).toBe(200);
     const after = sessionRow();
-    expect(after.expires_at).toBe(clock.t - 6.9 * DAY + 7 * DAY);
-    expect(after.expires_at).toBeLessThan(clock.t + 12 * HOUR);
+    expect(after.expires_at).toBe(clock.t - (10 * YEAR - 2 * DAY) + 10 * YEAR);
+    expect(after.expires_at).toBeLessThan(clock.t + YEAR);
     // cookie maxAge = 剩余 idle（ms → 秒）
     expect(res.headers["set-cookie"] as string).toContain(
       `Max-Age=${(after.expires_at - clock.t) / 1000}`,
@@ -112,18 +113,18 @@ describe("session touch 节流（K5）", () => {
   it("idle 到期（now >= expires_at）→ 401", async () => {
     await seedUser(tmp.db);
     const cookie = await loginAs(app, "alice", "password123");
-    clock.t += 12 * HOUR + 1;
+    clock.t += YEAR + 1;
     expect((await me(cookie)).statusCode).toBe(401);
   });
 
-  it("超 7d 绝对上限 → 401（即使 idle 未到期）", async () => {
+  it("超 10y 绝对上限 → 401（即使 idle 未到期）", async () => {
     await seedUser(tmp.db);
     const cookie = await loginAs(app, "alice", "password123");
     const row = sessionRow();
-    // created_at 在 7 天前多 1ms；expires_at 仍在未来
+    // created_at 在 10 年前多 1ms；expires_at 仍在未来
     tmp.sqlite
       .prepare("UPDATE sessions SET created_at = ?, expires_at = ? WHERE id = ?")
-      .run(clock.t - 7 * DAY - 1, clock.t + HOUR, row.id);
+      .run(clock.t - 10 * YEAR - 1, clock.t + HOUR, row.id);
     expect((await me(cookie)).statusCode).toBe(401);
   });
 });

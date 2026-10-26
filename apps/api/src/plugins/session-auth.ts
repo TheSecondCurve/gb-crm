@@ -1,8 +1,8 @@
 // session-auth 插件（§5 / K5）：
-// - 解签名 cookie 得 sessions.id → 查 session → 判定 now < created_at+7d AND now < expires_at，
+// - 解签名 cookie 得 sessions.id → 查 session → 判定 now < created_at+10y AND now < expires_at，
 //   且用户 enabled、未软删、system_role 非空 → 挂 request.user；
-// - Touch 节流：仅当 now-last_touched_at >= 30min 或 expires_at-now < 11h 时
-//   UPDATE expires_at = min(now+12h, created_at+7d), last_touched_at = now，
+// - Touch 节流：仅当 now-last_touched_at >= 30min 或 expires_at-now < (idle-1h) 时
+//   UPDATE expires_at = min(now+1y, created_at+10y), last_touched_at = now，
 //   并刷新 cookie maxAge 为剩余 idle；
 // - 带 cookie 的请求以 1% 概率 GC 过期 session（K29）；
 // - Authorization: Bearer → 查 api_tokens（hash），不回落到 cookie；
