@@ -5,14 +5,13 @@
 // - GET /head：水位探针（latestUpdatedAt / liveDocuments），消费方可先探后拉。
 // 认证复用 K35 PAT：corpus scope 令牌（永不过期，session-auth 已钉死只到本模块）直接放行；
 // 其余身份（cookie / read PAT）走 materials 读权限——不新开 ACL 资源。
-import { corpusDocumentsQuerySchema } from "@gb-crm/shared";
+import { can, corpusDocumentsQuerySchema } from "@gb-crm/shared";
 import type { FastifyInstance, preHandlerHookHandler } from "fastify";
 import { z } from "zod";
 
 import type { Db } from "../../db/client.js";
 import { listMeta } from "../../lib/pagination.js";
-import { notFound } from "../../plugins/error-handler.js";
-import { requireCan } from "../../plugins/rbac.js";
+import { forbidden, notFound, unauthorized } from "../../plugins/error-handler.js";
 import type { CustomerRef } from "../deliveries/assemble.js";
 import {
   assembleMaterialDetail,
@@ -27,10 +26,13 @@ export interface CorpusRoutesOptions {
   db: Db;
 }
 
-/** corpus scope 令牌直接放行；其余身份要求 materials 读权限 */
-const requireCorpusAccess: preHandlerHookHandler = async (req, reply) => {
+/** corpus scope 令牌直接放行；其余身份要求 materials 读权限（与 requireCan 同判定：
+ *  未认证 401、can() 拒绝 403——组合 or 门无法复用其工厂签名，逻辑保持 1:1 镜像） */
+const requireCorpusAccess: preHandlerHookHandler = async (req) => {
   if (req.tokenScope === "corpus") return;
-  await requireCan("materials", "read")(req, reply);
+  const user = req.user;
+  if (user === null) throw unauthorized();
+  if (!can(user.systemRole, "materials", "read")) throw forbidden();
 };
 
 const idParamSchema = z.object({ id: z.coerce.number().int().positive() });
