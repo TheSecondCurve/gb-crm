@@ -8,6 +8,8 @@
 // - Authorization: Bearer → 查 api_tokens（hash），不回落到 cookie；
 //   read 令牌仅允许 GET/HEAD、`POST /api/v1/agent/sql`（写防护由端点内
 //   stmt.readonly + 角色判定兜底，K35），以及撤销自己的 DELETE /auth/tokens/:id；
+//   corpus 令牌（K68 语料同步）永不过期（expires_at NULL），只放行
+//   GET/HEAD /api/v1/corpus/** 与撤销自己的 DELETE /auth/tokens/:id；
 // - 未登录访问 /api/v1/**（除 login / 签发 token / health）→ 401 UNAUTHORIZED。
 // 所有时间戳一律 epoch 毫秒；仅 cookie maxAge 按规范用秒（毫秒换算）。
 import { eq } from "drizzle-orm";
@@ -51,12 +53,18 @@ function isPublicApi(path: string, method: string): boolean {
   return false;
 }
 
-/** read 令牌：GET/HEAD、POST /api/v1/agent/sql（端点内自行判读写），以及撤销自己的 DELETE /api/v1/auth/tokens/:id */
-function isReadTokenAllowed(method: string, path: string): boolean {
-  if (method === "GET" || method === "HEAD") return true;
+/** 令牌范围 → 方法/路径放行表（read/write 见 K35；corpus 见 K68）：
+ *  read：GET/HEAD、POST /api/v1/agent/sql（端点内自行判读写），以及撤销自己的 DELETE /api/v1/auth/tokens/:id；
+ *  corpus：GET/HEAD /api/v1/corpus/** 与撤销自己的 DELETE /api/v1/auth/tokens/:id，其余一律 403。 */
+function isTokenPathAllowed(scope: TokenScope, method: string, path: string): boolean {
+  // 自撤销对 read/corpus 都放行（write 天然全放行）
   if (method === "DELETE" && /^\/api\/v1\/auth\/tokens\/\d+$/.test(path)) return true;
+  if (method === "GET" || method === "HEAD") {
+    if (scope === "corpus") return path.startsWith("/api/v1/corpus/");
+    return true; // read
+  }
   // K35：Agent SQL 端点统一 POST；readonly 判定与写权限在端点内兜底
-  if (method === "POST" && path === "/api/v1/agent/sql") return true;
+  if (scope === "read" && method === "POST" && path === "/api/v1/agent/sql") return true;
   return false;
 }
 
@@ -111,13 +119,21 @@ export function sessionAuth(app: FastifyInstance, opts: SessionAuthOptions): voi
       const match = /^Bearer\s+(\S+)$/.exec(authz);
       if (!match) throw unauthorized();
       const row = findTokenByHash(db, hashToken(match[1]!));
-      if (!row || row.revokedAt !== null || !(t < row.expiresAt)) throw unauthorized();
+      // K68：expiresAt 为 null（corpus 令牌）= 永不过期
+      if (!row || row.revokedAt !== null || (row.expiresAt !== null && !(t < row.expiresAt))) {
+        throw unauthorized();
+      }
       const user = loadAuthUser(db, row.userId);
       if (!user) throw unauthorized();
       req.user = user;
       req.tokenScope = row.scope as TokenScope;
-      if (req.tokenScope === "read" && !isReadTokenAllowed(req.method, path)) {
-        throw forbidden("此令牌为只读，无法执行写操作");
+      if (
+        (req.tokenScope === "read" || req.tokenScope === "corpus") &&
+        !isTokenPathAllowed(req.tokenScope, req.method, path)
+      ) {
+        throw forbidden(
+          req.tokenScope === "corpus" ? "此令牌仅限语料同步接口" : "此令牌为只读，无法执行写操作",
+        );
       }
       if (row.lastUsedAt === null || t - row.lastUsedAt >= TOKEN_TOUCH_INTERVAL_MS) {
         touchTokenLastUsed(db, row.id, t);
