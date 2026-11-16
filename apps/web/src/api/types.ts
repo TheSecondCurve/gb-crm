@@ -646,11 +646,12 @@ export interface ApiTokenAdminDto {
   id: number;
   prefix: string;
   name: string | null;
-  scope: "read" | "write";
+  scope: "read" | "write" | "corpus";
   status: "active" | "revoked" | "expired";
   user: { id: number; nickname: string };
   createdAt: number;
-  expiresAt: number;
+  /** null = 永不过期（K68 corpus 令牌） */
+  expiresAt: number | null;
   lastUsedAt: number | null;
   revokedAt: number | null;
   revokedBy: { id: number; nickname: string } | null;

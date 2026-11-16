@@ -95,13 +95,14 @@ export const apiTokens = sqliteTable(
     scope: text("scope").notNull(),
     name: text("name"),
     createdAt: integer("created_at").notNull(),
-    expiresAt: integer("expires_at").notNull(),
+    /** K68：corpus 令牌永不过期（NULL）；read/write 仍固定 90 天 */
+    expiresAt: integer("expires_at"),
     lastUsedAt: integer("last_used_at"),
     revokedAt: integer("revoked_at"),
     revokedBy: integer("revoked_by"),
   },
   (t) => [
-    check("api_tokens_scope_check", sql`"scope" IN ('read', 'write')`),
+    check("api_tokens_scope_check", sql`"scope" IN ('read', 'write', 'corpus')`),
     uniqueIndex("api_tokens_token_hash_uq").on(t.tokenHash),
     index("api_tokens_user_id_idx").on(t.userId),
     index("api_tokens_expires_at_idx").on(t.expiresAt),

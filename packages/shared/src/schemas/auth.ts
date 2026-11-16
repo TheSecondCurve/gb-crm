@@ -14,8 +14,9 @@ export const changePasswordSchema = z.object({
 });
 export type ChangePasswordBody = z.infer<typeof changePasswordSchema>;
 
-/** Agent 个人令牌范围：read = 只读 GET；write = 走现有 REST，仍受 can() 约束 */
-export const tokenScopeSchema = z.enum(["read", "write"]);
+/** Agent 个人令牌范围：read = 只读 GET；write = 走现有 REST，仍受 can() 约束；
+ *  corpus = 语料同步专用（K68）：只放行 /api/v1/corpus/**，永不过期（expires_at NULL） */
+export const tokenScopeSchema = z.enum(["read", "write", "corpus"]);
 export type TokenScope = z.infer<typeof tokenScopeSchema>;
 
 export const TOKEN_NAME_MAX_LENGTH = 64;

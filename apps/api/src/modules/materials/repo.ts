@@ -44,8 +44,9 @@ function ftsMatchIds(db: Db, token: string): number[] {
 }
 
 /** q → WHERE 片段：逐 token AND；≥3 字符走 FTS（无命中 → 恒假），<3 字符 LIKE title/content OR；
- *  两个分支都额外 OR 文件名（original_filename LIKE）、资料标签名与关联交付名（live 交付）命中 */
-function searchWhere(db: Db, q: string): SQL | undefined {
+ *  两个分支都额外 OR 文件名（original_filename LIKE）、资料标签名与关联交付名（live 交付）命中。
+ *  K68：corpus 读模型复用（导出）。 */
+export function searchWhere(db: Db, q: string): SQL | undefined {
   const tokens = fuzzyTokens(q);
   if (tokens.length === 0) return undefined;
   const perToken: SQL[] = tokens.map((token) => {
@@ -98,7 +99,8 @@ function searchWhere(db: Db, q: string): SQL | undefined {
  * consulting/activity/circle 只命中对应 kind 的 live 交付（交付与类型均未软删）；
  * other = 未关联（无交付单 / 交付软删 / 类型软删——展开为 null）或类型本身为 other。
  */
-function liveDeliveryOfKind(db: Db, kinds: readonly string[]): SQL {
+/** K68：corpus 读模型复用（导出） */
+export function liveDeliveryOfKind(db: Db, kinds: readonly string[]): SQL {
   return exists(
     db
       .select({ id: deliveries.id })

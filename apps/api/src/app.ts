@@ -25,6 +25,7 @@ import { productsRoutes } from "./modules/products/routes.js";
 import { jobsRoutes } from "./modules/jobs/routes.js";
 import { jobSchedulesRoutes } from "./modules/jobs/schedule-routes.js";
 import { materialsRoutes } from "./modules/materials/routes.js";
+import { corpusRoutes } from "./modules/corpus/routes.js";
 import { payoutBatchesRoutes } from "./modules/payout-batches/routes.js";
 import { systemRoutes } from "./modules/system/routes.js";
 import { tagsRoutes } from "./modules/tags/routes.js";
@@ -99,6 +100,7 @@ export function buildApp(options: BuildAppOptions): FastifyInstance {
     deliveriesRoutes(instance, { db, now: clock });
     tagsRoutes(instance, { db, now: clock });
     materialsRoutes(instance, { db, now: clock, s3Fetch });
+    corpusRoutes(instance, { db });
     copywritingRoutes(instance, { db, now: clock, llmFetch });
     insightsRoutes(instance, { db, now: clock, llmFetch });
     systemRoutes(instance, { db, now: clock, s3Fetch, llmFetch });
