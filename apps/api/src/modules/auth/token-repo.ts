@@ -19,9 +19,9 @@ export function hashToken(raw: string): string {
   return createHash("sha256").update(raw, "utf8").digest("hex");
 }
 
-/** `gbcrm_ro_` / `gbcrm_rw_` + 32 字节 hex；prefix = 前 17 字符（含 8 hex） */
+/** `gbcrm_ro_` / `gbcrm_rw_` / `gbcrm_co_`（K68 语料同步）+ 32 字节 hex；prefix = 前 17 字符（含 8 hex） */
 export function generateRawToken(scope: TokenScope): { token: string; prefix: string } {
-  const kind = scope === "read" ? "ro" : "rw";
+  const kind = scope === "read" ? "ro" : scope === "write" ? "rw" : "co";
   const token = `gbcrm_${kind}_${randomBytes(32).toString("hex")}`;
   return { token, prefix: token.slice(0, 17) };
 }
@@ -35,7 +35,8 @@ export function insertToken(
     scope: TokenScope;
     name: string | null;
     now: number;
-    expiresAt: number;
+    /** K68：corpus 令牌传 null = 永不过期 */
+    expiresAt: number | null;
   },
 ): ApiToken {
   const result = db
@@ -106,7 +107,8 @@ export interface AdminTokenRow {
   scope: string;
   name: string | null;
   createdAt: number;
-  expiresAt: number;
+  /** null = 永不过期（K68 corpus） */
+  expiresAt: number | null;
   lastUsedAt: number | null;
   revokedAt: number | null;
   revokedBy: number | null;
@@ -144,12 +146,13 @@ export function listAdminTokens(
     params.push(p.userId);
   }
   if (p.status === "active") {
-    cond.push("t.revoked_at IS NULL AND t.expires_at > ?");
+    // K68：expires_at 为 NULL（永不过期）的行恒为 active
+    cond.push("t.revoked_at IS NULL AND (t.expires_at IS NULL OR t.expires_at > ?)");
     params.push(p.now);
   } else if (p.status === "revoked") {
     cond.push("t.revoked_at IS NOT NULL");
   } else if (p.status === "expired") {
-    cond.push("t.revoked_at IS NULL AND t.expires_at <= ?");
+    cond.push("t.revoked_at IS NULL AND t.expires_at IS NOT NULL AND t.expires_at <= ?");
     params.push(p.now);
   }
   const where = cond.length > 0 ? `WHERE ${cond.join(" AND ")}` : "";

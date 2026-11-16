@@ -25,6 +25,7 @@ const STATUS_TONES: Record<string, BadgeTone> = {
 const SCOPE_TONES: Record<string, BadgeTone> = {
   read: "plain",
   write: "accent",
+  corpus: "danger",
 };
 
 export function AuthTokensPage() {
@@ -159,7 +160,7 @@ export function AuthTokensPage() {
                   <td>{badge(tokenScopeLabels[token.scope] ?? token.scope, SCOPE_TONES[token.scope] ?? "plain")}</td>
                   <td>{badge(STATUS_LABELS[token.status] ?? token.status, STATUS_TONES[token.status] ?? "muted")}</td>
                   <td>{formatDateTime(token.createdAt)}</td>
-                  <td>{formatDateTime(token.expiresAt) || "—"}</td>
+                  <td>{token.expiresAt === null ? "永不过期" : formatDateTime(token.expiresAt) || "—"}</td>
                   <td>{formatDateTime(token.lastUsedAt) || "—"}</td>
                   <td>
                     {token.revokedBy?.nickname ??

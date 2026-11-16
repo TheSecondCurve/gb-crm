@@ -21,7 +21,8 @@ export interface MintedToken {
   prefix: string;
   scope: TokenScope;
   name: string | null;
-  expiresAt: number;
+  /** K68：corpus 令牌为 null（永不过期）；read/write 为 now + 90 天 */
+  expiresAt: number | null;
 }
 
 export interface TokenListItem {
@@ -30,7 +31,7 @@ export interface TokenListItem {
   scope: TokenScope;
   name: string | null;
   createdAt: number;
-  expiresAt: number;
+  expiresAt: number | null;
   lastUsedAt: number | null;
   revokedAt: number | null;
 }
@@ -43,7 +44,8 @@ export async function mintToken(
   if (!user) return null;
 
   const { token, prefix } = generateRawToken(input.scope);
-  const expiresAt = input.now + TOKEN_TTL_MS;
+  // K68：corpus 令牌永不失效（治理靠吊销 + lastUsedAt 审计），其余沿用 90 天
+  const expiresAt = input.scope === "corpus" ? null : input.now + TOKEN_TTL_MS;
   const name = input.name ?? null;
   insertToken(db, {
     userId: user.id,
@@ -84,7 +86,8 @@ export interface AdminTokenDto {
   status: TokenStatus;
   user: { id: number; nickname: string };
   createdAt: number;
-  expiresAt: number;
+  /** null = 永不过期（K68 corpus） */
+  expiresAt: number | null;
   lastUsedAt: number | null;
   revokedAt: number | null;
   revokedBy: { id: number; nickname: string } | null;
@@ -92,7 +95,7 @@ export interface AdminTokenDto {
 
 function deriveTokenStatus(row: AdminTokenRow, now: number): TokenStatus {
   if (row.revokedAt !== null) return "revoked";
-  if (now >= row.expiresAt) return "expired";
+  if (row.expiresAt !== null && now >= row.expiresAt) return "expired";
   return "active";
 }
 

@@ -10,6 +10,38 @@ export const pageQuerySchema = z.object({
 });
 export type PageQuery = z.infer<typeof pageQuerySchema>;
 
+/** query 里的逗号分隔正整数列表（tagIds=1,2,3 → [1,2,3]） */
+export const csvIdListSchema = z
+  .string()
+  .trim()
+  .min(1)
+  .max(200)
+  .transform((val, ctx): number[] => {
+    const ids: number[] = [];
+    for (const part of val.split(",")) {
+      const n = Number(part.trim());
+      if (part.trim() === "" || !Number.isInteger(n) || n <= 0) {
+        ctx.addIssue({ code: "custom", message: "必须是逗号分隔的正整数列表" });
+        return [];
+      }
+      ids.push(n);
+    }
+    return ids;
+  });
+
+/** query 里的逗号分隔名字列表（中英文逗号都可；tagNames=活动,海报 → [活动,海报]） */
+export const csvNameListSchema = z
+  .string()
+  .trim()
+  .min(1)
+  .max(500)
+  .transform((val) =>
+    val
+      .split(/[,，]/)
+      .map((s) => s.trim())
+      .filter((s) => s !== ""),
+  );
+
 /** query string 里的布尔过滤（如 products 的 isPackage）：只接受 "true"/"false" */
 export const queryBooleanSchema = z
   .enum(["true", "false"])

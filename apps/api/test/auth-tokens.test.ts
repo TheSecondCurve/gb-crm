@@ -659,3 +659,63 @@ describe("授权管理（admin）GET/DELETE /api/v1/auth/tokens/admin", () => {
     expect(bobWrite.json().data[0].scope).toBe("write");
   });
 });
+
+describe("corpus 范围令牌（K68：永不失效 + 语料端点专用）", () => {
+  it("签发：gbcrm_co_ 前缀、expiresAt null（永不过期）", async () => {
+    await seedUser(tmp.db);
+    const res = await mint({ username: "alice", password: "password123", scope: "corpus" });
+    expect(res.statusCode).toBe(201);
+    const data = res.json().data as { token: string; prefix: string; expiresAt: number | null };
+    expect(data.token).toMatch(/^gbcrm_co_[0-9a-f]{64}$/);
+    expect(data.expiresAt).toBeNull();
+    const row = tmp.sqlite
+      .prepare("SELECT scope, expires_at FROM api_tokens WHERE token_prefix = ?")
+      .get(data.prefix) as { scope: string; expires_at: number | null };
+    expect(row).toEqual({ scope: "corpus", expires_at: null });
+  });
+
+  it("时钟越过 90 天：corpus 令牌仍 200，read 令牌 401；admin 列表状态正确", async () => {
+    await seedUser(tmp.db);
+    const corpus = await mint({ username: "alice", password: "password123", scope: "corpus" });
+    const read = await mint({ username: "alice", password: "password123", scope: "read" });
+
+    clock.t += TOKEN_TTL_MS + 1000;
+    expect(
+      (
+        await app.inject({
+          method: "GET",
+          url: "/api/v1/corpus/head",
+          headers: bearer(corpus.json().data.token),
+        })
+      ).statusCode,
+    ).toBe(200);
+    expect(
+      (
+        await app.inject({
+          method: "GET",
+          url: "/api/v1/materials",
+          headers: bearer(read.json().data.token),
+        })
+      ).statusCode,
+    ).toBe(401);
+
+    const cookie = await loginAs(app, "alice", "password123");
+    const active = await app.inject({
+      method: "GET",
+      url: "/api/v1/auth/tokens/admin?status=active",
+      headers: { cookie },
+    });
+    const activePrefixes = (active.json().data as { prefix: string }[]).map((t) => t.prefix);
+    expect(activePrefixes).toContain(corpus.json().data.prefix);
+    expect(activePrefixes).not.toContain(read.json().data.prefix);
+
+    const expired = await app.inject({
+      method: "GET",
+      url: "/api/v1/auth/tokens/admin?status=expired",
+      headers: { cookie },
+    });
+    const expiredPrefixes = (expired.json().data as { prefix: string }[]).map((t) => t.prefix);
+    expect(expiredPrefixes).not.toContain(corpus.json().data.prefix);
+    expect(expiredPrefixes).toContain(read.json().data.prefix);
+  });
+});

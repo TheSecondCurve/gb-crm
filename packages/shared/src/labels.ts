@@ -195,10 +195,11 @@ export const payoutBatchStatusLabels: Record<PayoutBatchStatus, string> = {
   paid: "已发放",
 };
 
-/** Agent PAT 令牌范围（K35）：read = 只读；write = 走 REST，仍受 can() 约束 */
+/** Agent PAT 令牌范围（K35/K68）：read = 只读；write = 走 REST，仍受 can() 约束；corpus = 语料同步专用且永不过期 */
 export const tokenScopeLabels: Record<TokenScope, string> = {
   read: "只读",
   write: "读写",
+  corpus: "语料同步",
 };
 
 /** 文案模板维度（K60） */

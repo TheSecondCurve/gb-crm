@@ -8,7 +8,7 @@ import {
   materialKindSchema,
 } from "../enums.js";
 import { folderPathSchema } from "./material-folder.js";
-import { epochMsSchema, pageQuerySchema } from "./common.js";
+import { csvIdListSchema, csvNameListSchema, epochMsSchema, pageQuerySchema } from "./common.js";
 
 // K54 交付资料（delivery_materials 表，camelCase）。
 // 文本类（transcript/text）content 可空（创建后可在全文编辑器页补写）；媒体类（audio/video/link）url 必填。
@@ -95,38 +95,6 @@ export const materialPatchSchema = materialBaseSchema.partial().extend({
 export type MaterialPatch = z.infer<typeof materialPatchSchema>;
 
 export const materialSortSchema = z.enum(["updatedAt", "createdAt", "title"]);
-
-/** query 里的逗号分隔正整数列表（tagIds=1,2,3 → [1,2,3]） */
-const csvIdListSchema = z
-  .string()
-  .trim()
-  .min(1)
-  .max(200)
-  .transform((val, ctx): number[] => {
-    const ids: number[] = [];
-    for (const part of val.split(",")) {
-      const n = Number(part.trim());
-      if (part.trim() === "" || !Number.isInteger(n) || n <= 0) {
-        ctx.addIssue({ code: "custom", message: "必须是逗号分隔的正整数列表" });
-        return [];
-      }
-      ids.push(n);
-    }
-    return ids;
-  });
-
-/** query 里的逗号分隔名字列表（中英文逗号都可；tagNames=活动,海报 → [活动,海报]） */
-const csvNameListSchema = z
-  .string()
-  .trim()
-  .min(1)
-  .max(500)
-  .transform((val) =>
-    val
-      .split(/[,，]/)
-      .map((s) => s.trim())
-      .filter((s) => s !== ""),
-  );
 
 export const materialListQuerySchema = pageQuerySchema.extend({
   sort: materialSortSchema.optional(),
