@@ -1,6 +1,6 @@
 ---
 name: gb-crm
-version: 0.16.1
+version: 0.17.0
 description: >
   女商 私域运营管理端（gb-crm）本机 HTTP 客户端。用 ~/.gb-crm/credentials.json 的 PAT
   通过单一 SQL 端点查询或维护客户、渠道、产品、团队成员、成交记录、交付管理与资料。
@@ -86,7 +86,7 @@ curl -fsSL http://<crm-host>/agent/login.sh | sh
 1. 先 `me`，记下自己的 `id` 与 `systemRole`。
 2. **「我的」= 等值过滤，不是权限收紧**（助理/运营本身就能读全量，这一步只是按当前账号收敛查询范围）：用户说「我的客户 / 我的成交 / 我负责的 / 我名下的」→ 必须在 SQL 里写 `WHERE owner_id = <自己的 user id>`——这个 id 就是规则 1 里 `me` 拿到的 `id`（`customers.owner_id`、`deals.owner_id` 同理）。用户说「所有客户 / 全部客户 / 客户名单 / 全量」→ **不要**加 owner 过滤，默认只 `WHERE deleted_at IS NULL`。用户说「某人的客户」（如「小王的」）→ 先按昵称查到那个人的 `id`，再用其 `owner_id` 过滤——「我的」永远只等于当前令牌账号自己。拿不准（如「闪光那边的客户」）→ 先复述「只看我名下，还是全部？」确认再查。
 3. 查数据前先看下面的表结构；**默认过滤软删**：`WHERE deleted_at IS NULL`（sessions / api_tokens / delivery_tasks / delivery_customers / delivery_material_customers / delivery_material_tags / channel_owners / customer_source_channels / customer_social_accounts / customer_tags 无此列）。
-4. 写数据只在用户明确要求时做；删除前复述将删的行并得到确认。删除 = **软删**：`UPDATE ... SET deleted_at = <now>`，不要 `DELETE FROM`。
+4. 写数据只在用户明确要求时做；删除前复述将删的行并得到确认。删除 = **软删**：`UPDATE ... SET deleted_at = <now>`，不要 `DELETE FROM`。用户说「整理入库 / 归档 / 更新客户」即视为对该批资料的明确写授权——同批内各写入动作直接执行，不再逐项复述确认；**删除类操作**仍须确认。
 5. 写时**手动维护** `updated_at = <当前 epoch 毫秒>`、`updated_by = <自己的 user id>`（`me` 拿到）；新建行同理补 `created_at` / `created_by`。
 6. 时间戳一律 **epoch 毫秒**（UTC）。金额 `price_cents` 是**分**，展示元；不要 `yuan * 100` 不 round 就写入。布尔 `is_package` 是 0/1。
 7. 写 SQL 绕过管理端的 PATCH 内核 / OCC / 审计，**只做简单 CRUD**，不要动 `sessions` / `api_tokens`。DDL（CREATE/ALTER/DROP）端点已直接 403，无需也不会执行。
@@ -160,6 +160,7 @@ python3 "$SKILL_DIR/scripts/gb-crm.py" upload ./合影.png \
 - 用户给的标签直接并进 `newTagNames`（与 agent 看图得出的标签合成一组传入）
 - `aiEnrich=false` 的**前提是 agent 确实看过图、且 `description=` 与标签都已自带**——此时关掉服务端识别省一次调用；没看图或只带了用户标签 → **不传 `aiEnrich`**（缺省开），图片自动入队识别（`aiStatus=pending` → ready；LLM 未配置/超 8MB 自动 skipped，不影响上传成功），识别结果**描述只填空、标签并集合并**，用户/agent 标签不会被覆盖
 - 防重约定：先算本地 sha256 → `GET /materials?checksum=<hex>`，已有同内容素材就别重复传；上传响应 `duplicateOfId` 非空 = 撞重复（已保留，自行决定删否）
+- **上传后汇总**（批量传完一次性报，不要每张停下来问）：传了几张、进了哪个文件夹（folderPath）、每张的标签与来源（用户给的 ∪ 你看图判断的）、`aiStatus`（pending=识别中 / skipped=未识别）、`duplicateOfId` 撞重命中——报完问一句「描述 / 归档 / 标签要不要调」，要调按下一条 PATCH
 - **上传后维护**（管理素材的收尾）：改描述 / 移文件夹 / 换标签 → `PATCH /api/v1/materials/:id`（`description`、`folderId`=目标文件夹 id、`tagIds`=整表替换 或 `newTagNames`=追加建词，带 `updatedAt` OCC）；识别失败或要重跑 → `POST /materials/:id/enrich`
 
 **下载**：
@@ -190,6 +191,8 @@ python3 "$SKILL_DIR/scripts/gb-crm.py" download <资料id> [输出路径]   # �
 
 用户丢来一坨复杂资料——咨询录音稿、微信聊天记录、活动笔记、混合文本、文件——说「整理入库 / 更新客户 / 归档」时，按下面的固定协议拆解落库。**全部走 REST（通用 HTTP `--json`），禁止 SQL 直写业务表**：组合校验、审计四列、信号抽取触发链只在 REST 路径完整（SQL 直写的资料不触发即时抽取，只能等夜间扫尾）。
 
+**总原则：先入库、后汇报、再待改**——整理入库全程**不做事前确认**（不问「是不是这个人」「要不要建交付」「时间对不对」），按最优判断直接写完，最后一次性输出总体报告（见第 7 步），用户指出问题再改。宁可先写对大部分再让用户纠偏，不要事前逐项盘问把流程卡住。
+
 ### 拆解顺序（先通读盘点，再动笔写入）
 
 1. **通读盘点**：先识别资料里的实体，不要边读边写——
@@ -197,15 +200,26 @@ python3 "$SKILL_DIR/scripts/gb-crm.py" download <资料id> [输出路径]   # �
    - **跟进事件**：每个有时间点的沟通 → 一条维护记录；
    - **交付**：有没有「场次/活动/圈子/咨询期」结构（名称、类别、起止、参与人）？
    - **资料文本**：哪段是录音稿/文本全文，哪个是链接，哪个是本地文件？
-2. **客户落位**：已有的先 SQL 模糊定位（nickname LIKE / phone / wechat），报候选让用户确认；新客户 `POST /api/v1/customers`（来历写进 `originStory`）；要更新字段先 `GET /customers/:id` 拿 `updatedAt` 再 `PATCH`（409 就重读重试一次）。
+2. **客户落位**（不问，按命中强度直接落位，存疑留到报告）：先 SQL 定位（phone / wechat 精确等值，nickname 精确 → LIKE）——
+   - 精确命中（phone/wechat 完全相等）→ 直接落位，不问；
+   - 唯一强候选（nickname 精确或 LIKE 只有一个说得通的）→ 直接落位，报告里标注「按最相似落位，请核对」；
+   - 多个候选分不清 → 落到**最可能**的那个（优先级：phone > wechat > nickname 精确 > LIKE），报告列出其余候选；**不新建**（防重复客户）；
+   - 零候选 → 直接 `POST /api/v1/customers` 新建（nickname 必填，来历写进 `originStory`）。
+   要更新字段先 `GET /customers/:id` 拿 `updatedAt` 再 `PATCH`（409 就重读重试一次）。
 3. **交付落位**（仅当资料属于某个场次/项目）：按语义找交付类型（`GET /delivery-types`，咨询/活动/圈子/其他），缺则 `POST /delivery-types {"name":…, "kind":…}`；再 `POST /deliveries {"deliveryTypeId":…, "name":…, "startsAt"?…, "endsAt"?…, "customerIds":[…]}`。
 4. **资料落库**：`transcript`/`text` → `POST /api/v1/materials {"kind","title","content","deliveryId"?,"customerIds":[…]}`（content 全文可上万字）；`audio`/`video`/`link` → 带 `url`；本地文件 → `upload` 子命令（<32MB，支持 `deliveryId=`/`customerIds=`）。
 5. **跟进记录**（基础信息层，**每个沟通事件一条**）：`POST /api/v1/customers/:id/records {"kind","happenedAt","content"}`——咨询产品/表意向 → `lead`（content 写明产品名，规则见「客户维护记录」节）；沟通触点 → `follow_up`；状态变化 → `status_change`；历史时间用 `happenedAt` 补录（epoch ms，「上周三」先换算）。
 6. **signals：不要手工造**。记录、资料、来历/备注经 REST 落库后系统**自动触发抽取**（LLM 已配置时即时入队，串行执行几分钟内完成；未配置则如实告知信号暂不会生成）。agent 只做两件事：落库后可 `GET /insights/signals?customerId=…` 核对（抽取完成前为空属正常，不要谎报）；对资料里明确、抽取可能漏掉的关键事实，用 `POST /api/v1/insights/signals` 人工补录（type/topic/content/sourceAt）。
-7. **收尾汇报**：列清单——新建/更新了哪些行（带 id 和名字）、挂了什么资料、记了几条跟进、哪些信号即将自动出现；拿不准的（客户身份存疑、时间不明）单独列出待用户确认，不要硬写。
+7. **收尾汇报（总体入库报告）**：全部写完后一次性输出，分四块——
+   - **入库情况**：新建/更新了哪些客户（带 id 和名字）、交付单（新建/挂了哪张）、资料条数与类型、跟进记录条数；
+   - **标签情况**：每份资料的标签及来源（用户给的 ∪ 你判断的）、新建了哪些标签词、素材 `aiStatus`（pending/skipped）；
+   - **信号预告**：哪些信号即将自动抽取出现（LLM 已配置时几分钟内）；
+   - **存疑项**：落位存疑的客户（其余候选还有谁）、时间按推测补的事件、没有十足把握的字段——**照写不拦**，此处列出现状与改法建议。
+   结尾固定一句：「以上如有不对，告诉我改哪条，我来改（PATCH / 重挂 / 补记录）。」
 
 ### 硬规则
 
+- **不做事前确认**：第 1–6 步不向用户提问（客户身份 / 交付归属 / 时间都按最优判断先写），纠偏统一走第 7 步报告之后的用户反馈；只有「删除」类操作例外（工作守则 4）。
 - 资料里**没有**场次结构就跳过第 3-4 步的交付部分，资料直接挂客户——不要为整理而造交付/交付类别。
 - 一次整理尽量当轮完成写入；跨多个客户时逐客户汇报进度。
 - 全程中文标签对齐枚举：交付类别 kind（consulting/activity/circle/other）、记录 kind、信号 type 见「枚举 code → 中文」表。
@@ -532,8 +546,8 @@ python3 "$SKILL_DIR/scripts/gb-crm.py" download <资料id> [输出路径]   # �
 
 **新增资料先落交付单**（按语义匹配，不限咨询类；**素材库 kind=file 归档除外**——见「素材库」节）：
 
-1. **匹配**：按交付名（deliveries.name）/ 交付类型名 / 起止日期 / 关联客户收窄，查 live 交付单（`deliveries` JOIN `delivery_types`，两边都 `deleted_at IS NULL`），列出候选让用户确认后填 `delivery_id`；
-2. **新建**：没有合适的交付单就新建一条——先查 `delivery_types`（`deleted_at IS NULL AND status='active'`）选语义贴合的类型（kind 不限 consulting，活动/圈子/其他都可以）；连类型都不贴切就先跟用户确认，不要硬塞。新交付单补审计四列，参与客户走 `delivery_customers`；
+1. **匹配**：按交付名（deliveries.name）/ 交付类型名 / 起止日期 / 关联客户收窄，查 live 交付单（`deliveries` JOIN `delivery_types`，两边都 `deleted_at IS NULL`）——**按语义直接选最贴合的一条填 `delivery_id`，不问**（多个都像就选重合信号最多的，报告/回复里标注其余候选）；
+2. **新建**：没有合适的交付单就新建一条——先查 `delivery_types`（`deleted_at IS NULL AND status='active'`）选语义贴合的类型（kind 不限 consulting，活动/圈子/其他都可以）；连类型都不贴切就用 kind='other' 的通用类型（缺则建），**不要停下来问**。新交付单补审计四列，参与客户走 `delivery_customers`；
 3. 不要主动造孤儿资料；只有用户明确说「先不关联交付」时才留 `delivery_id = NULL`。这条约束的是咨询/场次类资料——素材库 kind=file 归档不走本节流程，`delivery_id` 留空是常态。
 
 全文搜索（FTS5，`trigram` 分词，中文子串友好）：
