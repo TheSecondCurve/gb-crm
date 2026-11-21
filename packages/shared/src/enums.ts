@@ -140,8 +140,8 @@ export const MATERIAL_FILE_MAX_BYTES = 32 * 1024 * 1024;
 export const materialAiStatusSchema = z.enum(["pending", "ready", "failed", "skipped"]);
 export type MaterialAiStatus = z.infer<typeof materialAiStatusSchema>;
 
-/** AI 识别可送模型的最大图片字节数（base64 体积膨胀，超过则跳过识别只采静态元数据） */
-export const MATERIAL_AI_ENRICH_MAX_BYTES = 8 * 1024 * 1024;
+/** AI 识别可送模型的最大图片字节数（base64 体积膨胀，超过则跳过识别只采静态元数据；2026-11-21 8MB→16MB，覆盖手机原图） */
+export const MATERIAL_AI_ENRICH_MAX_BYTES = 16 * 1024 * 1024;
 
 /** 客户维护记录类型（K55：跟进联系 / 状态变化 / 线索意向 / 一般备注 / 其他） */
 export const maintenanceKindSchema = z.enum([
