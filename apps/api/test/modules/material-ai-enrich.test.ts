@@ -429,6 +429,150 @@ describe("上传调度矩阵（scheduleMaterialEnrich）", () => {
   });
 });
 
+// ── 受控维度落标（category/scene）──
+
+describe("受控维度落标（category/scene）", () => {
+  it("枚举内的 category/scene 强制落标（AI tags 未提也补上），词不存在自动建", async () => {
+    const admin = await loginAsRole("admin");
+    await enableStorage(admin.cookie);
+    await configureAssetsLlm(admin.cookie);
+    llmResponse = () => ({
+      choices: [
+        {
+          message: {
+            content: JSON.stringify({
+              description: "微信聊天截图，客户夸赞交付效果好",
+              tags: ["聊天截图"],
+              folder: null,
+              category: "好评图",
+              scene: "下午茶",
+            }),
+          },
+        },
+      ],
+    });
+    const body = await upload(admin.cookie);
+    const runner = makeRunner();
+    await runner.pumpOnce();
+    const m = (await app.inject({
+      method: "GET",
+      url: `/api/v1/materials/${body.data.id}`,
+      headers: { cookie: admin.cookie },
+    })).json().data;
+    expect(m.aiStatus).toBe("ready");
+    expect(m.tags.map((t: { name: string }) => t.name).sort()).toEqual([
+      "下午茶",
+      "好评图",
+      "聊天截图",
+    ]);
+  });
+
+  it("枚举外的 category/scene 忽略，不建垃圾词；category=其他/scene=null 不落标", async () => {
+    const admin = await loginAsRole("admin");
+    await enableStorage(admin.cookie);
+    await configureAssetsLlm(admin.cookie);
+    // 第一张：越界值 + 其他/null
+    llmResponse = () => ({
+      choices: [
+        {
+          message: {
+            content: JSON.stringify({
+              description: "随手拍",
+              tags: ["现场图"],
+              folder: null,
+              category: "随手拍",
+              scene: "婚礼",
+            }),
+          },
+        },
+      ],
+    });
+    const b1 = await upload(admin.cookie, { title: "越界维度" });
+    const runner = makeRunner();
+    await runner.pumpOnce();
+    const m1 = (await app.inject({
+      method: "GET",
+      url: `/api/v1/materials/${b1.data.id}`,
+      headers: { cookie: admin.cookie },
+    })).json().data;
+    expect(m1.tags.map((t: { name: string }) => t.name).sort()).toEqual(["现场图"]);
+
+    // 第二张：category=其他、scene=null → 只落 AI tags
+    llmResponse = () => ({
+      choices: [
+        {
+          message: {
+            content: JSON.stringify({
+              description: "普通现场照",
+              tags: ["合影"],
+              folder: null,
+              category: "其他",
+              scene: null,
+            }),
+          },
+        },
+      ],
+    });
+    const b2 = await upload(admin.cookie, { title: "其他类型" });
+    await runner.pumpOnce();
+    const m2 = (await app.inject({
+      method: "GET",
+      url: `/api/v1/materials/${b2.data.id}`,
+      headers: { cookie: admin.cookie },
+    })).json().data;
+    expect(m2.tags.map((t: { name: string }) => t.name).sort()).toEqual(["合影"]);
+  });
+
+  it("标签总数上限下维度词优先：AI tags 拉满也被截断，维度词必在", async () => {
+    const admin = await loginAsRole("admin");
+    await enableStorage(admin.cookie);
+    await configureAssetsLlm(admin.cookie);
+    llmResponse = () => ({
+      choices: [
+        {
+          message: {
+            content: JSON.stringify({
+              description: "横幅海报",
+              tags: ["词一", "词二", "词三", "词四", "词五", "词六", "词七", "词八"],
+              folder: null,
+              category: "海报",
+              scene: "内训",
+            }),
+          },
+        },
+      ],
+    });
+    const body = await upload(admin.cookie);
+    const runner = makeRunner();
+    await runner.pumpOnce();
+    const m = (await app.inject({
+      method: "GET",
+      url: `/api/v1/materials/${body.data.id}`,
+      headers: { cookie: admin.cookie },
+    })).json().data;
+    const names = m.tags.map((t: { name: string }) => t.name).sort();
+    expect(names).toHaveLength(8);
+    expect(names).toContain("海报");
+    expect(names).toContain("内训");
+    expect(names).not.toContain("词八");
+  });
+
+  it("AI 未输出维度字段（旧响应形态）→ 行为不变，只落 tags", async () => {
+    const admin = await loginAsRole("admin");
+    await enableStorage(admin.cookie);
+    await configureAssetsLlm(admin.cookie);
+    const body = await upload(admin.cookie);
+    const runner = makeRunner();
+    await runner.pumpOnce();
+    const m = (await app.inject({
+      method: "GET",
+      url: `/api/v1/materials/${body.data.id}`,
+      headers: { cookie: admin.cookie },
+    })).json().data;
+    expect(m.tags.map((t: { name: string }) => t.name).sort()).toEqual(["合影", "现场图"]);
+  });
+});
+
 // ── K63 存量元数据回填任务 ──
 
 describe("material-file-meta-backfill（存量回填）", () => {

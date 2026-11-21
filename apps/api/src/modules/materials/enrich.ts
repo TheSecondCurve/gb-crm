@@ -4,7 +4,8 @@
 //   LLM 未配置（assetsLlm 不完整且系统 llm 不完整）→ ai_status=skipped（静默，不影响上传）；
 //   否则 ai_status=pending + 入队 material-ai-enrich 任务（K51 串行消费）。
 // 执行 enrichMaterial：S3 拉对象 → base64 vision 请求 → 结构化 JSON → 落库规则：
-//   description 只填空（人/agent 写过的不动）；标签并集合并（newTagNames 通道免审批建词，全量 ≤8）；
+//   description 只填空（人/agent 写过的不动）；category/scene 受控维度强制落标（枚举外忽略，词缺则建）；
+//   标签并集合并（维度词优先保留，newTagNames 通道免审批建词，全量 ≤8）；
 //   folder 只从现有 live 文件夹完整路径里精确匹配（AI 不能凭空建目录）；ready + enriched_at。
 // 失败 → ai_status=failed（可 POST /materials/:id/enrich 重跑）；S3/LLM 未配置 → skipped。
 import { MATERIAL_AI_ENRICH_MAX_BYTES } from "@gb-crm/shared";
@@ -134,20 +135,31 @@ interface EnrichOutput {
   description?: string;
   tags?: string[];
   folder?: string | null;
+  /** 图片类型（受控枚举，单选；「其他」不落标） */
+  category?: string | null;
+  /** 交付场景（受控枚举，单选；判断不出为 null） */
+  scene?: string | null;
 }
+
+/** 受控维度词：识别输出 category/scene 强制映射为固定标签（词缺则自动建），枚举外一律忽略。
+ *  「其他」与 null 不落标（搜「非海报」走排除语义，不需要「其他」占位词）。 */
+export const MATERIAL_CATEGORY_WORDS = ["海报", "好评图", "场地照片", "形象照", "活动记录"] as const;
+export const MATERIAL_SCENE_WORDS = ["下午茶", "内训", "播客", "1v1咨询", "录制"] as const;
 
 /** prompt 注入的候选上限（文件夹/标签词表都是小量级，防御性截断） */
 const MAX_FOLDER_CANDIDATES = 50;
 const MAX_TAG_CANDIDATES = 100;
-/** LLM 建议标签总数上限（含复用现有词；newTagNames 通道本身 ≤10） */
+/** LLM 建议标签总数上限（含复用现有词；维度词排最前优先保留；newTagNames 通道本身 ≤10） */
 const MAX_TAGS_APPLY = 8;
 
 const ENRICH_SYSTEM_PROMPT = `你是素材库的图片识别助手。看图后只输出一个 JSON 对象，不要输出任何其他文字：
-{"description": "…", "tags": ["…"], "folder": "…" 或 null}
+{"description": "…", "tags": ["…"], "folder": "…" 或 null, "category": "…", "scene": "…" 或 null}
 规则：
 - description：30~80 字中文，客观描述画面（主体、场景、颜色、可见文字、风格），信息密度高，便于日后搜索。
-- tags：3~8 个简短检索词（2~6 字优先）。优先从「候选标签」里选用；确有必要可以新增，最多新增 3 个。
-- folder：从「候选文件夹」里选一个最贴切的完整路径原样输出；都不贴切输出 null，禁止自己编造路径。`;
+- tags：3~6 个简短检索词（2~6 字优先）。优先从「候选标签」里选用；确有必要可以新增，最多新增 3 个。
+- folder：从「候选文件夹」里选一个最贴切的完整路径原样输出；都不贴切输出 null，禁止自己编造路径。
+- category：图片类型，只能从「海报 / 好评图 / 场地照片 / 形象照 / 活动记录 / 其他」里选一个，禁止输出其它值。判定：带设计版式与标题文案的宣传/邀请/预告图 → 海报；聊天截图且内容为夸赞、感谢、正面反馈，或用户主动发来的返图/好评照片 → 好评图；以空间环境为主的场地实拍 → 场地照片；以人物形象写真为主 → 形象照；活动现场纪实照 → 活动记录；都不符合 → 其他。
+- scene：交付场景，优先依据标题与原始文件名中的字样（如「下午茶」「1v1」「内训」「播客」「录制」）判断，画面内容作辅助；只能从「下午茶 / 内训 / 播客 / 1v1咨询 / 录制」里选一个，判断不出输出 null，禁止编造其它值。`;
 
 function buildUserPrompt(db: Db, row: MaterialRow): string {
   const index = folderPathIndex(db);
@@ -173,7 +185,7 @@ function buildUserPrompt(db: Db, row: MaterialRow): string {
   ].join("\n");
 }
 
-/** LLM 结果落库：description 只填空；标签并集；folder 只匹配现有完整路径 */
+/** LLM 结果落库：description 只填空；受控维度强制落标；标签并集；folder 只匹配现有完整路径 */
 function applyEnrichResult(
   db: Db,
   row: MaterialRow,
@@ -203,19 +215,28 @@ function applyEnrichResult(
         .where(eq(deliveryMaterials.id, row.id))
         .run();
     }
+    // 受控维度强制落标：category/scene 必须落在枚举内（越界/「其他」/null 不落标），
+    // 维度词排最前——总数截断时不被 AI 自由标签挤掉；词不存在走 newTagNames 免审批建词
+    const category =
+      typeof out.category === "string" &&
+      (MATERIAL_CATEGORY_WORDS as readonly string[]).includes(out.category)
+        ? out.category
+        : null;
+    const scene =
+      typeof out.scene === "string" && (MATERIAL_SCENE_WORDS as readonly string[]).includes(out.scene)
+        ? out.scene
+        : null;
+    const dimensionNames = [category, scene].filter((s): s is string => s !== null);
     // 标签并集（newTagNames 通道：同名词复用，新词免审批建 domain=material；K58）
-    if (Array.isArray(out.tags)) {
-      const names = [
-        ...new Set(
-          out.tags
-            .filter((t2): t2 is string => typeof t2 === "string")
-            .map((t2) => t2.trim())
-            .filter((t2) => t2 !== "" && t2.length <= 50),
-        ),
-      ].slice(0, MAX_TAGS_APPLY);
-      if (names.length > 0) {
-        applyMaterialTags(t, row.id, { newTagNames: names }, audit, existingMaterialTagIds(t, row.id));
-      }
+    const aiNames = Array.isArray(out.tags)
+      ? out.tags
+          .filter((t2): t2 is string => typeof t2 === "string")
+          .map((t2) => t2.trim())
+          .filter((t2) => t2 !== "" && t2.length <= 50)
+      : [];
+    const names = [...new Set([...dimensionNames, ...aiNames])].slice(0, MAX_TAGS_APPLY);
+    if (names.length > 0) {
+      applyMaterialTags(t, row.id, { newTagNames: names }, audit, existingMaterialTagIds(t, row.id));
     }
   });
 }
